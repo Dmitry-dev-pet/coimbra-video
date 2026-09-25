@@ -6,7 +6,7 @@ on:
       seconds:
         description: "Project duration in seconds"
         required: false
-        default: "12"
+        default: "15"
         type: string
       fps:
         description: "Frame rate"
@@ -43,9 +43,9 @@ jobs:
       - name: Generate Coimbra ESP
         run: |
           python scripts/generate_coimbra_esp.py \
-            --output output/coimbra-cinematic.esp \
-            --name "Coimbra cinematic" \
-            --seconds "${{ inputs.seconds || '12' }}" \
+            --output output/coimbra-sanches-portela.esp \
+            --name "Coimbra - Sanches da Gama to Portela" \
+            --seconds "${{ inputs.seconds || '15' }}" \
             --fps "${{ inputs.fps || '30' }}"
 
       - name: Validate ESP JSON
@@ -53,20 +53,21 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          p = Path("output/coimbra-cinematic.esp")
+          p = Path("output/coimbra-sanches-portela.esp")
           data = json.loads(p.read_text())
           assert data["modelVersion"] == 18
           assert data["settings"]["dimensions"] == {"width": 1920, "height": 1080}
           assert data["settings"]["duration"] > 0
           print("ESP valid:", p)
           print("Duration:", data["settings"]["duration"], "frames")
+          print("Project:", data["settings"]["name"])
           PY
 
       - name: Upload Earth Studio project
         uses: actions/upload-artifact@v4
         with:
-          name: coimbra-earth-studio-project
-          path: output/coimbra-cinematic.esp
+          name: coimbra-sanches-portela-earth-studio-project
+          path: output/coimbra-sanches-portela.esp
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
