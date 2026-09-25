@@ -52,6 +52,7 @@ jobs:
               "coimbra-miniature-wide.esp": "Coimbra miniature - wide",
               "coimbra-miniature-orbit.esp": "Coimbra miniature - orbit",
               "coimbra-miniature-reveal.esp": "Coimbra miniature - reveal",
+              "coimbra-miniature-safe-slider.esp": "Coimbra miniature - safe slider",
           }
 
           for filename, expected_name in expected.items():
@@ -82,7 +83,7 @@ jobs:
               )
 
           plan = json.loads(Path("output/coimbra-miniature-plan.json").read_text())
-          assert set(plan["variants"]) == {"wide", "orbit", "reveal"}
+          assert set(plan["variants"]) == {"wide", "orbit", "reveal", "safe_slider"}
           print("Plan valid")
           PY
 
@@ -109,6 +110,15 @@ jobs:
         with:
           name: coimbra-miniature-reveal
           path: output/coimbra-miniature-reveal.esp
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload safe slider miniature
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-miniature-safe-slider
+          path: output/coimbra-miniature-safe-slider.esp
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
