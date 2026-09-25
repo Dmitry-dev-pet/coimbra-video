@@ -17,6 +17,7 @@ BAIXA = (-8.4300, 40.2089, 75.0)
 UNIVERSITY = (-8.4264, 40.2077, 120.0)
 CITY_CENTER = (-8.4267, 40.2057, 95.0)
 PRISON = (-8.41793, 40.20703)  # Estabelecimento Prisional de Coimbra
+PRISON_EXCLUSION_RADIUS_M = 450.0
 
 # Reproducible late-afternoon light. The exact time can still be changed in Earth Studio.
 DEFAULT_WORLD_TIME = datetime(2026, 9, 25, 16, 45, tzinfo=timezone.utc)
@@ -54,6 +55,81 @@ def offset(lon: float, lat: float, east_m: float, north_m: float) -> tuple[float
     lat2 = lat + north_m / 111_320.0
     lon2 = lon + east_m / (111_320.0 * math.cos(math.radians(lat)))
     return lon2, lat2
+
+
+def bearing_deg(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lon1, lat1 = map(math.radians, a)
+    lon2, lat2 = map(math.radians, b)
+    dlon = lon2 - lon1
+    y = math.sin(dlon) * math.cos(lat2)
+    x = (
+        math.cos(lat1) * math.sin(lat2)
+        - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    )
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+def angular_separation_deg(
+    camera: tuple[float, float],
+    a: tuple[float, float],
+    b: tuple[float, float],
+) -> float:
+    ba = bearing_deg(camera, a)
+    bb = bearing_deg(camera, b)
+    return abs((bb - ba + 180.0) % 360.0 - 180.0)
+
+
+def prison_exclusion_points() -> list[tuple[float, float]]:
+    points = [PRISON]
+    for i in range(24):
+        angle = 2.0 * math.pi * i / 24
+        points.append(
+            offset(
+                PRISON[0],
+                PRISON[1],
+                PRISON_EXCLUSION_RADIUS_M * math.cos(angle),
+                PRISON_EXCLUSION_RADIUS_M * math.sin(angle),
+            )
+        )
+    return points
+
+
+def assert_prison_outside_frame(beats: list[Beat], min_margin_deg: float = 18.0) -> None:
+    exclusion = prison_exclusion_points()
+
+    for left, right in zip(beats, beats[1:]):
+        # Earth Studio uses smooth interpolation. Sampling the straight interpolation
+        # is not an exact model of its Bezier curve, so we keep a deliberately large
+        # angular safety margin.
+        for step in range(21):
+            u = step / 20.0
+
+            target_lon = left.target_lon + (right.target_lon - left.target_lon) * u
+            target_lat = left.target_lat + (right.target_lat - left.target_lat) * u
+
+            left_cam = offset(
+                left.target_lon, left.target_lat, left.cam_east_m, left.cam_north_m
+            )
+            right_cam = offset(
+                right.target_lon, right.target_lat, right.cam_east_m, right.cam_north_m
+            )
+            cam_lon = left_cam[0] + (right_cam[0] - left_cam[0]) * u
+            cam_lat = left_cam[1] + (right_cam[1] - left_cam[1]) * u
+
+            fov = left.fov_deg + (right.fov_deg - left.fov_deg) * u
+            camera = (cam_lon, cam_lat)
+            target = (target_lon, target_lat)
+
+            nearest = min(
+                angular_separation_deg(camera, target, p)
+                for p in exclusion
+            )
+            margin = nearest - fov / 2.0
+            if margin < min_margin_deg:
+                raise ValueError(
+                    f"Prison exclusion failed near {left.label} -> {right.label}: "
+                    f"margin={margin:.1f} deg, required={min_margin_deg:.1f}"
+                )
 
 
 def _kf(t: float, v: float) -> dict:
@@ -122,6 +198,21 @@ def reveal_beats() -> list[Beat]:
         Beat(28.0, "reveal climb", -8.4284, 40.2070, 95, 800, -900, 1150, 26),
         Beat(35.0, "reveal University", *UNIVERSITY, 650, -1000, 1080, 25),
         Beat(41.0, "reveal finale", *UNIVERSITY, 500, -1100, 1120, 25),
+    ]
+
+
+def safe_slider_beats() -> list[Beat]:
+    # A macro-slider shot for the "city is a model" concept.
+    # The camera stays on the north-east side and moves only gently, while the
+    # target pans across the city. This keeps the entire prison exclusion zone
+    # far outside the optical axis instead of trying to hide it with blur.
+    return [
+        Beat(0.0,  "safe Mondego", -8.4340, 40.2025, 55, 800, 1000, 1350, 38),
+        Beat(8.0,  "safe river-city", -8.4330, 40.2045, 65, 800, 800, 1320, 38),
+        Beat(16.0, "safe Baixa south", -8.4310, 40.2060, 72, 600, 600, 1280, 38),
+        Beat(24.0, "safe Baixa", -8.4295, 40.2070, 78, 400, 600, 1240, 38),
+        Beat(32.0, "safe Alta west", -8.4285, 40.2080, 95, 400, 400, 1200, 38),
+        Beat(40.0, "safe University edge", -8.4280, 40.2085, 105, 400, 400, 1180, 38),
     ]
 
 
@@ -297,9 +388,12 @@ def main() -> None:
         "coimbra-miniature-wide.esp": ("Coimbra miniature - wide", wide_beats()),
         "coimbra-miniature-orbit.esp": ("Coimbra miniature - orbit", orbit_beats()),
         "coimbra-miniature-reveal.esp": ("Coimbra miniature - reveal", reveal_beats()),
+        "coimbra-miniature-safe-slider.esp": ("Coimbra miniature - safe slider", safe_slider_beats()),
     }
 
     for filename, (name, beats) in variants.items():
+        if filename == "coimbra-miniature-safe-slider.esp":
+            assert_prison_outside_frame(beats)
         project = build_project(name, beats, args.fps, args.width, args.height)
         write_project(out / filename, project)
 
@@ -326,6 +420,12 @@ def main() -> None:
                 "duration_s": reveal_beats()[-1].sec,
                 "idea": "Move the visual focus Mondego -> Baixa -> University.",
                 "focus_story": ["Mondego", "Baixa", "Universidade de Coimbra"],
+            },
+            "safe_slider": {
+                "duration_s": safe_slider_beats()[-1].sec,
+                "idea": "Macro-slider view from the north-east with a hard prison exclusion margin.",
+                "recommended": True,
+                "prison_exclusion_radius_m": PRISON_EXCLUSION_RADIUS_M,
             },
         },
     }
