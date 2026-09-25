@@ -1,0 +1,72 @@
+name: Generate Earth Studio project
+
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Project duration in seconds"
+        required: false
+        default: "12"
+        type: string
+      fps:
+        description: "Frame rate"
+        required: false
+        default: "30"
+        type: choice
+        options:
+          - "24"
+          - "25"
+          - "30"
+          - "50"
+          - "60"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/generate_coimbra_esp.py"
+      - ".github/workflows/generate-earth-studio-project.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate Coimbra ESP
+        run: |
+          python scripts/generate_coimbra_esp.py \
+            --output output/coimbra-cinematic.esp \
+            --name "Coimbra cinematic" \
+            --seconds "${{ inputs.seconds || '12' }}" \
+            --fps "${{ inputs.fps || '30' }}"
+
+      - name: Validate ESP JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("output/coimbra-cinematic.esp")
+          data = json.loads(p.read_text())
+          assert data["modelVersion"] == 18
+          assert data["settings"]["dimensions"] == {"width": 1920, "height": 1080}
+          assert data["settings"]["duration"] > 0
+          print("ESP valid:", p)
+          print("Duration:", data["settings"]["duration"], "frames")
+          PY
+
+      - name: Upload Earth Studio project
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-earth-studio-project
+          path: output/coimbra-cinematic.esp
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
