@@ -16,6 +16,7 @@ MONDEGO = (-8.4314, 40.2027, 55.0)
 BAIXA = (-8.4300, 40.2089, 75.0)
 UNIVERSITY = (-8.4264, 40.2077, 120.0)
 CITY_CENTER = (-8.4267, 40.2057, 95.0)
+PRISON = (-8.41793, 40.20703)  # Estabelecimento Prisional de Coimbra
 
 # Reproducible late-afternoon light. The exact time can still be changed in Earth Studio.
 DEFAULT_WORLD_TIME = datetime(2026, 9, 25, 16, 45, tzinfo=timezone.utc)
@@ -86,26 +87,28 @@ def _world_time_block(dt: datetime) -> dict:
 
 
 def wide_beats() -> list[Beat]:
-    # Broad sideways move. City stays compressed in perspective and reads like a tabletop model.
+    # Broad pass from the east / south-east looking west across the city.
+    # This keeps the blurred prison complex out of the principal field of view.
     return [
-        Beat(0.0,  "wide SW", *MONDEGO, -1650, -1150, 1550, 31),
-        Beat(7.5,  "wide river", *MONDEGO, -1250, -1000, 1480, 30),
-        Beat(15.0, "wide Baixa", *BAIXA, -900, -1250, 1420, 29),
-        Beat(23.0, "wide University", *UNIVERSITY, -350, -1400, 1360, 28),
-        Beat(31.0, "wide city east", *CITY_CENTER, 450, -1350, 1400, 29),
-        Beat(38.0, "wide finish", *UNIVERSITY, 1050, -750, 1460, 30),
+        Beat(0.0,  "wide river SE", *MONDEGO, 1500, -900, 1550, 28),
+        Beat(7.5,  "wide river E", *MONDEGO, 1400, -400, 1480, 27),
+        Beat(15.0, "wide Baixa", *BAIXA, 1200, -1000, 1420, 27),
+        Beat(23.0, "wide University", *UNIVERSITY, 1000, -800, 1360, 26),
+        Beat(31.0, "wide University NE", *UNIVERSITY, 900, 900, 1400, 27),
+        Beat(38.0, "wide finish N", *UNIVERSITY, 200, 1400, 1460, 28),
     ]
 
 
 def orbit_beats() -> list[Beat]:
-    # Large-radius arc around the entire historical centre. No close-up street movement.
+    # A crescent orbit around the University from south to north-east.
+    # We deliberately skip the due-east arc where the prison would sit near frame centre.
     return [
-        Beat(0.0,  "orbit SW", *CITY_CENTER, -1350, -900, 1350, 31),
-        Beat(8.0,  "orbit W",  *CITY_CENTER, -1550, -100, 1320, 30),
-        Beat(16.0, "orbit NW", *CITY_CENTER, -1050, 1050, 1300, 29),
-        Beat(24.0, "orbit N",  *CITY_CENTER, -100, 1500, 1320, 29),
-        Beat(32.0, "orbit NE", *CITY_CENTER, 1050, 1050, 1360, 30),
-        Beat(38.0, "orbit E",  *CITY_CENTER, 1450, 250, 1420, 31),
+        Beat(0.0,  "orbit S", *UNIVERSITY, 0, -1400, 1350, 28),
+        Beat(8.0,  "orbit SE", *UNIVERSITY, 700, -1200, 1320, 27),
+        Beat(16.0, "orbit ESE", *UNIVERSITY, 1100, -700, 1300, 27),
+        Beat(24.0, "orbit NE", *UNIVERSITY, 900, 900, 1320, 27),
+        Beat(32.0, "orbit NNE", *UNIVERSITY, 500, 1250, 1360, 28),
+        Beat(38.0, "orbit N", *UNIVERSITY, 200, 1400, 1420, 29),
     ]
 
 
@@ -115,10 +118,10 @@ def reveal_beats() -> list[Beat]:
         Beat(0.0,  "reveal establishing", *MONDEGO, -1650, -1450, 1650, 33),
         Beat(7.0,  "reveal river", *MONDEGO, -1250, -1150, 1500, 31),
         Beat(14.0, "reveal transition", -8.4307, 40.2050, 65, -900, -1100, 1380, 30),
-        Beat(21.0, "reveal Baixa", *BAIXA, -650, -1050, 1260, 29),
-        Beat(28.0, "reveal climb", -8.4284, 40.2070, 95, -350, -1050, 1150, 28),
-        Beat(35.0, "reveal University", *UNIVERSITY, 100, -900, 1080, 27),
-        Beat(41.0, "reveal finale", *UNIVERSITY, 650, -550, 1120, 28),
+        Beat(21.0, "reveal Baixa", *BAIXA, 1000, -1000, 1260, 27),
+        Beat(28.0, "reveal climb", -8.4284, 40.2070, 95, 800, -900, 1150, 26),
+        Beat(35.0, "reveal University", *UNIVERSITY, 650, -1000, 1080, 25),
+        Beat(41.0, "reveal finale", *UNIVERSITY, 500, -1100, 1120, 25),
     ]
 
 
@@ -307,7 +310,7 @@ def main() -> None:
             "fps": args.fps,
             "camera_altitude_m": "1080-1650",
             "fov_deg": "27-33",
-            "movement": "slow, high, oblique, long-lens",
+            "movement": "slow, high, oblique, long-lens; prison kept outside principal view",
             "postprocess": "moving tilt-shift focus band + mild saturation/contrast",
         },
         "variants": {
@@ -317,7 +320,7 @@ def main() -> None:
             },
             "orbit": {
                 "duration_s": orbit_beats()[-1].sec,
-                "idea": "Large-radius arc around the historical centre.",
+                "idea": "South-to-north-east crescent around the University, avoiding the prison sector.",
             },
             "reveal": {
                 "duration_s": reveal_beats()[-1].sec,
