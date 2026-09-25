@@ -1,0 +1,123 @@
+name: Generate Coimbra miniature projects
+
+on:
+  workflow_dispatch:
+    inputs:
+      fps:
+        description: "Frame rate"
+        required: false
+        default: "30"
+        type: choice
+        options:
+          - "24"
+          - "25"
+          - "30"
+          - "50"
+          - "60"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/generate_miniature_coimbra_esp.py"
+      - ".github/workflows/generate-miniature-earth-studio.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate miniature projects
+        run: |
+          python scripts/generate_miniature_coimbra_esp.py \
+            --output-dir output \
+            --fps "${{ inputs.fps || '30' }}"
+
+      - name: Validate ESP projects
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          expected = {
+              "coimbra-miniature-wide.esp": "Coimbra miniature - wide",
+              "coimbra-miniature-orbit.esp": "Coimbra miniature - orbit",
+              "coimbra-miniature-reveal.esp": "Coimbra miniature - reveal",
+          }
+
+          for filename, expected_name in expected.items():
+              p = Path("output") / filename
+              data = json.loads(p.read_text())
+              assert data["modelVersion"] == 18
+              assert data["settings"]["dimensions"] == {"width": 1920, "height": 1080}
+              assert data["settings"]["duration"] > 0
+              assert data["settings"]["name"] == expected_name
+
+              camera_group = data["scenes"][0]["attributes"][0]
+              types = [a["type"] for a in camera_group["attributes"]]
+              assert "cameraTargetEffect" in types
+              assert "cameraLensGroup" in types
+
+              target = next(
+                  a for a in camera_group["attributes"]
+                  if a["type"] == "cameraTargetEffect"
+              )
+              assert target["attributes"][0]["value"]["relative"] == 1
+              assert target["attributes"][-1]["value"]["relative"] == 1
+
+              print(
+                  "ESP valid:",
+                  filename,
+                  data["settings"]["duration"],
+                  "frames",
+              )
+
+          plan = json.loads(Path("output/coimbra-miniature-plan.json").read_text())
+          assert set(plan["variants"]) == {"wide", "orbit", "reveal"}
+          print("Plan valid")
+          PY
+
+      - name: Upload wide miniature
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-miniature-wide
+          path: output/coimbra-miniature-wide.esp
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload orbit miniature
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-miniature-orbit
+          path: output/coimbra-miniature-orbit.esp
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload reveal miniature
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-miniature-reveal
+          path: output/coimbra-miniature-reveal.esp
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload miniature plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-miniature-plan
+          path: output/coimbra-miniature-plan.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
