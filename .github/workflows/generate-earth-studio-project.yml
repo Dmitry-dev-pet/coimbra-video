@@ -1,13 +1,8 @@
-name: Generate Earth Studio project
+name: Generate Earth Studio route projects
 
 on:
   workflow_dispatch:
     inputs:
-      seconds:
-        description: "Project duration in seconds"
-        required: false
-        default: "15"
-        type: string
       fps:
         description: "Frame rate"
         required: false
@@ -22,7 +17,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "scripts/generate_coimbra_esp.py"
+      - "scripts/generate_commute_route_esp.py"
       - ".github/workflows/generate-earth-studio-project.yml"
 
 permissions:
@@ -31,6 +26,7 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,34 +36,78 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Generate Coimbra ESP
+      - name: Generate route projects
         run: |
-          python scripts/generate_coimbra_esp.py \
-            --output output/coimbra-sanches-portela.esp \
-            --name "Coimbra - Sanches da Gama to Portela" \
-            --seconds "${{ inputs.seconds || '15' }}" \
+          python scripts/generate_commute_route_esp.py \
+            --output-dir output \
             --fps "${{ inputs.fps || '30' }}"
 
-      - name: Validate ESP JSON
+      - name: Validate ESP projects
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          p = Path("output/coimbra-sanches-portela.esp")
-          data = json.loads(p.read_text())
-          assert data["modelVersion"] == 18
-          assert data["settings"]["dimensions"] == {"width": 1920, "height": 1080}
-          assert data["settings"]["duration"] > 0
-          print("ESP valid:", p)
-          print("Duration:", data["settings"]["duration"], "frames")
-          print("Project:", data["settings"]["name"])
+
+          expected = {
+              "coimbra-route-walking-drone.esp": "Coimbra route - walking drone",
+              "coimbra-route-driving-drone.esp": "Coimbra route - driving drone",
+          }
+
+          for filename, name in expected.items():
+              p = Path("output") / filename
+              data = json.loads(p.read_text())
+              assert data["modelVersion"] == 18
+              assert data["settings"]["dimensions"] == {"width": 1920, "height": 1080}
+              assert data["settings"]["duration"] > 0
+              assert data["settings"]["name"] == name
+
+              scene = data["scenes"][0]
+              camera_group = scene["attributes"][0]
+              types = [a["type"] for a in camera_group["attributes"]]
+              assert "cameraTargetEffect" in types
+
+              target = next(
+                  a for a in camera_group["attributes"]
+                  if a["type"] == "cameraTargetEffect"
+              )
+              assert target["attributes"][0]["value"]["relative"] == 1
+              assert target["attributes"][-1]["value"]["relative"] == 1
+
+              print(
+                  "ESP valid:",
+                  p,
+                  data["settings"]["duration"],
+                  "frames",
+              )
+
+          plan = json.loads(Path("output/route-plan.json").read_text())
+          assert len(plan["route_anchors"]) >= 10
+          print("Route anchors:", len(plan["route_anchors"]))
           PY
 
-      - name: Upload Earth Studio project
+      - name: Upload walking-drone project
         uses: actions/upload-artifact@v4
         with:
-          name: coimbra-sanches-portela-earth-studio-project
-          path: output/coimbra-sanches-portela.esp
+          name: coimbra-route-walking-drone
+          path: output/coimbra-route-walking-drone.esp
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload driving-drone project
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-route-driving-drone
+          path: output/coimbra-route-driving-drone.esp
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload route plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-route-plan
+          path: output/route-plan.json
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
