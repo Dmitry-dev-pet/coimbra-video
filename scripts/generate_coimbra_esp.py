@@ -11,22 +11,28 @@ MIN_ALT, MAX_ALT = -500.0, 65117481.0
 MIN_TILT, MAX_TILT = 0.0, 180.0
 MIN_PAN, MAX_PAN = 0.0, 360.0
 
-# Cinematic south-west -> historic-centre approach.
-# lon, lat, camera altitude metres.
+# Route: Rua Sanches da Gama -> Quinta da Portela.
+# Each tuple is (longitude, latitude, camera altitude in metres).
+#
+# We begin just north-west of Sanches da Gama, pass over the street,
+# descend gradually across the south-east side of Coimbra and finish
+# over/just beyond Quinta da Portela.
 PATH = [
-    (-8.4450, 40.1948, 900.0),
-    (-8.4405, 40.1975, 840.0),
-    (-8.4360, 40.2003, 790.0),
-    (-8.4318, 40.2027, 735.0),
-    (-8.4284, 40.2048, 690.0),
-    (-8.4254, 40.2064, 650.0),
-    (-8.4224, 40.2080, 630.0),
+    (-8.41820, 40.20240, 520.0),
+    (-8.41597, 40.20071, 480.0),  # Rua Sanches da Gama
+    (-8.41375, 40.19805, 450.0),
+    (-8.41175, 40.19505, 420.0),
+    (-8.40955, 40.19210, 390.0),
+    (-8.40735, 40.18935, 360.0),
+    (-8.40555, 40.18705, 335.0),
+    (-8.40415, 40.18495, 315.0),  # Quinta da Portela area
 ]
 
-# Aim roughly at Alta / Universidade, keeping Baixa and Mondego in the composition.
-TARGET_LON = -8.4265
-TARGET_LAT = 40.2079
-TARGET_ALT = 115.0
+# Extra look-ahead point toward Portela do Mondego. It is not a camera
+# position; it keeps the final frames looking forward instead of pitching
+# straight down at the last keyframe.
+FINAL_LOOK_AT = (-8.39934, 40.18492, 55.0)
+GROUND_TARGET_ALT = 80.0
 
 
 def rel(value: float, lo: float, hi: float) -> float:
@@ -46,13 +52,49 @@ def bearing_deg(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return math.degrees(math.atan2(dx, dy)) % 360.0
 
 
-def tilt_deg(lon: float, lat: float, altitude: float) -> float:
-    dx, dy = metres_between(lon, lat, TARGET_LON, TARGET_LAT)
+def tilt_to_target(
+    lon: float,
+    lat: float,
+    altitude: float,
+    target_lon: float,
+    target_lat: float,
+    target_alt: float,
+) -> float:
+    dx, dy = metres_between(lon, lat, target_lon, target_lat)
     horizontal = math.hypot(dx, dy)
-    vertical = max(50.0, altitude - TARGET_ALT)
-    # Earth Studio convention used by open-source ESP generators:
-    # 0° = straight down, 90° = horizon.
+    vertical = max(30.0, altitude - target_alt)
+    # Earth Studio convention used by public ESP generators:
+    # 0 degrees = straight down, 90 degrees = horizon.
     return math.degrees(math.atan2(horizontal, vertical))
+
+
+def camera_targets() -> list[tuple[float, float, float]]:
+    targets: list[tuple[float, float, float]] = []
+    for i in range(len(PATH)):
+        # Look roughly two camera keyframes ahead. This makes the movement feel
+        # like a real fly-through instead of a camera orbiting one fixed POI.
+        j = min(i + 2, len(PATH) - 1)
+        if i >= len(PATH) - 2:
+            targets.append(FINAL_LOOK_AT)
+        else:
+            lon, lat, _ = PATH[j]
+            targets.append((lon, lat, GROUND_TARGET_ALT))
+    return targets
+
+
+def unwrap_angles(values: list[float]) -> list[float]:
+    """Avoid interpolation taking the long way around at 0/360 degrees."""
+    if not values:
+        return []
+    out = [values[0]]
+    for value in values[1:]:
+        candidate = value
+        while candidate - out[-1] > 180.0:
+            candidate -= 360.0
+        while candidate - out[-1] < -180.0:
+            candidate += 360.0
+        out.append(candidate)
+    return out
 
 
 def keyframes(values: list[float]) -> list[dict]:
@@ -81,10 +123,22 @@ def build_project(name: str, fps: int, seconds: float, width: int, height: int) 
     lat_values = [rel(lat, MIN_LAT, MAX_LAT) for lon, lat, alt in PATH]
     alt_values = [rel(alt, MIN_ALT, MAX_ALT) for lon, lat, alt in PATH]
 
-    pan_deg = [bearing_deg(lon, lat, TARGET_LON, TARGET_LAT) for lon, lat, alt in PATH]
-    tilt_degrees = [tilt_deg(lon, lat, alt) for lon, lat, alt in PATH]
-    pan_values = [rel(v, MIN_PAN, MAX_PAN) for v in pan_deg]
-    tilt_values = [rel(v, MIN_TILT, MAX_TILT) for v in tilt_degrees]
+    targets = camera_targets()
+    pans = []
+    tilts = []
+    for (lon, lat, alt), (target_lon, target_lat, target_alt) in zip(PATH, targets):
+        pans.append(bearing_deg(lon, lat, target_lon, target_lat))
+        tilts.append(
+            tilt_to_target(lon, lat, alt, target_lon, target_lat, target_alt)
+        )
+
+    pans = unwrap_angles(pans)
+
+    # Pan may go slightly below 0 or above 360 after unwrapping. Earth Studio
+    # accepts normalized values outside 0..1 for smooth interpolation, while
+    # retaining the declared 0..360 value range.
+    pan_values = [rel(v, MIN_PAN, MAX_PAN) for v in pans]
+    tilt_values = [rel(v, MIN_TILT, MAX_TILT) for v in tilts]
 
     project = {
         "modelVersion": 18,
@@ -200,11 +254,13 @@ def build_project(name: str, fps: int, seconds: float, width: int, height: int) 
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Generate a Coimbra Google Earth Studio .esp project.")
-    ap.add_argument("--output", default="output/coimbra-cinematic.esp")
-    ap.add_argument("--name", default="Coimbra cinematic")
+    ap = argparse.ArgumentParser(
+        description="Generate the Sanches da Gama -> Quinta da Portela Earth Studio project."
+    )
+    ap.add_argument("--output", default="output/coimbra-sanches-portela.esp")
+    ap.add_argument("--name", default="Coimbra - Sanches da Gama to Portela")
     ap.add_argument("--fps", type=int, default=30)
-    ap.add_argument("--seconds", type=float, default=12.0)
+    ap.add_argument("--seconds", type=float, default=15.0)
     ap.add_argument("--width", type=int, default=1920)
     ap.add_argument("--height", type=int, default=1080)
     args = ap.parse_args()
@@ -214,11 +270,12 @@ def main() -> None:
     project = build_project(args.name, args.fps, args.seconds, args.width, args.height)
     out.write_text(json.dumps(project, indent=2), encoding="utf-8")
 
-    # Re-open it so CI also catches malformed JSON.
+    # Re-open so CI catches malformed JSON.
     json.loads(out.read_text(encoding="utf-8"))
     print(f"Wrote {out}")
     print(f"Frames: {project['settings']['duration']} @ {args.fps} fps")
     print(f"Camera keyframes: {len(PATH)}")
+    print("Route: Rua Sanches da Gama -> Quinta da Portela")
 
 
 if __name__ == "__main__":
