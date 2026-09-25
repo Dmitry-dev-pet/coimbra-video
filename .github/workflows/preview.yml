@@ -14,7 +14,7 @@ on:
       mesh_resolution:
         description: "Preview mesh resolution in metres"
         required: false
-        default: "2.0"
+        default: "4.0"
         type: choice
         options:
           - "4.0"
@@ -31,7 +31,7 @@ concurrency:
 jobs:
   preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -48,6 +48,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Validate project
         run: |
           python -m compileall -q scripts blender
@@ -56,12 +61,16 @@ jobs:
       - name: Download DGT orthophoto 2025
         run: python scripts/fetch_ortho.py
 
-      - name: Upload orthophoto preview artifact
+      - name: Build orthophoto MP4 smoke preview
+        run: python scripts/ortho_video.py
+
+      - name: Upload orthophoto preview
         uses: actions/upload-artifact@v4
         with:
-          name: coimbra-orthophoto-2025
+          name: coimbra-orthophoto-preview
           path: |
             data/processed/ortho_2025.jpg
+            output/coimbra_ortho_preview.mp4
           if-no-files-found: error
           retention-days: 7
           compression-level: 6
@@ -75,10 +84,10 @@ jobs:
         run: |
           if [[ -n "$DGT_USER" && -n "$DGT_PASSWORD" ]]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "DGT credentials found: full MDS/render stage enabled."
+            echo "DGT credentials found: full 3D video stage enabled."
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::DGT_USER / DGT_PASSWORD are not configured. Public orthophoto stage completed; MDS/render stage will be skipped."
+            echo "::notice::DGT_USER / DGT_PASSWORD are not configured. 2D MP4 preview was created; 3D MDS video stage will be skipped."
           fi
 
       - name: Download DGT MDS 50 cm
@@ -96,12 +105,11 @@ jobs:
         if: steps.dgt.outputs.available == 'true'
         run: |
           python scripts/build_mesh.py \
-            --mesh-resolution "${{ inputs.mesh_resolution || '2.0' }}"
+            --mesh-resolution "${{ inputs.mesh_resolution || '4.0' }}"
 
       - name: Install Blender
         if: steps.dgt.outputs.available == 'true'
         run: |
-          sudo apt-get update
           sudo apt-get install -y blender
           blender --version
 
@@ -109,20 +117,23 @@ jobs:
         if: steps.dgt.outputs.available == 'true'
         run: blender -b -P blender/render_scene.py
 
-      - name: Apply tilt-shift preview
+      - name: Apply tilt-shift still preview
         if: steps.dgt.outputs.available == 'true'
         run: python scripts/tiltshift.py
 
-      - name: Upload rendered preview
+      - name: Render 3D Coimbra MP4
+        if: steps.dgt.outputs.available == 'true'
+        run: blender -b -P blender/render_video.py
+
+      - name: Upload 3D render preview
         if: steps.dgt.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: coimbra-dgt-render-${{ inputs.mesh_resolution || '2.0' }}m
+          name: coimbra-3d-video-${{ inputs.mesh_resolution || '4.0' }}m
           path: |
             output/coimbra_sharp.png
             output/coimbra_tiltshift.png
+            output/coimbra_3d_preview.mp4
           if-no-files-found: error
           retention-days: 14
           compression-level: 6
-
-# Smoke-test update: workflow exists before this push.
