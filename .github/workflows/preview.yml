@@ -1,35 +1,74 @@
-name: Coimbra DGT preview
+name: Coimbra Earth Studio post-process
 
 on:
   push:
     branches: [main]
     paths:
       - ".github/workflows/preview.yml"
-      - "scripts/**"
-      - "config/**"
+      - "scripts/earth_studio_post.py"
+      - "EARTH_STUDIO.md"
       - "requirements.txt"
-      - "blender/**"
   workflow_dispatch:
     inputs:
-      mesh_resolution:
-        description: "Preview mesh resolution in metres"
+      source_url:
+        description: "Direct URL to the ZIP rendered by Google Earth Studio"
         required: false
-        default: "4.0"
+        default: ""
+        type: string
+      fps:
+        description: "Frame rate used in the Earth Studio project"
+        required: false
+        default: "30"
         type: choice
         options:
-          - "4.0"
-          - "2.0"
-          - "1.0"
+          - "24"
+          - "25"
+          - "30"
+          - "50"
+          - "60"
+      focus_y:
+        description: "Vertical focus-line position (0 top, 1 bottom)"
+        required: false
+        default: "0.48"
+        type: string
+      tilt:
+        description: "Focus-line slope"
+        required: false
+        default: "-0.14"
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: coimbra-dgt-preview
+  group: coimbra-earth-studio
   cancel-in-progress: true
 
 jobs:
-  preview:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate Earth Studio pipeline
+        run: |
+          python -m compileall -q scripts/earth_studio_post.py
+          python scripts/earth_studio_post.py --help
+
+  render:
+    if: github.event_name == 'workflow_dispatch' && inputs.source_url != ''
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -43,97 +82,37 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Install ffmpeg
-        run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Validate project
+      - name: Download Earth Studio render ZIP
+        env:
+          SOURCE_URL: ${{ inputs.source_url }}
         run: |
-          python -m compileall -q scripts blender
-          python scripts/check_bbox.py
+          mkdir -p input
+          curl --fail --location --retry 3 --retry-delay 2 "$SOURCE_URL" --output input/earth_studio.zip
+          test -s input/earth_studio.zip
+          unzip -t input/earth_studio.zip >/dev/null
 
-      - name: Download DGT orthophoto 2025
-        run: python scripts/fetch_ortho.py
+      - name: Apply tilt-shift and encode MP4
+        run: |
+          mkdir -p output
+          python scripts/earth_studio_post.py \
+            --input input/earth_studio.zip \
+            --output output/coimbra_earthstudio_tiltshift.mp4 \
+            --fps "${{ inputs.fps }}" \
+            --focus-y "${{ inputs.focus_y }}" \
+            --tilt "${{ inputs.tilt }}"
 
-      - name: Build orthophoto MP4 smoke preview
-        run: python scripts/ortho_video.py
-
-      - name: Upload orthophoto preview
+      - name: Upload final MP4
         uses: actions/upload-artifact@v4
         with:
-          name: coimbra-orthophoto-preview
-          path: |
-            data/processed/ortho_2025.jpg
-            output/coimbra_ortho_preview.mp4
-          if-no-files-found: error
-          retention-days: 7
-          compression-level: 6
-
-      - name: Check whether DGT credentials are configured
-        id: dgt
-        env:
-          DGT_USER: ${{ secrets.DGT_USER }}
-          DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
-        shell: bash
-        run: |
-          if [[ -n "$DGT_USER" && -n "$DGT_PASSWORD" ]]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "DGT credentials found: full 3D video stage enabled."
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::DGT_USER / DGT_PASSWORD are not configured. 2D MP4 preview was created; 3D MDS video stage will be skipped."
-          fi
-
-      - name: Download DGT MDS 50 cm
-        if: steps.dgt.outputs.available == 'true'
-        env:
-          DGT_USER: ${{ secrets.DGT_USER }}
-          DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
-        run: python scripts/fetch_mds.py
-
-      - name: Prepare MDS mosaic
-        if: steps.dgt.outputs.available == 'true'
-        run: python scripts/prepare_mds.py
-
-      - name: Build textured mesh
-        if: steps.dgt.outputs.available == 'true'
-        run: |
-          python scripts/build_mesh.py \
-            --mesh-resolution "${{ inputs.mesh_resolution || '4.0' }}"
-
-      - name: Install Blender
-        if: steps.dgt.outputs.available == 'true'
-        run: |
-          sudo apt-get install -y blender
-          blender --version
-
-      - name: Render sharp frame
-        if: steps.dgt.outputs.available == 'true'
-        run: blender -b -P blender/render_scene.py
-
-      - name: Apply tilt-shift still preview
-        if: steps.dgt.outputs.available == 'true'
-        run: python scripts/tiltshift.py
-
-      - name: Render 3D Coimbra MP4
-        if: steps.dgt.outputs.available == 'true'
-        run: blender -b -P blender/render_video.py
-
-      - name: Upload 3D render preview
-        if: steps.dgt.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coimbra-3d-video-${{ inputs.mesh_resolution || '4.0' }}m
-          path: |
-            output/coimbra_sharp.png
-            output/coimbra_tiltshift.png
-            output/coimbra_3d_preview.mp4
+          name: coimbra-earthstudio-video
+          path: output/coimbra_earthstudio_tiltshift.mp4
           if-no-files-found: error
           retention-days: 14
-          compression-level: 6
+          compression-level: 0
