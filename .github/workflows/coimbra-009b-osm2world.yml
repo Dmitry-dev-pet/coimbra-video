@@ -5,6 +5,7 @@ on:
     paths:
       - "config/open_source_stack.json"
       - "docs/OPEN_SOURCE_STACK.md"
+      - "scripts/fetch_osm_oss_bridge.py"
       - "blender/render_osm2world_reference.py"
       - ".github/workflows/coimbra-009b-osm2world.yml"
   workflow_dispatch:
@@ -38,8 +39,8 @@ jobs:
       - name: Fetch Coimbra OSM
         run: |
           python -m pip install "requests>=2.32,<3"
-          python scripts/fetch_osm_bridge.py
-          test -s data/osm/coimbra-route.json
+          python scripts/fetch_osm_oss_bridge.py
+          test -s data/osm/coimbra-oss-rich.json
 
       - uses: actions/setup-java@v4
         with:
@@ -54,7 +55,7 @@ jobs:
       - name: Convert same Coimbra OSM to GLB
         run: |
           mkdir -p bridge_output_009b
-          java -jar _osm2world/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar             convert             --input data/osm/coimbra-route.json             --output bridge_output_009b/osm2world-coimbra.glb             --lod 2
+          java -jar _osm2world/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar             convert             --input data/osm/coimbra-oss-rich.json             --output bridge_output_009b/osm2world-coimbra.glb             --lod 2
           test -s bridge_output_009b/osm2world-coimbra.glb
           ls -lh bridge_output_009b/osm2world-coimbra.glb
 
