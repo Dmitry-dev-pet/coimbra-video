@@ -26,14 +26,12 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-
       - name: Checkout APatch Blender
         uses: actions/checkout@v4
         with:
           repository: Dmitry-dev-pet/apatch-blender
           ref: ${{ env.BRIDGE_REF }}
           path: _bridge
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -174,14 +172,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
       - name: Checkout APatch Blender
         uses: actions/checkout@v4
         with:
           repository: Dmitry-dev-pet/apatch-blender
           ref: ${{ env.BRIDGE_REF }}
           path: _bridge
-
       - uses: actions/cache@v4
         with:
           path: /home/runner/.cache/blender-5.2.2
