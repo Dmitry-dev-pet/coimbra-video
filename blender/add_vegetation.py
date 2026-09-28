@@ -156,6 +156,26 @@ def add_crown(
             material_indices.append(material_index)
 
 
+def blocked_by_scene(x: float, y: float, depsgraph) -> tuple[bool, str | None]:
+    origin = Vector((x, y, 1000.0))
+    direction = Vector((0.0, 0.0, -1.0))
+    hit, _location, _normal, _index, obj, _matrix = bpy.context.scene.ray_cast(
+        depsgraph,
+        origin,
+        direction,
+        distance=2000.0,
+    )
+    if not hit or obj is None:
+        return False, None
+    name = obj.name
+    blocked = (
+        name == "City_Buildings"
+        or name.startswith("Facade_")
+        or name.startswith("City_Roads_")
+    )
+    return blocked, name if blocked else None
+
+
 def collect_tree_points(data: dict):
     points = []
     occupied = set()
@@ -206,10 +226,22 @@ def main():
     material_indices = []
     accepted = []
     counts = {"natural=tree": 0, "green-area": 0}
+    obstacle_skips = {"City_Buildings": 0, "Facade": 0, "City_Roads": 0}
+    depsgraph = bpy.context.evaluated_depsgraph_get()
 
     for item in points:
         z = sample_height(item["x"], item["y"])
         if z is None:
+            continue
+
+        blocked, blocker = blocked_by_scene(item["x"], item["y"], depsgraph)
+        if blocked:
+            if blocker == "City_Buildings":
+                obstacle_skips["City_Buildings"] += 1
+            elif blocker and blocker.startswith("Facade_"):
+                obstacle_skips["Facade"] += 1
+            elif blocker and blocker.startswith("City_Roads_"):
+                obstacle_skips["City_Roads"] += 1
             continue
 
         u0 = stable_unit(item["token"], 0)
@@ -311,6 +343,7 @@ def main():
         "output_scene": OUT_BLEND.relative_to(ROOT).as_posix(),
         "tree_count": len(accepted),
         "source_counts": counts,
+        "obstacle_skips": obstacle_skips,
         "mesh": {
             "vertices": len(vertices),
             "faces": len(faces),
