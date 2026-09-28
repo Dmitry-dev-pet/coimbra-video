@@ -1,5 +1,5 @@
 {
-  "source": "DGT MDS-2m",
+  "source": "DGT MDT-2m",
   "source_tile_count": 9,
   "source_resolution_m": 2.0,
   "terrain_resolution_m": 6.0,
@@ -8,7 +8,7 @@
     307
   ],
   "z_min": 17.61842918395996,
-  "z_max": 148.80955505371094,
+  "z_max": 130.91114807128906,
   "z0": 17.61842918395996,
   "center_epsg3763": [
     -23812.326236053705,
