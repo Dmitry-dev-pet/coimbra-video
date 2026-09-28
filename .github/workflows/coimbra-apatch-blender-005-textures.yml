@@ -13,9 +13,6 @@ on:
       - "scripts/verify_texture_dev_evidence.py"
       - "verification/COIMBRA-BRIDGE-005-TEXTURES.probe"
       - ".github/workflows/coimbra-apatch-blender-005-textures.yml"
-      - "data/processed/bridge_terrain_6m.npz"
-      - "data/processed/bridge_terrain_6m.json"
-      - "scripts/prepare_osm_local_for_terrain.py"
   pull_request:
     paths:
       - "contracts/COIMBRA-BRIDGE-005-TEXTURES.json"
@@ -26,12 +23,10 @@ on:
       - "scripts/verify_texture_dev_evidence.py"
       - "verification/COIMBRA-BRIDGE-005-TEXTURES.probe"
       - ".github/workflows/coimbra-apatch-blender-005-textures.yml"
-      - "data/processed/bridge_terrain_6m.npz"
-      - "data/processed/bridge_terrain_6m.json"
-      - "scripts/prepare_osm_local_for_terrain.py"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 env:
@@ -63,14 +58,17 @@ jobs:
             "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" "Pillow>=11,<12" \
             "apatch==0.8.48"
 
-      - name: Prepare public terrain inputs
+      - name: Download approved 004 visual baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test -s data/processed/bridge_terrain_6m.npz
-          test -s data/processed/bridge_terrain_6m.json
-          python scripts/fetch_osm_bridge.py
-          python scripts/fetch_dgt_ortho_bridge.py
-          python scripts/prepare_osm_local_for_terrain.py
+          mkdir -p bridge_output_004
+          gh run download 36461385207 \
+            --repo "$GITHUB_REPOSITORY" \
+            --name coimbra-004-visual-dev \
+            --dir bridge_output_004
+          test -s bridge_output_004/coimbra-visual-dev.blend
 
       - name: Fetch CC0 Poly Haven PBR set
         run: |
@@ -100,13 +98,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
 
-      - name: Build terrain base
-        run: |
-          rm -rf bridge_output_003 bridge_output_005
-          blender --background --factory-startup --python-exit-code 1 \
-            --python blender/build_dgt_terrain_scene.py
-
       - name: Apply and pack Coimbra PBR textures
+        run: |
+          rm -rf bridge_output_005
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/apply_polyhaven_textures.py
+          cat bridge_output_005/texture-manifest.json
+
+      - name: Start governed APatch texture-dev session
         run: |
           blender --background --factory-startup --python-exit-code 1 \
             --python blender/apply_polyhaven_textures.py
