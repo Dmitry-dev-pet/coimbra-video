@@ -46,3 +46,5 @@ pack them into `bridge_output_005/coimbra-textured-base.blend`. That packed
 scene becomes the APatch baseline. After session start, protected `City_*`
 state and the PBR provenance scene keys must remain unchanged. Normal 005
 iteration renders only preview frames 1, 181 and 360, never the full movie.
+
+For 005, the legacy `City_Roads_*` CURVE bevel geometry may be converted before APatch session start into flat mesh ribbons with the same centerlines, elevations, and full widths. Once `coimbra-textured-base.blend` is frozen, those flat road meshes are protected `City_*` state.
