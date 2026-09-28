@@ -55,10 +55,12 @@
   ],
   "protected": {
     "object_globs": [
-      "City_*"
+      "City_*",
+      "Facade_*"
     ],
     "animation_object_globs": [
-      "City_*"
+      "City_*",
+      "Facade_*"
     ],
     "frames": [
       1,
@@ -76,7 +78,9 @@
       "city_pbr_provider",
       "city_pbr_license",
       "city_pbr_plan",
-      "city_pbr_resolution"
+      "city_pbr_resolution",
+      "city_facade_version",
+      "city_facade_window_count"
     ]
   },
   "expected": {
