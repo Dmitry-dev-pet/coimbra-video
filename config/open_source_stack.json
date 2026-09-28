@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "generated_on": "2026-09-28",
+  "dependencies": {
+    "mosaiq": {
+      "repository": "TUMFTM/MOSAIQ-OpenStreetMap-to-Blender-Add-On",
+      "ref": "f73d030aecd3289007472a887d78aae2e74b6ea0",
+      "license": "Apache-2.0",
+      "role": "OSM street-detail benchmark: sidewalks, parking lanes, crosswalks, POI/tag semantics"
+    },
+    "osm2world": {
+      "repository": "tordanik/OSM2World",
+      "ref": "8ec26a9ea426444a4f7882cf0cfcab432c876ae5",
+      "license": "MIT",
+      "role": "Independent OSM-to-3D GLB reference generator"
+    },
+    "pdal": {
+      "repository": "PDAL/PDAL",
+      "ref": "0fffb222dc9f60543a99ed93931a63d9cfe24456",
+      "image": "pdal/pdal:2.9.0",
+      "license": "BSD-3-Clause-like",
+      "role": "Raw LAZ height-above-ground reference processing"
+    },
+    "odm": {
+      "repository": "OpenDroneMap/ODM",
+      "license": "AGPL-3.0",
+      "role": "Optional external photogrammetry tool only; not vendored or linked into core pipeline"
+    }
+  }
+}
