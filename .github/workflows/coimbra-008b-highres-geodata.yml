@@ -42,15 +42,6 @@ jobs:
             scripts/fetch_dgt_highres_bridge.py \
             scripts/prepare_dgt_highres_bridge.py
 
-      - name: Validate DGT credential presence
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${DGT_USER:-}" ] || [ -z "${DGT_PASSWORD:-}" ]; then
-            echo "::error::DGT_USER / DGT_PASSWORD repository secrets are required for CDD downloads."
-            exit 2
-          fi
-
       - name: Download DGT MDT-50cm and MDS-50cm
         run: |
           python scripts/fetch_dgt_highres_bridge.py
