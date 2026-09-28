@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "id": "COIMBRA-BRIDGE-007-MINIATURE-DETAILS",
+  "bridge_ref": "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0",
+  "base_scene": "bridge_output_007/coimbra-details-base.blend",
+  "output_scene": "bridge_output_007/coimbra-details-visual-dev.blend",
+  "execution_record": "bridge_output_007/details-execution.json",
+  "verification_report": "bridge_output_007/details-verification.json",
+  "preview_paths": [
+    "bridge_output_007/preview-001.png",
+    "bridge_output_007/preview-181.png",
+    "bridge_output_007/preview-360.png"
+  ],
+  "apatch_judge": "scripts/verify_details_dev_evidence.py",
+  "apatch_probe": "verification/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.probe",
+  "allowed_operations": [
+    "set_render",
+    "render_preview"
+  ],
+  "operations": [
+    {
+      "op": "set_render",
+      "params": {
+        "resolution": [
+          854,
+          480
+        ],
+        "resolution_percentage": 100,
+        "fps": 30,
+        "frame_start": 1,
+        "frame_end": 360
+      }
+    },
+    {
+      "op": "render_preview",
+      "params": {
+        "frame": 1,
+        "path": "bridge_output_007/preview-001.png"
+      }
+    },
+    {
+      "op": "render_preview",
+      "params": {
+        "frame": 360,
+        "path": "bridge_output_007/preview-360.png"
+      }
+    },
+    {
+      "op": "render_preview",
+      "params": {
+        "frame": 181,
+        "path": "bridge_output_007/preview-181.png"
+      }
+    }
+  ],
+  "protected": {
+    "object_globs": [
+      "City_*",
+      "Facade_*",
+      "Vegetation_*",
+      "Detail_*"
+    ],
+    "animation_object_globs": [
+      "City_*",
+      "Facade_*",
+      "Vegetation_*",
+      "Detail_*"
+    ],
+    "frames": [
+      1,
+      120,
+      240,
+      360
+    ],
+    "scene_keys": [
+      "city_source",
+      "city_texture_source",
+      "city_texture_license",
+      "city_terrain_source",
+      "city_bbox",
+      "city_geometry_version",
+      "city_pbr_provider",
+      "city_pbr_license",
+      "city_pbr_plan",
+      "city_pbr_resolution",
+      "city_facade_version",
+      "city_facade_window_count",
+      "city_vegetation_source",
+      "city_vegetation_license",
+      "city_vegetation_version",
+      "city_tree_count",
+      "city_detail_version",
+      "city_car_count",
+      "city_solar_panel_count",
+      "city_rooftop_fixture_count",
+      "city_hvac_count"
+    ]
+  },
+  "expected": {
+    "camera_path": {
+      "name": "Camera",
+      "tolerance": 0.02,
+      "checkpoints": [
+        {
+          "frame": 1,
+          "location": [
+            -470,
+            670,
+            379.5
+          ],
+          "target": [
+            -293.37,
+            851.6,
+            75
+          ],
+          "lens": 52
+        },
+        {
+          "frame": 61,
+          "location": [
+            -830,
+            510,
+            356.5
+          ],
+          "target": [
+            -692.18,
+            331.73,
+            70
+          ],
+          "lens": 52
+        },
+        {
+          "frame": 121,
+          "location": [
+            -650,
+            -150,
+            333.5
+          ],
+          "target": [
+            -521.34,
+            -351.44,
+            65
+          ],
+          "lens": 50
+        },
+        {
+          "frame": 181,
+          "location": [
+            -330,
+            -610,
+            316.25
+          ],
+          "target": [
+            -168.37,
+            -748.07,
+            60
+          ],
+          "lens": 48
+        },
+        {
+          "frame": 241,
+          "location": [
+            260,
+            -760,
+            299
+          ],
+          "target": [
+            463.44,
+            -912.82,
+            55
+          ],
+          "lens": 48
+        },
+        {
+          "frame": 301,
+          "location": [
+            520,
+            -730,
+            281.75
+          ],
+          "target": [
+            666.22,
+            -901.08,
+            50
+          ],
+          "lens": 50
+        },
+        {
+          "frame": 360,
+          "location": [
+            780,
+            -820,
+            287.5
+          ],
+          "target": [
+            666.22,
+            -901.08,
+            50
+          ],
+          "lens": 52
+        }
+      ]
+    },
+    "camera_dof": {
+      "name": "Camera",
+      "use_dof": true,
+      "aperture_fstop": 2.8,
+      "tolerance": 0.05,
+      "focus_checkpoints": [
+        {
+          "frame": 1,
+          "focus_distance": 396.1
+        },
+        {
+          "frame": 61,
+          "focus_distance": 364.5
+        },
+        {
+          "frame": 121,
+          "focus_distance": 359.48
+        },
+        {
+          "frame": 181,
+          "focus_distance": 332.94
+        },
+        {
+          "frame": 241,
+          "focus_distance": 352.53
+        },
+        {
+          "frame": 301,
+          "focus_distance": 323.04
+        },
+        {
+          "frame": 360,
+          "focus_distance": 275.55
+        }
+      ]
+    },
+    "lights": [
+      {
+        "name": "Bridge_VisualGoldenKey",
+        "type": "AREA",
+        "color": [
+          1,
+          0.34,
+          0.11
+        ],
+        "energy": 4200,
+        "size": 450,
+        "location": [
+          -950,
+          -620,
+          260
+        ]
+      }
+    ],
+    "render": {
+      "resolution": [
+        854,
+        480
+      ],
+      "resolution_percentage": 100,
+      "fps": 30,
+      "frame_range": [
+        1,
+        360
+      ]
+    }
+  },
+  "governance": {
+    "mode": "apatch_sdd",
+    "requirement": "SPEC-COIMBRA-DETAILS-1#R1"
+  }
+}
