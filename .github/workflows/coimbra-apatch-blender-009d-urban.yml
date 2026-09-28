@@ -1,0 +1,161 @@
+name: Coimbra urban details 009D
+
+on:
+  pull_request:
+    paths:
+      - "contracts/COIMBRA-BRIDGE-009D-URBAN-DETAILS.json"
+      - "docs/specs/SPEC-COIMBRA-URBAN-DETAILS-1.md"
+      - "scripts/fetch_osm_oss_bridge.py"
+      - "scripts/prepare_osm_oss_local.py"
+      - "blender/build_urban_details.py"
+      - "scripts/verify_urban_details_evidence.py"
+      - "verification/COIMBRA-BRIDGE-009D-URBAN-DETAILS.probe"
+      - ".github/workflows/coimbra-apatch-blender-009d-urban.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  BRIDGE_REF: "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0"
+  MOSAIQ_REF: "f73d030aecd3289007472a887d78aae2e74b6ea0"
+  BASE_RUN_ID: "36492230698"
+  HIGHRES_RUN_ID: "36491512430"
+
+jobs:
+  urban-details:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - name: Checkout pinned MOSAIQ
+        uses: actions/checkout@v4
+        with:
+          repository: TUMFTM/MOSAIQ-OpenStreetMap-to-Blender-Add-On
+          ref: ${{ env.MOSAIQ_REF }}
+          path: _mosaiq/mosaiq_osm_vr
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host dependencies
+        run: |
+          python -m pip install "requests>=2.32,<3" "pyproj>=3.7,<4" "apatch==0.8.48"
+
+      - name: Fetch rich Coimbra OSM semantics
+        run: |
+          python scripts/fetch_osm_oss_bridge.py
+          python scripts/prepare_osm_oss_local.py
+          test -s data/processed/bridge_osm_oss_local.json
+
+      - name: Download approved 008C base scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008c-highres-terrain
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.BASE_RUN_ID }}
+          path: bridge_output_008c_download
+
+      - name: Normalize 008C base scene
+        run: |
+          mkdir -p bridge_output_008c
+          found="$(find bridge_output_008c_download -type f -name 'coimbra-highres-terrain-visual-dev.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_008c/coimbra-highres-terrain-visual-dev.blend
+
+      - name: Download high-resolution terrain grid
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize terrain grid
+        run: |
+          mkdir -p bridge_output_008b
+          found="$(find bridge_output_008b_download -type f -name 'bridge_terrain_highres_2m.npz' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_008b/bridge_terrain_highres_2m.npz
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Build OSM/MOSAIQ urban-detail baseline
+        run: |
+          rm -rf bridge_output_009d
+          blender --background --factory-startup --python-exit-code 1             --python blender/build_urban_details.py
+          cat bridge_output_009d/urban-details-manifest.json
+
+      - name: Start governed APatch urban-detail session
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src"             python scripts/apatch_visual_dev_governance.py               --root "$GITHUB_WORKSPACE" start               --contract contracts/COIMBRA-BRIDGE-009D-URBAN-DETAILS.json               --baseline bridge_output_009d/coimbra-urban-details-base.blend               --output bridge_output_009d/apatch-session-start.json
+
+      - name: Install APatch into Blender Python
+        run: |
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "apatch==0.8.48"
+
+      - name: Build governed urban-detail scene and previews
+        run: |
+          blender --background --factory-startup --python-exit-code 1             --python _bridge/scripts/execute_contract.py --             --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-009D-URBAN-DETAILS.json"             --root "$GITHUB_WORKSPACE"
+
+      - name: Verify protected urban-detail scene
+        run: |
+          blender --background --factory-startup --python-exit-code 1             --python _bridge/scripts/verify_contract.py --             --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-009D-URBAN-DETAILS.json"             --root "$GITHUB_WORKSPACE"
+          cat bridge_output_009d/urban-details-verification.json
+
+      - name: Run frozen APatch urban-detail verification
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src"             python scripts/apatch_visual_dev_governance.py               --root "$GITHUB_WORKSPACE" verify               --output bridge_output_009d/apatch-sdd-verification.json
+
+      - name: Upload governed urban-detail artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-009d-urban-details
+          path: |
+            bridge_output_009d/coimbra-urban-details-visual-dev.blend
+            bridge_output_009d/preview-001.png
+            bridge_output_009d/preview-181.png
+            bridge_output_009d/preview-360.png
+            bridge_output_009d/urban-details-manifest.json
+            bridge_output_009d/urban-details-execution.json
+            bridge_output_009d/urban-details-verification.json
+            bridge_output_009d/apatch-session-start.json
+            bridge_output_009d/apatch-sdd-verification.json
+          if-no-files-found: error
