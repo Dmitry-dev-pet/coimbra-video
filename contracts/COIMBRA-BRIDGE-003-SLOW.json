@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "COIMBRA-BRIDGE-003-SLOW",
-  "bridge_ref": "ea7441cd03bc8a9a4036b64470e358220943a98a",
+  "bridge_ref": "dfba2d8c9249188dab75eccdfebe2e6dbec30f03",
   "base_scene": "bridge_output_003/coimbra-terrain-base.blend",
   "output_scene": "bridge_output_003/coimbra-terrain-slow-edited.blend",
   "execution_record": "bridge_output_003/slow-execution.json",
@@ -353,5 +353,9 @@
         360
       ]
     }
+  },
+  "governance": {
+    "mode": "apatch_sdd",
+    "requirement": "SPEC-COIMBRA-BLENDER-1#R1"
   }
 }
