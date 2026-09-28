@@ -91,6 +91,158 @@ def recalculate_building_normals() -> dict:
     }
 
 
+def _window_materials():
+    def make_principled(name, base_color, roughness, emission_color=None, emission_strength=0.0):
+        material = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        material.use_nodes = True
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        nodes.clear()
+
+        output = nodes.new("ShaderNodeOutputMaterial")
+        bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.inputs["Base Color"].default_value = base_color
+        bsdf.inputs["Roughness"].default_value = roughness
+        bsdf.inputs["Metallic"].default_value = 0.08
+        if "IOR" in bsdf.inputs:
+            bsdf.inputs["IOR"].default_value = 1.45
+        if emission_color is not None:
+            if "Emission Color" in bsdf.inputs:
+                bsdf.inputs["Emission Color"].default_value = emission_color
+                bsdf.inputs["Emission Strength"].default_value = emission_strength
+            elif "Emission" in bsdf.inputs:
+                bsdf.inputs["Emission"].default_value = emission_color
+                bsdf.inputs["Emission Strength"].default_value = emission_strength
+
+        links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+        return material
+
+    dark = make_principled(
+        "Facade_Window_Dark",
+        (0.012, 0.022, 0.032, 1.0),
+        0.18,
+    )
+    warm = make_principled(
+        "Facade_Window_Warm",
+        (0.18, 0.075, 0.025, 1.0),
+        0.28,
+        emission_color=(1.0, 0.22, 0.035, 1.0),
+        emission_strength=0.35,
+    )
+    return dark, warm
+
+
+def add_facade_windows() -> dict:
+    building = bpy.data.objects.get("City_Buildings")
+    if building is None or building.type != "MESH":
+        raise RuntimeError("City_Buildings mesh not found")
+
+    dark, warm = _window_materials()
+    source_mesh = building.data
+    vertices = []
+    faces = []
+    material_indices = []
+    wall_faces = 0
+    skipped_faces = 0
+
+    for polygon_index, polygon in enumerate(source_mesh.polygons):
+        if len(polygon.vertices) != 4 or abs(float(polygon.normal.z)) > 0.25:
+            continue
+        # Roof slots start after the five generated wall materials.
+        if polygon.material_index >= 5:
+            continue
+
+        coords = [source_mesh.vertices[index].co.copy() for index in polygon.vertices]
+        coords.sort(key=lambda point: point.z)
+        bottom = coords[:2]
+        top = coords[2:]
+
+        a, b = bottom
+        horizontal = b - a
+        horizontal.z = 0.0
+        length = horizontal.length
+        bottom_z = (bottom[0].z + bottom[1].z) * 0.5
+        top_z = (top[0].z + top[1].z) * 0.5
+        height = top_z - bottom_z
+
+        if length < 2.2 or height < 2.6:
+            skipped_faces += 1
+            continue
+
+        horizontal.normalize()
+        outward = polygon.normal.copy()
+        outward.z = 0.0
+        if outward.length < 1e-8:
+            skipped_faces += 1
+            continue
+        outward.normalize()
+
+        floor_count = max(1, min(8, int(height / 3.0)))
+        column_count = max(1, min(8, int(length / 3.2)))
+        floor_height = height / floor_count
+        bay_width = length / column_count
+        window_width = min(1.35, bay_width * 0.54)
+        window_height = min(1.45, floor_height * 0.48)
+
+        wall_faces += 1
+        for floor in range(floor_count):
+            center_z = bottom_z + floor_height * (floor + 0.58)
+            for column in range(column_count):
+                distance = bay_width * (column + 0.5)
+                # Anchor at the midpoint of the lower wall edge so small terrain
+                # height differences at corners do not shear the facade grid.
+                base_mid = (bottom[0] + bottom[1]) * 0.5
+                center = (
+                    base_mid
+                    + horizontal * (distance - length * 0.5)
+                    + Vector((0.0, 0.0, center_z - bottom_z))
+                    + outward * 0.055
+                )
+
+                half_w = horizontal * (window_width * 0.5)
+                half_h = Vector((0.0, 0.0, window_height * 0.5))
+                start = len(vertices)
+                vertices.extend(
+                    (
+                        tuple(center - half_w - half_h),
+                        tuple(center + half_w - half_h),
+                        tuple(center + half_w + half_h),
+                        tuple(center - half_w + half_h),
+                    )
+                )
+                faces.append((start, start + 1, start + 2, start + 3))
+
+                token = (polygon_index * 131 + floor * 17 + column * 29) % 100
+                material_indices.append(1 if token < 7 else 0)
+
+    if not faces:
+        raise RuntimeError("Facade window generation produced no geometry")
+
+    mesh = bpy.data.meshes.new("Facade_Windows_Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+
+    windows = bpy.data.objects.new("Facade_Windows", mesh)
+    bpy.context.collection.objects.link(windows)
+    windows.data.materials.append(dark)
+    windows.data.materials.append(warm)
+    for polygon, material_index in zip(windows.data.polygons, material_indices):
+        polygon.material_index = material_index
+
+    windows["source"] = "procedural from City_Buildings wall quads"
+    windows["facade_version"] = "coimbra-facade-windows-v1"
+    windows["window_count"] = len(faces)
+
+    return {
+        "object": windows.name,
+        "wall_faces": wall_faces,
+        "skipped_faces": skipped_faces,
+        "window_count": len(faces),
+        "dark_windows": material_indices.count(0),
+        "warm_windows": material_indices.count(1),
+    }
+
+
 def flatten_road_curves() -> dict:
     converted = {}
 
@@ -205,6 +357,7 @@ def main() -> None:
     downloads = json.loads(DOWNLOAD_MANIFEST.read_text())
     bpy.ops.wm.open_mainfile(filepath=str(BASE))
     building_normals = recalculate_building_normals()
+    facade_windows = add_facade_windows()
     flattened_roads = flatten_road_curves()
 
     applied = {}
@@ -220,6 +373,8 @@ def main() -> None:
     scene["city_pbr_license"] = plan["license"]
     scene["city_pbr_plan"] = plan["id"]
     scene["city_pbr_resolution"] = plan["resolution"]
+    scene["city_facade_version"] = "coimbra-facade-windows-v1"
+    scene["city_facade_window_count"] = int(facade_windows["window_count"])
 
     bpy.ops.file.pack_all()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -238,6 +393,7 @@ def main() -> None:
         "output_scene": OUT_BLEND.relative_to(ROOT).as_posix(),
         "materials": applied,
         "building_normals": building_normals,
+        "facade_windows": facade_windows,
         "flattened_roads": flattened_roads,
         "packed_images": packed,
         "all_file_images_packed": all(packed.values()) if packed else False,
