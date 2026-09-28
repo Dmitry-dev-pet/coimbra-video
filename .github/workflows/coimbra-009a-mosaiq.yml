@@ -5,6 +5,7 @@ on:
     paths:
       - "config/open_source_stack.json"
       - "docs/OPEN_SOURCE_STACK.md"
+      - "scripts/fetch_osm_oss_bridge.py"
       - "scripts/prepare_osm_oss_local.py"
       - "blender/build_mosaiq_details_benchmark.py"
       - ".github/workflows/coimbra-009a-mosaiq.yml"
@@ -44,7 +45,7 @@ jobs:
 
       - name: Fetch Coimbra OSM and prepare local OSS data
         run: |
-          python scripts/fetch_osm_bridge.py
+          python scripts/fetch_osm_oss_bridge.py
           python scripts/prepare_osm_oss_local.py
           test -s data/processed/bridge_osm_oss_local.json
 
