@@ -53,3 +53,12 @@ For 005, the legacy `City_Roads_*` CURVE bevel geometry may be converted before 
 The 005 facade pass may generate one deterministic `Facade_Windows` mesh before
 APatch session start. Protect `Facade_*` alongside `City_*`; do not mutate
 window geometry or facade provenance after the textured baseline is frozen.
+
+
+## Vegetation development bridge 006
+`COIMBRA-BRIDGE-006-VEGETATION` may add one deterministic
+`Vegetation_Trees` mesh before APatch session start using OSM tree/green-area
+data plus DGT terrain elevation. Avoid trees on buildings, facade quads and road
+ribbons via scene ray-cast rejection. After `coimbra-vegetation-base.blend` is
+frozen, protect `Vegetation_*` together with `City_*` and `Facade_*`.
+Cars are out of scope for this pass.

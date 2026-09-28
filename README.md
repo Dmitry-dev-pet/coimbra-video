@@ -187,3 +187,17 @@ The 005 visual baseline now also generates one lightweight procedural
 `Facade_Windows` mesh from building wall quads. It adds repeated dark windows
 and a small deterministic warm-lit subset without creating thousands of Blender
 objects.
+
+
+## Vegetation development 006
+
+`COIMBRA-BRIDGE-006-VEGETATION` builds on the approved 005 textured/facade
+scene and adds a lightweight low-poly tree layer. Exact OSM `natural=tree`
+nodes are used when present; green OSM areas are deterministically sampled for
+additional sparse coverage. Tree ground elevation comes from the pinned DGT
+terrain model.
+
+Trees are combined into one `Vegetation_Trees` mesh with a small material
+palette so the Blender file stays practical. Buildings, facades, roads,
+vegetation and provenance metadata are protected after the 006 baseline is
+frozen. Normal iteration still renders only frames 1, 181 and 360.
