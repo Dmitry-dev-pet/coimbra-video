@@ -36,3 +36,13 @@ golden key light, render settings, and preview frames. Do not run the full
 360-frame MP4 render during normal 004 iteration. CI should emit the inspectable
 `.blend` plus previews for frames 1, 181, and 360. Protected `City_*` geometry
 and animation must remain unchanged.
+
+
+## Texture development bridge 005
+`COIMBRA-BRIDGE-005-TEXTURES` builds on the approved 004 visual look. Texture
+base preparation may fetch only the CC0 assets declared in
+`textures/COIMBRA-005-polyhaven.json`, at the declared resolution/maps, and must
+pack them into `bridge_output_005/coimbra-textured-base.blend`. That packed
+scene becomes the APatch baseline. After session start, protected `City_*`
+state and the PBR provenance scene keys must remain unchanged. Normal 005
+iteration renders only preview frames 1, 181 and 360, never the full movie.
