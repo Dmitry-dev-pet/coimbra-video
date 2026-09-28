@@ -16,12 +16,12 @@ TERRAIN_META = ROOT / "data" / "processed" / "bridge_terrain_6m.json"
 OUT = ROOT / "data" / "processed" / "bridge_cars_ortho_2025.json"
 PREVIEW = ROOT / "data" / "processed" / "bridge_cars_ortho_2025_preview.jpg"
 
-MODEL = "yolo26n-obb.pt"
+MODEL = "yolo26s-obb.pt"
 ULTRALYTICS_VERSION = "8.4.161"
-TILE = 1024
-OVERLAP = 160
-CONFIDENCE = 0.18
-DEDUPE_DISTANCE_M = 1.5
+TILE = 512
+OVERLAP = 96
+CONFIDENCE = 0.06
+DEDUPE_DISTANCE_M = 1.2
 
 PALETTE = [
     (168, 24, 19),   # red
@@ -111,7 +111,7 @@ def main() -> None:
             tile = np.asarray(image.crop((x0, y0, x0 + TILE, y0 + TILE)))
             results = model.predict(
                 source=tile,
-                imgsz=TILE,
+                imgsz=1024,
                 conf=CONFIDENCE,
                 iou=0.55,
                 device="cpu",
@@ -138,10 +138,10 @@ def main() -> None:
                 long_m, short_m, angle = geometry_from_quad(global_quad, resolution)
 
                 if class_name == "small vehicle":
-                    if not (2.3 <= long_m <= 7.0 and 1.0 <= short_m <= 3.2):
+                    if not (1.6 <= long_m <= 7.5 and 0.75 <= short_m <= 3.2):
                         continue
                 else:
-                    if not (4.0 <= long_m <= 16.0 and 1.4 <= short_m <= 4.5):
+                    if not (3.0 <= long_m <= 18.0 and 1.1 <= short_m <= 4.8):
                         continue
 
                 cx_px, cy_px = map(float, center_px)
