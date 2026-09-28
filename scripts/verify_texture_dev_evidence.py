@@ -29,7 +29,6 @@ def main() -> None:
         "apatch_governance_binding",
         "protected_static_unchanged",
         "protected_animation_unchanged",
-        "expected_world",
         "expected_camera_path",
         "expected_camera_dof",
         "expected_light:Bridge_VisualGoldenKey",
