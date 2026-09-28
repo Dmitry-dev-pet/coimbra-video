@@ -30,6 +30,12 @@ jobs:
           python -m pip install \
             "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" "rasterio>=1.4,<2"
 
+      - name: Compile high-resolution geodata pipeline
+        run: |
+          python -m py_compile \
+            scripts/fetch_dgt_highres_bridge.py \
+            scripts/prepare_dgt_highres_bridge.py
+
       - name: Validate DGT credential presence
         shell: bash
         run: |
