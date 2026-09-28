@@ -1,0 +1,58 @@
+name: Validate Coimbra terrain bridge 003
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/fetch_mds_bridge.py"
+      - "scripts/prepare_mds_bridge.py"
+      - "blender/build_dgt_terrain_scene.py"
+      - "contracts/COIMBRA-BRIDGE-003.json"
+      - ".github/workflows/coimbra-apatch-blender-003.yml"
+      - ".github/workflows/coimbra-apatch-blender-003-validate.yml"
+  pull_request:
+    paths:
+      - "scripts/fetch_mds_bridge.py"
+      - "scripts/prepare_mds_bridge.py"
+      - "blender/build_dgt_terrain_scene.py"
+      - "contracts/COIMBRA-BRIDGE-003.json"
+      - ".github/workflows/coimbra-apatch-blender-003.yml"
+      - ".github/workflows/coimbra-apatch-blender-003-validate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender contract parser
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ea7441cd03bc8a9a4036b64470e358220943a98a
+          path: _bridge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile terrain pipeline
+        run: |
+          python -m py_compile \
+            scripts/fetch_mds_bridge.py \
+            scripts/prepare_mds_bridge.py \
+            blender/build_dgt_terrain_scene.py
+
+      - name: Validate 003 contract schema
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" python - <<'PY'
+          from apatch_blender.contracts import load_contract
+          contract = load_contract("contracts/COIMBRA-BRIDGE-003.json")
+          assert contract.id == "COIMBRA-BRIDGE-003"
+          assert "animate_camera_path" in contract.allowed_operations
+          assert "City_*" in contract.protected["object_globs"]
+          print("003 contract valid:", contract.id)
+          PY
