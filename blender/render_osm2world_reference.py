@@ -80,7 +80,7 @@ def main() -> None:
     look_at(camera, center)
 
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE_NEXT"
+    scene.render.engine = "BLENDER_EEVEE"
     scene.render.resolution_x = 1024
     scene.render.resolution_y = 768
     scene.render.resolution_percentage = 100
