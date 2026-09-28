@@ -150,3 +150,16 @@ The DGT data are open-data. The CDD download flow required one authenticated acq
 ## Slow terrain flight
 
 `COIMBRA-BRIDGE-003-SLOW` preserves the validated DGT/MDT terrain route and doubles its duration from 6 to 12 seconds. The same seven camera poses are retimed over 360 frames at 30 fps, so geometry, framing targets, lighting, and route remain comparable to the original 003 proof.
+
+
+## Visual development 004
+
+`COIMBRA-BRIDGE-004-VISUAL` is the fast Blender look-development loop. It
+keeps the full 360-frame route in the scene for local scrubbing, but GitHub
+Actions renders only three 854×480 previews (frames 1, 181, and 360) and uploads
+the governed `coimbra-visual-dev.blend`.
+
+The first look raises the camera about 15% while preserving XY positions,
+targets, lenses, and timing; combines cool ambient light with a warm low golden
+key; and enables moderate camera depth of field. Full MP4 rendering is deferred
+until the visual style is approved.
