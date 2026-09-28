@@ -1,0 +1,151 @@
+name: Coimbra highres terrain 008C
+
+on:
+  pull_request:
+    paths:
+      - "contracts/COIMBRA-BRIDGE-008C-HIGHRES-TERRAIN.json"
+      - "docs/specs/SPEC-COIMBRA-HIGHRES-TERRAIN-1.md"
+      - "blender/apply_highres_terrain.py"
+      - "scripts/verify_highres_terrain_evidence.py"
+      - "verification/COIMBRA-BRIDGE-008C-HIGHRES-TERRAIN.probe"
+      - ".github/workflows/coimbra-apatch-blender-008c-highres.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  BRIDGE_REF: "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0"
+  CAR_RUN_ID: "36488434131"
+  HIGHRES_RUN_ID: "36491512430"
+
+jobs:
+  highres-terrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install APatch
+        run: python -m pip install "apatch==0.8.48"
+
+      - name: Download successful 008A car-reality scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008a-car-reality
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.CAR_RUN_ID }}
+          path: bridge_output_008a_download
+
+      - name: Normalize 008A baseline
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_008a
+          found="$(find bridge_output_008a_download -type f -name 'coimbra-car-reality-visual-dev.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_008a/coimbra-car-reality-visual-dev.blend
+          test -s bridge_output_008a/coimbra-car-reality-visual-dev.blend
+
+      - name: Download successful 008B high-resolution geodata
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize 008B highres inputs
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_008b
+          for name in             bridge_terrain_highres_2m.npz             bridge_height_above_ground_1m.npz             highres-geodata-manifest.json
+          do
+            found="$(find bridge_output_008b_download -type f -name "$name" -print -quit)"
+            test -n "$found"
+            cp "$found" "bridge_output_008b/$name"
+          done
+          ls -lh bridge_output_008b
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Build high-resolution terrain baseline
+        run: |
+          rm -rf bridge_output_008c
+          blender --background --factory-startup --python-exit-code 1             --python blender/apply_highres_terrain.py
+          cat bridge_output_008c/highres-terrain-manifest.json
+
+      - name: Start governed APatch highres session
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src"             python scripts/apatch_visual_dev_governance.py               --root "$GITHUB_WORKSPACE" start               --contract contracts/COIMBRA-BRIDGE-008C-HIGHRES-TERRAIN.json               --baseline bridge_output_008c/coimbra-highres-terrain-base.blend               --output bridge_output_008c/apatch-session-start.json
+
+      - name: Install APatch into Blender Python
+        run: |
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "apatch==0.8.48"
+
+      - name: Build highres visual-dev blend and previews
+        run: |
+          blender --background --factory-startup --python-exit-code 1             --python _bridge/scripts/execute_contract.py --             --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-008C-HIGHRES-TERRAIN.json"             --root "$GITHUB_WORKSPACE"
+
+      - name: Verify protected high-resolution scene
+        run: |
+          blender --background --factory-startup --python-exit-code 1             --python _bridge/scripts/verify_contract.py --             --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-008C-HIGHRES-TERRAIN.json"             --root "$GITHUB_WORKSPACE"
+          cat bridge_output_008c/highres-terrain-verification.json
+
+      - name: Run frozen APatch highres verification
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src"             python scripts/apatch_visual_dev_governance.py               --root "$GITHUB_WORKSPACE" verify               --output bridge_output_008c/apatch-sdd-verification.json
+
+      - name: Upload highres terrain artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-008c-highres-terrain
+          path: |
+            bridge_output_008c/coimbra-highres-terrain-visual-dev.blend
+            bridge_output_008c/preview-001.png
+            bridge_output_008c/preview-181.png
+            bridge_output_008c/preview-360.png
+            bridge_output_008c/highres-terrain-manifest.json
+            bridge_output_008c/highres-terrain-execution.json
+            bridge_output_008c/highres-terrain-verification.json
+            bridge_output_008c/apatch-session-start.json
+            bridge_output_008c/apatch-sdd-verification.json
+          if-no-files-found: error
