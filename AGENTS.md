@@ -26,3 +26,13 @@ The first OSM scene is intentionally reproducible without DGT credentials. DGT M
 
 ## Slow-flight variant
 `COIMBRA-BRIDGE-003-SLOW` is a timing-only derivative of the verified 003 route. Preserve all camera locations, targets, lenses, protected `City_*` geometry, terrain source, and lighting; only retime the path to 360 frames / 12 seconds unless the contract is explicitly amended.
+
+
+## Visual development bridge 004
+`COIMBRA-BRIDGE-004-VISUAL` is the fast visual-review lane. Keep the verified
+003-SLOW XY route, targets, lenses, and 360-frame timing, but allow explicit
+visual changes to camera height, bounded camera DOF, world light, one bounded
+golden key light, render settings, and preview frames. Do not run the full
+360-frame MP4 render during normal 004 iteration. CI should emit the inspectable
+`.blend` plus previews for frames 1, 181, and 360. Protected `City_*` geometry
+and animation must remain unchanged.
