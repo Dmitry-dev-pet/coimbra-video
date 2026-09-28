@@ -24,6 +24,7 @@ if str(MOSAIQ_PARENT) not in sys.path:
 
 import mosaiq_osm_vr  # type: ignore
 from mosaiq_osm_vr.src import addon_core as mos_core  # type: ignore
+from mosaiq_osm_vr.src import addon_ui as mos_ui  # type: ignore
 
 
 class TerrainSampler:
@@ -178,8 +179,8 @@ def main() -> None:
         stats["roads_considered"] += 1
         road_width = mos_core.highway_width_m(tags)
 
-        parking = mos_core.parse_parking_lanes(tags)
-        sidewalks = mos_core.parse_sidewalks(tags)
+        parking = mos_ui.parse_parking_lanes(tags)
+        sidewalks = mos_ui.parse_sidewalks(tags)
 
         for side in sidewalks:
             sign = 1.0 if side == "left" else -1.0
