@@ -137,11 +137,11 @@ The DGT orthophoto is fetched only for the route bbox and is embedded into the p
 ## DGT terrain bridge 003
 
 `COIMBRA-BRIDGE-003` is the terrain upgrade:
-- authenticated DGT `MDS-2m` tiles;
+- authenticated DGT `MDT-2m` tiles;
 - 6 m render terrain generated from the official surface model;
 - OSM buildings and roads transformed to EPSG:3763 and draped onto the terrain;
 - DGT 2025 ortho packed into the terrain material;
 - the same generic APatch Blender camera/light/render contract;
 - all `City_*` terrain/building/road geometry protected by semantic verification.
 
-The DGT data are open-data. The CDD download flow required one authenticated acquisition, so the exact route crop is now pinned in the repository as a compact 6 m derived terrain asset (`bridge_terrain_6m.npz`, about 400 KB). Normal CI runs no longer need DGT credentials. The source provenance remains DGT MDS-2m, with the original 2 m data downsampled to 6 m for rendering.
+The DGT data are open-data. The CDD download flow required one authenticated acquisition, so the exact route crop is now pinned in the repository as a compact 6 m derived terrain asset (`bridge_terrain_6m.npz`, about 400 KB). Normal CI runs no longer need DGT credentials. The source provenance remains DGT MDT-2m, with the original 2 m data downsampled to 6 m for rendering.

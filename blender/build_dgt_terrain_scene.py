@@ -149,7 +149,7 @@ def build_terrain(xs, ys, z, z0, mat):
     obj = bpy.data.objects.new("City_Terrain", mesh)
     bpy.context.collection.objects.link(obj)
     obj.data.materials.append(mat)
-    obj["source"] = "DGT MDS-2m"
+    obj["source"] = "DGT MDT-2m"
     obj["terrain_resolution_m"] = float(abs(xs[1] - xs[0])) if len(xs) > 1 else 0.0
     return obj
 
@@ -208,7 +208,7 @@ def build_buildings(ways, nodes, sample_height, materials):
         obj.data.materials.append(mat)
     for polygon, index in zip(obj.data.polygons, indices):
         polygon.material_index = index
-    obj["source"] = "OpenStreetMap draped on DGT MDS-2m"
+    obj["source"] = "OpenStreetMap draped on DGT MDT-2m"
     obj["building_count"] = count
     return count, len(vertices), len(faces)
 
@@ -253,7 +253,7 @@ def build_roads(ways, nodes, sample_height, materials):
         obj = bpy.data.objects.new(f"City_Roads_{group}", curve)
         bpy.context.collection.objects.link(obj)
         obj.data.materials.append(materials[group])
-        obj["source"] = "OpenStreetMap draped on DGT MDS-2m"
+        obj["source"] = "OpenStreetMap draped on DGT MDT-2m"
         obj["road_way_count"] = len(polylines)
         counts[group] = len(polylines)
     return counts
@@ -316,12 +316,12 @@ def main():
     add_camera_and_sun()
 
     scene = bpy.context.scene
-    scene["city_source"] = "OpenStreetMap + DGT MDS-2m"
+    scene["city_source"] = "OpenStreetMap + DGT MDT-2m"
     scene["city_texture_source"] = "DGT Orthophotos 2025"
     scene["city_texture_license"] = "CC BY 4.0"
-    scene["city_terrain_source"] = "DGT MDS-2m"
+    scene["city_terrain_source"] = "DGT MDT-2m"
     scene["city_bbox"] = ",".join(str(v) for v in meta["bbox_epsg3763"])
-    scene["city_geometry_version"] = "osm-dgt-terrain-v3"
+    scene["city_geometry_version"] = "osm-dgt-mdt-terrain-v3"
     scene.render.engine = "BLENDER_EEVEE"
     if scene.eevee is not None:
         scene.eevee.taa_render_samples = 1

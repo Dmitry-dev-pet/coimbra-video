@@ -21,4 +21,4 @@ The first OSM scene is intentionally reproducible without DGT credentials. DGT M
 
 
 ## DGT terrain bridge 003
-`COIMBRA-BRIDGE-003` uses the pinned derived DGT MDS-2m crop in `data/processed/bridge_terrain_6m.npz`. The bridge contract permits only world, camera-path, light, render, and preview operations; terrain/buildings/roads remain protected. Do not replace the pinned terrain with unverified geometry during ordinary CI.
+`COIMBRA-BRIDGE-003` uses the pinned derived DGT MDT-2m crop in `data/processed/bridge_terrain_6m.npz`. The bridge contract permits only world, camera-path, light, render, and preview operations; terrain/buildings/roads remain protected. Do not replace the pinned terrain with unverified geometry during ordinary CI.

@@ -58,3 +58,8 @@ The workflow requests a bounded Coimbra corridor from the public Overpass API an
 `COIMBRA-BRIDGE-002` fetches the DGT `Ortos2025-RGB` WMS for the exact Coimbra route bbox and applies it to the Blender ground plane.
 
 The orthophoto source is DGT Orthophotos 2025, catalogued as CC BY 4.0. The final video includes DGT and OpenStreetMap attribution.
+
+
+## DGT MDT-2m terrain crop
+
+`COIMBRA-BRIDGE-003` uses DGT `MDT-2m` as the bare-earth terrain source. Nine source tiles intersect the route bbox. The pinned derived asset is downsampled from 2 m to 6 m for CI rendering; the original source remains DGT open data. The MDT is used instead of MDS because MDS includes buildings and vegetation surfaces, which would double-count those features when OSM buildings are extruded separately.
