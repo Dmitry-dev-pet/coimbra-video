@@ -51,3 +51,10 @@ Copyright/license:
 https://www.openstreetmap.org/copyright
 
 The workflow requests a bounded Coimbra corridor from the public Overpass API and renders its own Blender geometry; it does not use OpenStreetMap raster tiles.
+
+
+## Bridge 002 texture use
+
+`COIMBRA-BRIDGE-002` fetches the DGT `Ortos2025-RGB` WMS for the exact Coimbra route bbox and applies it to the Blender ground plane.
+
+The orthophoto source is DGT Orthophotos 2025, catalogued as CC BY 4.0. The final video includes DGT and OpenStreetMap attribution.

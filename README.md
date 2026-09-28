@@ -120,3 +120,15 @@ The repository now also contains a credential-free contract-governed Blender pat
 - outputs a 854×480 H.264 MP4 with OpenStreetMap attribution.
 
 This is separate from the Earth Studio path and exists specifically as the large integration test for the generic Blender bridge.
+
+
+## Textured Blender bridge 002
+
+`COIMBRA-BRIDGE-002` upgrades the reproducible OSM city with:
+- DGT 2025 25 cm orthophoto packed into the Blender file;
+- separate deterministic wall and roof materials for buildings;
+- improved road-class materials;
+- the same contract-governed camera/lighting/render edits;
+- protected `City_*` geometry verified by semantic hashes.
+
+The DGT orthophoto is fetched only for the route bbox and is embedded into the prepared `.blend`, so parallel render jobs remain self-contained.
