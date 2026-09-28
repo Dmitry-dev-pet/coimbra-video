@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import bpy
+import bmesh
 from mathutils import Vector
 
 
@@ -65,6 +66,29 @@ def _flat_ribbon_geometry(obj):
             faces.append((a, b, c, d))
 
     return vertices, faces, half_width, spline_count
+
+
+def recalculate_building_normals() -> dict:
+    obj = bpy.data.objects.get("City_Buildings")
+    if obj is None or obj.type != "MESH":
+        raise RuntimeError("City_Buildings mesh not found")
+
+    mesh = obj.data
+    before_polygons = len(mesh.polygons)
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        mesh.update()
+    finally:
+        bm.free()
+
+    return {
+        "object": obj.name,
+        "polygons": before_polygons,
+        "mode": "recalculate_outside",
+    }
 
 
 def flatten_road_curves() -> dict:
@@ -180,6 +204,7 @@ def main() -> None:
     plan = json.loads(PLAN_PATH.read_text())
     downloads = json.loads(DOWNLOAD_MANIFEST.read_text())
     bpy.ops.wm.open_mainfile(filepath=str(BASE))
+    building_normals = recalculate_building_normals()
     flattened_roads = flatten_road_curves()
 
     applied = {}
@@ -212,6 +237,7 @@ def main() -> None:
         "resolution": plan["resolution"],
         "output_scene": OUT_BLEND.relative_to(ROOT).as_posix(),
         "materials": applied,
+        "building_normals": building_normals,
         "flattened_roads": flattened_roads,
         "packed_images": packed,
         "all_file_images_packed": all(packed.values()) if packed else False,
