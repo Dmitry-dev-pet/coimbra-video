@@ -179,3 +179,5 @@ during ordinary texture iteration; Actions emit the inspectable `.blend` plus
 frames 1, 181 and 360.
 
 Texture assets are CC0. API integration: **Powered by Poly Haven**.
+
+The 005 preparation step also replaces the legacy beveled road curves with flat terrain-following mesh ribbons, preserving the same centerlines and widths so roads read as roads rather than pipes.
