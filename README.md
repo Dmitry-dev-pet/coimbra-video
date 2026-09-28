@@ -163,3 +163,19 @@ The first look raises the camera about 15% while preserving XY positions,
 targets, lenses, and timing; combines cool ambient light with a warm low golden
 key; and enables moderate camera depth of field. Full MP4 rendering is deferred
 until the visual style is approved.
+
+
+## Texture development 005
+
+`COIMBRA-BRIDGE-005-TEXTURES` keeps the approved 004 camera/light/DOF look and
+adds a reproducible CC0 PBR material layer to the generated city. CI downloads
+the declared 1K materials from the official Poly Haven API, applies them with
+triplanar box mapping, packs the images into a textured baseline `.blend`, and
+then hashes that baseline into the APatch SDD session.
+
+The first material set uses plaster/stone wall variants, weathered terracotta
+roof tiles, asphalt, and cobblestone paving. Full MP4 rendering remains disabled
+during ordinary texture iteration; Actions emit the inspectable `.blend` plus
+frames 1, 181 and 360.
+
+Texture assets are CC0. API integration: **Powered by Poly Haven**.
