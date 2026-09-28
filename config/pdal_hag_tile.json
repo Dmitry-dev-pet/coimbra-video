@@ -1,0 +1,22 @@
+{
+  "pipeline": [
+    {
+      "type": "readers.las",
+      "filename": "INPUT.laz"
+    },
+    {
+      "type": "filters.hag_delaunay"
+    },
+    {
+      "type": "writers.gdal",
+      "filename": "OUTPUT.tif",
+      "dimension": "HeightAboveGround",
+      "data_type": "float32",
+      "gdaldriver": "GTiff",
+      "output_type": "max",
+      "resolution": 1.0,
+      "nodata": -9999,
+      "window_size": 0
+    }
+  ]
+}
