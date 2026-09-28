@@ -1,6 +1,15 @@
 name: Coimbra DGT terrain APatch Blender 003
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "data/processed/bridge_terrain_6m.npz"
+      - "data/processed/bridge_terrain_6m.json"
+      - "scripts/prepare_osm_local_for_terrain.py"
+      - "blender/build_dgt_terrain_scene.py"
+      - "contracts/COIMBRA-BRIDGE-003.json"
+      - ".github/workflows/coimbra-apatch-blender-003.yml"
   workflow_dispatch:
 
 permissions:
@@ -15,18 +24,8 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      DGT_USER: ${{ secrets.DGT_USER }}
-      DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
-      - name: Require DGT credentials
-        shell: bash
-        run: |
-          if [ -z "$DGT_USER" ] || [ -z "$DGT_PASSWORD" ]; then
-            echo "::error::COIMBRA-BRIDGE-003 requires repository secrets DGT_USER and DGT_PASSWORD."
-            exit 1
-          fi
       - uses: actions/checkout@v4
         with:
           repository: Dmitry-dev-pet/apatch-blender
@@ -37,13 +36,15 @@ jobs:
           python-version: "3.12"
       - name: Install geodata dependencies
         run: |
-          python -m pip install "requests>=2.32,<3" "numpy>=2,<3" "rasterio>=1.4,<2" "pyproj>=3.7,<4" "Pillow>=11,<12"
-      - name: Fetch OSM, DGT ortho and DGT MDS-2m
+          python -m pip install "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" "Pillow>=11,<12"
+      - name: Prepare public inputs around pinned DGT terrain
         run: |
+          set -euo pipefail
+          test -s data/processed/bridge_terrain_6m.npz
+          test -s data/processed/bridge_terrain_6m.json
           python scripts/fetch_osm_bridge.py
           python scripts/fetch_dgt_ortho_bridge.py
-          python scripts/fetch_mds_bridge.py
-          python scripts/prepare_mds_bridge.py
+          python scripts/prepare_osm_local_for_terrain.py
       - uses: actions/cache@v4
         with:
           path: /home/runner/.cache/blender-5.2.2

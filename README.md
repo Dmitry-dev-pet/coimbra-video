@@ -144,4 +144,4 @@ The DGT orthophoto is fetched only for the route bbox and is embedded into the p
 - the same generic APatch Blender camera/light/render contract;
 - all `City_*` terrain/building/road geometry protected by semantic verification.
 
-The DGT data are open-data, but the current CDD download flow requires an authenticated DGT session. The workflow is therefore manual-only and requires repository secrets `DGT_USER` and `DGT_PASSWORD`.
+The DGT data are open-data. The CDD download flow required one authenticated acquisition, so the exact route crop is now pinned in the repository as a compact 6 m derived terrain asset (`bridge_terrain_6m.npz`, about 400 KB). Normal CI runs no longer need DGT credentials. The source provenance remains DGT MDS-2m, with the original 2 m data downsampled to 6 m for rendering.

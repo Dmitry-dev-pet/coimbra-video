@@ -21,4 +21,4 @@ The first OSM scene is intentionally reproducible without DGT credentials. DGT M
 
 
 ## DGT terrain bridge 003
-`COIMBRA-BRIDGE-003` is manual-only because DGT CDD currently requires authenticated download. Never commit DGT credentials. Use repository secrets `DGT_USER` and `DGT_PASSWORD`. The bridge contract still permits only world, camera-path, light, render, and preview operations; terrain/buildings/roads remain protected.
+`COIMBRA-BRIDGE-003` uses the pinned derived DGT MDS-2m crop in `data/processed/bridge_terrain_6m.npz`. The bridge contract permits only world, camera-path, light, render, and preview operations; terrain/buildings/roads remain protected. Do not replace the pinned terrain with unverified geometry during ordinary CI.
