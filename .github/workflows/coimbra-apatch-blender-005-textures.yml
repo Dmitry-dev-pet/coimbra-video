@@ -67,8 +67,16 @@ jobs:
           run-id: 36461385207
           path: bridge_output_004
 
-      - name: Validate approved 004 baseline
-        run: test -s bridge_output_004/coimbra-visual-dev.blend
+      - name: Normalize approved 004 baseline path
+        run: |
+          set -euo pipefail
+          found="$(find bridge_output_004 -type f -name 'coimbra-visual-dev.blend' -print -quit)"
+          test -n "$found"
+          if [ "$found" != "bridge_output_004/coimbra-visual-dev.blend" ]; then
+            cp "$found" bridge_output_004/coimbra-visual-dev.blend
+          fi
+          test -s bridge_output_004/coimbra-visual-dev.blend
+          ls -lh bridge_output_004/coimbra-visual-dev.blend
 
       - name: Fetch CC0 Poly Haven PBR set
         run: |
