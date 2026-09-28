@@ -59,16 +59,16 @@ jobs:
             "apatch==0.8.48"
 
       - name: Download approved 004 visual baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p bridge_output_004
-          gh run download 36461385207 \
-            --repo "$GITHUB_REPOSITORY" \
-            --name coimbra-004-visual-dev \
-            --dir bridge_output_004
-          test -s bridge_output_004/coimbra-visual-dev.blend
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-004-visual-dev
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 36461385207
+          path: bridge_output_004
+
+      - name: Validate approved 004 baseline
+        run: test -s bridge_output_004/coimbra-visual-dev.blend
 
       - name: Fetch CC0 Poly Haven PBR set
         run: |
