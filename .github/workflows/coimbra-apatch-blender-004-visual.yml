@@ -1,0 +1,154 @@
+name: Coimbra visual dev 004
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/COIMBRA-BRIDGE-004-VISUAL.json"
+      - "docs/specs/SPEC-COIMBRA-VISUAL-1.md"
+      - "scripts/apatch_blender_governance.py"
+      - "scripts/verify_visual_dev_evidence.py"
+      - "verification/COIMBRA-BRIDGE-004-VISUAL.probe"
+      - ".github/workflows/coimbra-apatch-blender-004-visual.yml"
+      - "data/processed/bridge_terrain_6m.npz"
+      - "data/processed/bridge_terrain_6m.json"
+      - "scripts/prepare_osm_local_for_terrain.py"
+      - "blender/build_dgt_terrain_scene.py"
+  pull_request:
+    paths:
+      - "contracts/COIMBRA-BRIDGE-004-VISUAL.json"
+      - "docs/specs/SPEC-COIMBRA-VISUAL-1.md"
+      - "scripts/apatch_blender_governance.py"
+      - "scripts/verify_visual_dev_evidence.py"
+      - "verification/COIMBRA-BRIDGE-004-VISUAL.probe"
+      - ".github/workflows/coimbra-apatch-blender-004-visual.yml"
+      - "data/processed/bridge_terrain_6m.npz"
+      - "data/processed/bridge_terrain_6m.json"
+      - "scripts/prepare_osm_local_for_terrain.py"
+      - "blender/build_dgt_terrain_scene.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  BRIDGE_REF: "4cc6e9e3cc9a53289bdd1e71aebc68136adca116"
+
+jobs:
+  visual-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install geodata and APatch dependencies
+        run: |
+          python -m pip install \
+            "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" "Pillow>=11,<12" \
+            "apatch==0.8.48"
+
+      - name: Prepare public terrain inputs
+        run: |
+          set -euo pipefail
+          test -s data/processed/bridge_terrain_6m.npz
+          test -s data/processed/bridge_terrain_6m.json
+          python scripts/fetch_osm_bridge.py
+          python scripts/fetch_dgt_ortho_bridge.py
+          python scripts/prepare_osm_local_for_terrain.py
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Build terrain base
+        run: |
+          rm -rf bridge_output_003 bridge_output_004
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/build_dgt_terrain_scene.py
+
+      - name: Start governed APatch visual-dev session
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_blender_governance.py \
+              --root "$GITHUB_WORKSPACE" start \
+              --contract contracts/COIMBRA-BRIDGE-004-VISUAL.json \
+              --baseline data/processed/bridge_terrain_6m.npz \
+              --output bridge_output_004/apatch-session-start.json
+
+      - name: Install APatch into Blender Python
+        run: |
+          set -euo pipefail
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "apatch==0.8.48"
+
+      - name: Build visual-dev blend and three previews
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/execute_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-004-VISUAL.json" \
+            --root "$GITHUB_WORKSPACE"
+
+      - name: Verify protected geometry and visual contract
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/verify_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-004-VISUAL.json" \
+            --root "$GITHUB_WORKSPACE"
+          cat bridge_output_004/visual-verification.json
+
+      - name: Run frozen APatch visual-dev verification
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_blender_governance.py \
+              --root "$GITHUB_WORKSPACE" verify \
+              --output bridge_output_004/apatch-sdd-verification.json
+
+      - name: Upload Blender visual-dev artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-004-visual-dev
+          path: |
+            bridge_output_004/coimbra-visual-dev.blend
+            bridge_output_004/preview-001.png
+            bridge_output_004/preview-181.png
+            bridge_output_004/preview-360.png
+            bridge_output_004/visual-execution.json
+            bridge_output_004/visual-verification.json
+            bridge_output_004/apatch-session-start.json
+            bridge_output_004/apatch-sdd-verification.json
+            bridge_output_003/base-manifest.json
+          if-no-files-found: error
