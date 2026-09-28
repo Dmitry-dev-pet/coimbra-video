@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "COIMBRA-BRIDGE-004-VISUAL",
-  "bridge_ref": "4cc6e9e3cc9a53289bdd1e71aebc68136adca116",
+  "bridge_ref": "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0",
   "base_scene": "bridge_output_003/coimbra-terrain-base.blend",
   "output_scene": "bridge_output_004/coimbra-visual-dev.blend",
   "execution_record": "bridge_output_004/visual-execution.json",
