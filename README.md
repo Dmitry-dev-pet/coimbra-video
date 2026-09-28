@@ -145,3 +145,8 @@ The DGT orthophoto is fetched only for the route bbox and is embedded into the p
 - all `City_*` terrain/building/road geometry protected by semantic verification.
 
 The DGT data are open-data. The CDD download flow required one authenticated acquisition, so the exact route crop is now pinned in the repository as a compact 6 m derived terrain asset (`bridge_terrain_6m.npz`, about 400 KB). Normal CI runs no longer need DGT credentials. The source provenance remains DGT MDT-2m, with the original 2 m data downsampled to 6 m for rendering.
+
+
+## Slow terrain flight
+
+`COIMBRA-BRIDGE-003-SLOW` preserves the validated DGT/MDT terrain route and doubles its duration from 6 to 12 seconds. The same seven camera poses are retimed over 360 frames at 30 fps, so geometry, framing targets, lighting, and route remain comparable to the original 003 proof.

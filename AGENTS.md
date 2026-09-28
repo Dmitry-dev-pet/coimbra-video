@@ -22,3 +22,7 @@ The first OSM scene is intentionally reproducible without DGT credentials. DGT M
 
 ## DGT terrain bridge 003
 `COIMBRA-BRIDGE-003` uses the pinned derived DGT MDT-2m crop in `data/processed/bridge_terrain_6m.npz`. The bridge contract permits only world, camera-path, light, render, and preview operations; terrain/buildings/roads remain protected. Do not replace the pinned terrain with unverified geometry during ordinary CI.
+
+
+## Slow-flight variant
+`COIMBRA-BRIDGE-003-SLOW` is a timing-only derivative of the verified 003 route. Preserve all camera locations, targets, lenses, protected `City_*` geometry, terrain source, and lighting; only retime the path to 360 frames / 12 seconds unless the contract is explicitly amended.

@@ -1,0 +1,357 @@
+{
+  "schema_version": 1,
+  "id": "COIMBRA-BRIDGE-003-SLOW",
+  "bridge_ref": "ea7441cd03bc8a9a4036b64470e358220943a98a",
+  "base_scene": "bridge_output_003/coimbra-terrain-base.blend",
+  "output_scene": "bridge_output_003/coimbra-terrain-slow-edited.blend",
+  "execution_record": "bridge_output_003/slow-execution.json",
+  "preview_path": "bridge_output_003/slow-preview.png",
+  "verification_report": "bridge_output_003/slow-verification.json",
+  "video": {
+    "path": "bridge_output_003/coimbra-terrain-slow.mp4",
+    "width": 854,
+    "height": 480,
+    "fps": 30,
+    "duration": 12,
+    "duration_tolerance": 0.15,
+    "min_size": 250000
+  },
+  "allowed_operations": [
+    "set_world",
+    "animate_camera_path",
+    "add_area_light",
+    "set_render",
+    "render_preview"
+  ],
+  "operations": [
+    {
+      "op": "set_world",
+      "params": {
+        "color": [
+          0.018,
+          0.028,
+          0.06,
+          1
+        ],
+        "strength": 0.23
+      }
+    },
+    {
+      "op": "add_area_light",
+      "params": {
+        "name": "Bridge_TerrainSunsetFill",
+        "color": [
+          1,
+          0.45,
+          0.16
+        ],
+        "energy": 3000,
+        "size": 600,
+        "location": [
+          -720,
+          -480,
+          620
+        ],
+        "target": [
+          0,
+          -300,
+          70
+        ]
+      }
+    },
+    {
+      "op": "animate_camera_path",
+      "params": {
+        "camera": "Camera",
+        "clear_existing_animation": true,
+        "keyframes": [
+          {
+            "frame": 1,
+            "location": [
+              -470,
+              670,
+              330
+            ],
+            "target": [
+              -293.37,
+              851.6,
+              75
+            ],
+            "lens": 52
+          },
+          {
+            "frame": 61,
+            "location": [
+              -830,
+              510,
+              310
+            ],
+            "target": [
+              -692.18,
+              331.73,
+              70
+            ],
+            "lens": 52
+          },
+          {
+            "frame": 121,
+            "location": [
+              -650,
+              -150,
+              290
+            ],
+            "target": [
+              -521.34,
+              -351.44,
+              65
+            ],
+            "lens": 50
+          },
+          {
+            "frame": 181,
+            "location": [
+              -330,
+              -610,
+              275
+            ],
+            "target": [
+              -168.37,
+              -748.07,
+              60
+            ],
+            "lens": 48
+          },
+          {
+            "frame": 241,
+            "location": [
+              260,
+              -760,
+              260
+            ],
+            "target": [
+              463.44,
+              -912.82,
+              55
+            ],
+            "lens": 48
+          },
+          {
+            "frame": 301,
+            "location": [
+              520,
+              -730,
+              245
+            ],
+            "target": [
+              666.22,
+              -901.08,
+              50
+            ],
+            "lens": 50
+          },
+          {
+            "frame": 360,
+            "location": [
+              780,
+              -820,
+              250
+            ],
+            "target": [
+              666.22,
+              -901.08,
+              50
+            ],
+            "lens": 52
+          }
+        ]
+      }
+    },
+    {
+      "op": "set_render",
+      "params": {
+        "resolution": [
+          854,
+          480
+        ],
+        "resolution_percentage": 100,
+        "fps": 30,
+        "frame_start": 1,
+        "frame_end": 360
+      }
+    },
+    {
+      "op": "render_preview",
+      "params": {
+        "frame": 181,
+        "path": "bridge_output_003/slow-preview.png"
+      }
+    }
+  ],
+  "protected": {
+    "object_globs": [
+      "City_*"
+    ],
+    "animation_object_globs": [
+      "City_*"
+    ],
+    "frames": [
+      1,
+      120,
+      240,
+      360
+    ],
+    "scene_keys": [
+      "city_source",
+      "city_texture_source",
+      "city_texture_license",
+      "city_terrain_source",
+      "city_bbox",
+      "city_geometry_version"
+    ]
+  },
+  "expected": {
+    "world": {
+      "color": [
+        0.018,
+        0.028,
+        0.06,
+        1
+      ],
+      "strength": 0.23
+    },
+    "camera_path": {
+      "name": "Camera",
+      "tolerance": 0.02,
+      "checkpoints": [
+        {
+          "frame": 1,
+          "location": [
+            -470,
+            670,
+            330
+          ],
+          "target": [
+            -293.37,
+            851.6,
+            75
+          ],
+          "lens": 52
+        },
+        {
+          "frame": 61,
+          "location": [
+            -830,
+            510,
+            310
+          ],
+          "target": [
+            -692.18,
+            331.73,
+            70
+          ],
+          "lens": 52
+        },
+        {
+          "frame": 121,
+          "location": [
+            -650,
+            -150,
+            290
+          ],
+          "target": [
+            -521.34,
+            -351.44,
+            65
+          ],
+          "lens": 50
+        },
+        {
+          "frame": 181,
+          "location": [
+            -330,
+            -610,
+            275
+          ],
+          "target": [
+            -168.37,
+            -748.07,
+            60
+          ],
+          "lens": 48
+        },
+        {
+          "frame": 241,
+          "location": [
+            260,
+            -760,
+            260
+          ],
+          "target": [
+            463.44,
+            -912.82,
+            55
+          ],
+          "lens": 48
+        },
+        {
+          "frame": 301,
+          "location": [
+            520,
+            -730,
+            245
+          ],
+          "target": [
+            666.22,
+            -901.08,
+            50
+          ],
+          "lens": 50
+        },
+        {
+          "frame": 360,
+          "location": [
+            780,
+            -820,
+            250
+          ],
+          "target": [
+            666.22,
+            -901.08,
+            50
+          ],
+          "lens": 52
+        }
+      ]
+    },
+    "lights": [
+      {
+        "name": "Bridge_TerrainSunsetFill",
+        "type": "AREA",
+        "color": [
+          1,
+          0.45,
+          0.16
+        ],
+        "energy": 3000,
+        "size": 600,
+        "location": [
+          -720,
+          -480,
+          620
+        ]
+      }
+    ],
+    "render": {
+      "resolution": [
+        854,
+        480
+      ],
+      "resolution_percentage": 100,
+      "fps": 30,
+      "frame_range": [
+        1,
+        360
+      ]
+    }
+  }
+}
