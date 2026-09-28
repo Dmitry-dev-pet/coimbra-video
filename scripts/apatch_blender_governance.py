@@ -63,10 +63,8 @@ def build_documents(
         raise RuntimeError("SPEC requirement has no frozen verify command")
     command = shlex.split(verify_line)
 
-    judge_relative = str(contract.raw.get("apatch_judge") or JUDGE_PATH)
-    probe_relative = str(contract.raw.get("apatch_probe") or PROBE_PATH)
-    judge_path = root / judge_relative
-    probe_path = root / probe_relative
+    judge_path = root / JUDGE_PATH
+    probe_path = root / PROBE_PATH
     if not judge_path.is_file() or not probe_path.is_file():
         raise RuntimeError("frozen judge assets are missing")
     if not baseline_path.is_file():
@@ -85,14 +83,14 @@ def build_documents(
 
     obligation = {
         "acceptance_id": acceptance_id,
-        "test_id": judge_relative,
+        "test_id": JUDGE_PATH,
         "oracle": (
             "The exact APatch-bound Blender plan produces a passing semantic report, "
-            "preserves protected geometry/animation, and produces its declared outputs."
+            "preserves protected geometry/animation, and produces the declared video."
         ),
         "perspectives": ["positive", "negative", "boundary", "regression"],
         "asset_hashes": [judge_hash],
-        "judge_assets": [{"path": judge_relative, "sha256": judge_hash}],
+        "judge_assets": [{"path": JUDGE_PATH, "sha256": judge_hash}],
         "command": command,
         "command_hash": canonical_hash(command),
         "baseline": {
@@ -105,7 +103,7 @@ def build_documents(
             "kind": "reversible_seed",
             "expected": "red",
             "target_hash": probe_hash,
-            "target_path": probe_relative,
+            "target_path": PROBE_PATH,
         },
         "approver": "owner:repository",
         "material": True,
@@ -114,7 +112,7 @@ def build_documents(
     frozen = freeze_contract(
         {
             "brief_hash": sha256_bytes(
-                f"Govern {contract.id} through APatch SDD".encode()
+                b"Govern the Coimbra slow Blender flight through APatch SDD"
             ),
             "rfp_hash": sha256_path(root / "AGENTS.md"),
             "spec_hash": sha256_path(spec_path),
@@ -136,10 +134,10 @@ def build_documents(
     report_path = str(contract.raw.get("verification_report") or "")
     allowed_reads = unique(
         list(scope["allowed_reads"])
-        + [judge_relative, probe_relative, spec_path.relative_to(root).as_posix()]
+        + [JUDGE_PATH, PROBE_PATH, spec_path.relative_to(root).as_posix()]
         + ([report_path] if report_path else [])
     )
-    allowed_writes = unique(list(scope["allowed_writes"]) + [probe_relative])
+    allowed_writes = unique(list(scope["allowed_writes"]) + [PROBE_PATH])
     if denied_write is not None:
         if denied_write not in allowed_writes:
             raise RuntimeError(f"cannot deny undeclared write: {denied_write}")
@@ -156,7 +154,7 @@ def build_documents(
             "allowed_symbols": [],
             "forbidden_paths": [
                 "docs/specs/**",
-                judge_relative,
+                JUDGE_PATH,
                 ".github/**",
                 "blender/**",
                 "data/**",
