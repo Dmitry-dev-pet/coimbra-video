@@ -1,6 +1,12 @@
 name: Coimbra highres geodata 008B
 
 on:
+  push:
+    branches: [feature/coimbra-008-highres-geodata]
+    paths:
+      - "scripts/fetch_dgt_highres_bridge.py"
+      - "scripts/prepare_dgt_highres_bridge.py"
+      - ".github/workflows/coimbra-008b-highres-geodata.yml"
   pull_request:
     paths:
       - "scripts/fetch_dgt_highres_bridge.py"
