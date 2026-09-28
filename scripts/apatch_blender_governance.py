@@ -7,7 +7,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from apatch.runtime.session import start_session
+from apatch.runtime.session import end_session, start_session
 from apatch.sdd_integrity import (
     canonical_hash,
     freeze_contract,
@@ -18,7 +18,12 @@ from apatch.sdd_integrity import (
 from apatch.session_state import load_session_state
 from apatch.spec import resolve_requirement
 from apatch_blender.contracts import load_contract
-from apatch_blender.governance import plan_check, required_apatch_scope
+from apatch_blender.governance import (
+    GovernanceError,
+    authorize_contract,
+    plan_check,
+    required_apatch_scope,
+)
 
 
 JUDGE_PATH = "scripts/verify_apatch_blender_evidence.py"
@@ -37,7 +42,13 @@ def unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
-def build_documents(root: Path, contract_path: Path, baseline_path: Path) -> dict[str, Any]:
+def build_documents(
+    root: Path,
+    contract_path: Path,
+    baseline_path: Path,
+    *,
+    denied_write: str | None = None,
+) -> dict[str, Any]:
     contract = load_contract(contract_path)
     requirement = str(contract.governance.get("requirement") or "")
     if not requirement:
@@ -127,6 +138,10 @@ def build_documents(root: Path, contract_path: Path, baseline_path: Path) -> dic
         + ([report_path] if report_path else [])
     )
     allowed_writes = unique(list(scope["allowed_writes"]) + [PROBE_PATH])
+    if denied_write is not None:
+        if denied_write not in allowed_writes:
+            raise RuntimeError(f"cannot deny undeclared write: {denied_write}")
+        allowed_writes.remove(denied_write)
 
     envelope = validate_task_envelope(
         {
@@ -201,6 +216,86 @@ def start(root: Path, contract_path: Path, baseline_path: Path, output: Path) ->
     print(json.dumps(evidence, indent=2))
 
 
+def negative_write(
+    root: Path,
+    contract_path: Path,
+    baseline_path: Path,
+    output: Path,
+) -> None:
+    contract = load_contract(contract_path)
+    denied_write = contract.output_scene
+    documents = build_documents(
+        root,
+        contract_path,
+        baseline_path,
+        denied_write=denied_write,
+    )
+
+    mutation_targets = [
+        contract.resolve(root, relative)
+        for relative in documents["scope"]["allowed_writes"]
+    ]
+    existing = [str(path) for path in mutation_targets if path.exists()]
+    if existing:
+        raise RuntimeError(
+            "negative admission precondition failed; target already exists: "
+            + ", ".join(existing)
+        )
+
+    started = start_session(
+        str(root),
+        "Negative admission proof: reject undeclared Coimbra Blender output write",
+        artifacts=[documents["resolved"]["artifact"]],
+        sdd_contract=documents["frozen"],
+        task_envelope=documents["envelope"],
+        actor={"actor_id": "agent:github-actions", "role": "implementation"},
+    )
+    if not started.get("ok"):
+        raise RuntimeError(str(started))
+
+    session_id = started["session_capability"]["session_id"]
+    session_token = started["session_capability"]["session_token"]
+    try:
+        try:
+            authorize_contract(contract, root)
+        except GovernanceError as exc:
+            denial = str(exc)
+        else:
+            raise RuntimeError(
+                "APatch unexpectedly admitted the deliberately undeclared output write"
+            )
+
+        created = [str(path) for path in mutation_targets if path.exists()]
+        if created:
+            raise RuntimeError(
+                "denied admission created Blender/output mutations: " + ", ".join(created)
+            )
+
+        evidence = {
+            "ok": True,
+            "session_id": session_id,
+            "requirement": documents["requirement"],
+            "denied_write": denied_write,
+            "denied_before_blender_mutation": True,
+            "mutation_targets_created": False,
+            "denial": denial,
+            "plan_sha256": sha256_path(contract.path),
+            "task_envelope_hash": documents["envelope"]["document_hash"],
+        }
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(evidence, indent=2) + "\n")
+        print(json.dumps(evidence, indent=2))
+    finally:
+        ended = end_session(
+            str(root),
+            expected_session_id=session_id,
+            session_token=session_token,
+            require_binding=True,
+        )
+        if not ended.get("ok"):
+            raise RuntimeError(f"failed to close negative APatch session: {ended}")
+
+
 def verify(root: Path, output: Path) -> None:
     state = load_session_state(str(root))
     session_id = str(state.get("session_id") or "")
@@ -240,6 +335,14 @@ def main() -> None:
         default="bridge_output_003/apatch-session-start.json",
     )
 
+    negative_parser = sub.add_parser("negative-write")
+    negative_parser.add_argument("--contract", required=True)
+    negative_parser.add_argument("--baseline", required=True)
+    negative_parser.add_argument(
+        "--output",
+        default="bridge_output_003/apatch-negative-admission.json",
+    )
+
     verify_parser = sub.add_parser("verify")
     verify_parser.add_argument(
         "--output",
@@ -253,6 +356,13 @@ def main() -> None:
 
     if args.command == "start":
         start(
+            root,
+            (root / args.contract).resolve(),
+            (root / args.baseline).resolve(),
+            (root / args.output).resolve(),
+        )
+    elif args.command == "negative-write":
+        negative_write(
             root,
             (root / args.contract).resolve(),
             (root / args.baseline).resolve(),
