@@ -50,7 +50,7 @@ jobs:
 
       - name: Build pinned OSM2World
         working-directory: _osm2world
-        run: mvn -q -DskipTests package
+        run: mvn -q -DskipTests -Dmaven.javadoc.skip=true -pl desktop -am package
 
       - name: Convert same Coimbra OSM to GLB
         run: |
