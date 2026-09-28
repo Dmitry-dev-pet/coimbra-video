@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 
 import bpy
+import bmesh
 import numpy as np
 from mathutils import Vector
 
@@ -260,7 +261,7 @@ def main():
         trunk_height = total_height * (0.30 if not is_conifer else 0.22)
         trunk_radius = 0.13 + total_height * 0.018
         crown_height = total_height - trunk_height * 0.65
-        crown_radius = total_height * (0.23 if not is_conifer else 0.17)
+        crown_radius = total_height * (0.30 if not is_conifer else 0.21)
         rotation = u2 * math.tau
 
         center = Vector((item["x"], item["y"], z))
@@ -309,28 +310,38 @@ def main():
     mesh.from_pydata(vertices, [], faces)
     mesh.update()
 
+    bm = bmesh.new()
+    try:
+        bm.from_mesh(mesh)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        mesh.update()
+    finally:
+        bm.free()
+
     trees = bpy.data.objects.new("Vegetation_Trees", mesh)
     bpy.context.collection.objects.link(trees)
 
     materials = [
-        tree_material("Vegetation_Trunk", (0.13, 0.065, 0.025, 1.0), 0.88),
-        tree_material("Vegetation_Leaves_A", (0.035, 0.16, 0.045, 1.0), 0.92),
-        tree_material("Vegetation_Leaves_B", (0.07, 0.23, 0.055, 1.0), 0.90),
-        tree_material("Vegetation_Leaves_C", (0.12, 0.27, 0.06, 1.0), 0.90),
+        tree_material("Vegetation_Trunk", (0.16, 0.08, 0.03, 1.0), 0.88),
+        tree_material("Vegetation_Leaves_A", (0.05, 0.22, 0.055, 1.0), 0.92),
+        tree_material("Vegetation_Leaves_B", (0.09, 0.32, 0.07, 1.0), 0.90),
+        tree_material("Vegetation_Leaves_C", (0.17, 0.36, 0.08, 1.0), 0.90),
     ]
     for material in materials:
         trees.data.materials.append(material)
     for polygon, material_index in zip(trees.data.polygons, material_indices):
         polygon.material_index = material_index
+        polygon.use_smooth = material_index != 0
 
     trees["source"] = "OpenStreetMap + deterministic green-area sampling"
-    trees["vegetation_version"] = "coimbra-vegetation-v1"
+    trees["vegetation_version"] = "coimbra-vegetation-v2"
     trees["tree_count"] = len(accepted)
 
     scene = bpy.context.scene
     scene["city_vegetation_source"] = "OpenStreetMap natural=tree + green areas"
     scene["city_vegetation_license"] = "ODbL"
-    scene["city_vegetation_version"] = "coimbra-vegetation-v1"
+    scene["city_vegetation_version"] = "coimbra-vegetation-v2"
     scene["city_tree_count"] = len(accepted)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
