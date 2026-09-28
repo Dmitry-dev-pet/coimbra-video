@@ -8,7 +8,7 @@ from pyproj import Transformer
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "coimbra_bridge.json"
-OSM = ROOT / "data" / "osm" / "coimbra-route.json"
+OSM = ROOT / "data" / "osm" / "coimbra-oss-rich.json"
 OUT = ROOT / "data" / "processed" / "bridge_osm_oss_local.json"
 
 
