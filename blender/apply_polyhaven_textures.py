@@ -63,17 +63,6 @@ def rebuild_material(material, spec: dict, downloads: dict):
     links.new(mapping.outputs["Vector"], rough.inputs["Vector"])
     links.new(rough.outputs["Color"], bsdf.inputs["Roughness"])
 
-    normal_tex = nodes.new("ShaderNodeTexImage")
-    normal_tex.image = image_for(asset, "normal", downloads)
-    normal_tex.projection = "BOX"
-    normal_tex.projection_blend = 0.18
-    links.new(mapping.outputs["Vector"], normal_tex.inputs["Vector"])
-
-    normal = nodes.new("ShaderNodeNormalMap")
-    normal.inputs["Strength"].default_value = float(spec.get("normal_strength", 0.3))
-    links.new(normal_tex.outputs["Color"], normal.inputs["Color"])
-    links.new(normal.outputs["Normal"], bsdf.inputs["Normal"])
-
     links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
     material["polyhaven_asset"] = asset
     material["polyhaven_license"] = "CC0"
