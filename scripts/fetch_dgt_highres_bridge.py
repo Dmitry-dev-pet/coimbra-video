@@ -177,18 +177,84 @@ def download_collection(session: requests.Session, collection: str, bbox: list[f
     return evidence
 
 
+def anonymous_session_if_available(bbox: list[float]) -> requests.Session | None:
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": "coimbra-video/008-highres (+https://github.com/Dmitry-dev-pet/coimbra-video)",
+            "Accept": "application/json,*/*",
+        }
+    )
+    try:
+        response = session.post(
+            STAC_SEARCH,
+            json={"bbox": bbox, "limit": 1, "collections": ["MDT-50cm"]},
+            timeout=30,
+        )
+        if response.status_code != 200:
+            print(f"Anonymous STAC unavailable: HTTP {response.status_code}")
+            return None
+        data = response.json()
+        features = data.get("features", [])
+        if not features:
+            print("Anonymous STAC returned no features")
+            return None
+
+        href = geotiff_asset(features[0])
+        if not href:
+            print("Anonymous STAC returned no GeoTIFF asset")
+            return None
+
+        probe = session.get(href, stream=True, timeout=30)
+        try:
+            ctype = probe.headers.get("content-type", "").lower()
+            if probe.status_code not in (200, 206) or "text/html" in ctype:
+                print(
+                    f"Anonymous asset probe unavailable: HTTP {probe.status_code}, "
+                    f"content-type={ctype}"
+                )
+                return None
+            next(probe.iter_content(64 * 1024), b"")
+        finally:
+            probe.close()
+
+        print("Anonymous CDD/STAC GeoTIFF access is available.")
+        return session
+    except Exception as exc:
+        print(f"Anonymous CDD probe failed: {exc!r}")
+        return None
+
+
 def main() -> None:
     cfg = json.loads(CONFIG.read_text())
     bbox = cfg["bbox_wgs84"]
-    user = os.getenv("DGT_USER") or input("DGT CDD email: ").strip()
-    password = os.getenv("DGT_PASSWORD") or getpass.getpass("DGT CDD password: ")
-    if not user or not password:
-        raise SystemExit("DGT_USER and DGT_PASSWORD are required")
 
-    session = authenticate(user, password)
-    print("Authenticated to DGT CDD.")
+    session = anonymous_session_if_available(bbox)
+    access_mode = "anonymous"
 
-    manifest = {"bbox_wgs84": bbox, "collections": {}}
+    if session is None:
+        access_mode = "authenticated"
+        user = os.getenv("DGT_USER", "").strip()
+        password = os.getenv("DGT_PASSWORD", "")
+        if not user:
+            try:
+                user = input("DGT CDD email: ").strip()
+            except EOFError:
+                user = ""
+        if not password and user:
+            try:
+                password = getpass.getpass("DGT CDD password: ")
+            except (EOFError, KeyboardInterrupt):
+                password = ""
+        if not user or not password:
+            raise SystemExit(
+                "Anonymous CDD download is unavailable and DGT_USER / "
+                "DGT_PASSWORD were not provided"
+            )
+        session = authenticate(user, password)
+        print("Authenticated to DGT CDD.")
+
+    manifest = {"bbox_wgs84": bbox, "access_mode": access_mode, "collections": {}}
     for collection in COLLECTIONS:
         manifest["collections"][collection] = download_collection(session, collection, bbox)
 
