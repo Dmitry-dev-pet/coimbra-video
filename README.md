@@ -104,3 +104,19 @@ The original open-data experiment remains available:
 - Blender preview.
 
 Those files are retained as a fallback, not used by the main GitHub Action.
+
+
+## APatch Blender bridge
+
+The repository now also contains a credential-free contract-governed Blender path.
+
+`COIMBRA-BRIDGE-001`:
+- fetches real Coimbra building footprints and roads from OpenStreetMap/Overpass;
+- builds one protected city scene in Blender;
+- executes camera/lighting/render changes through `Dmitry-dev-pet/apatch-blender`;
+- protects all `City_*` geometry with semantic hashes;
+- renders the Sanches/Rua Brasil → Polo II → Portela → Princesa Cindazunda corridor;
+- independently verifies the camera checkpoints and unchanged city geometry;
+- outputs a 854×480 H.264 MP4 with OpenStreetMap attribution.
+
+This is separate from the Earth Studio path and exists specifically as the large integration test for the generic Blender bridge.

@@ -1,0 +1,282 @@
+name: Coimbra APatch Blender bridge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "config/coimbra_bridge.json"
+      - "scripts/fetch_osm_bridge.py"
+      - "blender/build_osm_bridge_scene.py"
+      - "contracts/COIMBRA-BRIDGE-001.json"
+      - ".github/workflows/coimbra-apatch-blender.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  BRIDGE_REF: "ea7441cd03bc8a9a4036b64470e358220943a98a"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Coimbra project
+        uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch OpenStreetMap city data
+        shell: bash
+        run: |
+          python -m pip install "requests>=2.32,<3"
+          python scripts/fetch_osm_bridge.py
+
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+          "$BLENDER_CACHE/blender" --version
+
+      - name: Install headless dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 \
+            libxxf86vm1 libxkbcommon0
+
+      - name: Build protected Coimbra base scene
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf bridge_output
+          blender --background --factory-startup \
+            --python-exit-code 1 \
+            --python blender/build_osm_bridge_scene.py
+
+      - name: Execute Coimbra contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup \
+            --python-exit-code 1 \
+            --python _bridge/scripts/execute_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-001.json" \
+            --root "$GITHUB_WORKSPACE"
+
+      - name: Upload prepared city scenes
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-bridge-prepared
+          path: |
+            bridge_output/coimbra-base.blend
+            bridge_output/coimbra-edited.blend
+            bridge_output/base-manifest.json
+            bridge_output/execution.json
+            bridge_output/preview.png
+          if-no-files-found: error
+
+  render:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: "01"
+            start: 1
+            end: 30
+          - shard: "02"
+            start: 31
+            end: 60
+          - shard: "03"
+            start: 61
+            end: 90
+          - shard: "04"
+            start: 91
+            end: 120
+          - shard: "05"
+            start: 121
+            end: 150
+          - shard: "06"
+            start: 151
+            end: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install headless dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 \
+            libxxf86vm1 libxkbcommon0
+
+      - name: Download prepared city
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-bridge-prepared
+          path: bridge_output
+
+      - name: Render city shard
+        shell: bash
+        env:
+          START_FRAME: ${{ matrix.start }}
+          END_FRAME: ${{ matrix.end }}
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output/frames
+          blender bridge_output/coimbra-edited.blend --background \
+            -s "$START_FRAME" -e "$END_FRAME" \
+            -o "$GITHUB_WORKSPACE/bridge_output/frames/frame_" \
+            -F PNG --render-anim
+          expected=$((END_FRAME - START_FRAME + 1))
+          actual=$(find bridge_output/frames -maxdepth 1 -name 'frame_*.png' | wc -l)
+          test "$actual" -eq "$expected"
+
+      - name: Upload city shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-bridge-frames-${{ matrix.shard }}
+          path: bridge_output/frames/
+          if-no-files-found: error
+          compression-level: 1
+
+  finalize:
+    needs: [prepare, render]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Coimbra project
+        uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install verifier dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 \
+            libxxf86vm1 libxkbcommon0 ffmpeg fonts-dejavu-core
+
+      - name: Download prepared city
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-bridge-prepared
+          path: bridge_output
+
+      - name: Download all city frames
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coimbra-bridge-frames-*
+          path: bridge_output/frames
+          merge-multiple: true
+
+      - name: Validate and encode city MP4
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find bridge_output/frames -maxdepth 1 -name 'frame_*.png' | wc -l)" -eq 180
+          ffmpeg -y \
+            -framerate 30 -start_number 1 \
+            -i bridge_output/frames/frame_%04d.png \
+            -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Map data © OpenStreetMap contributors · ODbL':fontcolor=white:fontsize=14:x=12:y=h-th-10:box=1:boxcolor=black@0.35:boxborderw=4" \
+            -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart \
+            bridge_output/coimbra-bridge.mp4
+
+      - name: Verify city with generic bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup \
+            --python-exit-code 1 \
+            --python _bridge/scripts/verify_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-001.json" \
+            --root "$GITHUB_WORKSPACE"
+          cat bridge_output/verification.json
+
+      - name: Remove intermediate frames
+        run: rm -rf bridge_output/frames
+
+      - name: Upload Coimbra bridge evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-apatch-blender-480p
+          path: bridge_output/
+          if-no-files-found: error

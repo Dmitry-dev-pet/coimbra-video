@@ -1,0 +1,50 @@
+{
+  "id": "coimbra-route-bridge-v1",
+  "bbox_wgs84": [
+    -8.4235,
+    40.1833,
+    -8.402,
+    40.2035
+  ],
+  "center_wgs84": [
+    -8.41275,
+    40.1934
+  ],
+  "source": "OpenStreetMap via Overpass API",
+  "overpass_endpoints": [
+    "https://overpass-api.de/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter"
+  ],
+  "route": [
+    {
+      "name": "Sanches x Brasil",
+      "lon": -8.4162,
+      "lat": 40.20105
+    },
+    {
+      "name": "Av. Conego Urbano Duarte",
+      "lon": -8.42089,
+      "lat": 40.19638
+    },
+    {
+      "name": "Escola Hotelaria",
+      "lon": -8.418881,
+      "lat": 40.190243
+    },
+    {
+      "name": "Polo II",
+      "lon": -8.41473,
+      "lat": 40.18668
+    },
+    {
+      "name": "Quinta da Portela",
+      "lon": -8.4073,
+      "lat": 40.1852
+    },
+    {
+      "name": "Princesa Cindazunda",
+      "lon": -8.4049153,
+      "lat": 40.1853055
+    }
+  ]
+}

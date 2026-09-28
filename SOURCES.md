@@ -39,3 +39,15 @@ Creative Commons Attribution 4.0 (CC BY 4.0).
 
 Suggested attribution:
 `Orthophoto 2025 © Direção-Geral do Território (DGT), CC BY 4.0`
+
+
+## OpenStreetMap / Overpass
+
+The APatch Blender bridge demo uses OpenStreetMap building footprints and road geometry for a reproducible, credential-free Coimbra 3D scene.
+
+Data © OpenStreetMap contributors, available under the Open Database License (ODbL).
+
+Copyright/license:
+https://www.openstreetmap.org/copyright
+
+The workflow requests a bounded Coimbra corridor from the public Overpass API and renders its own Blender geometry; it does not use OpenStreetMap raster tiles.
