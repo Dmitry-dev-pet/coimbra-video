@@ -9,7 +9,7 @@ import bpy
 ROOT = Path(__file__).resolve().parents[1]
 PLAN_PATH = ROOT / "textures" / "COIMBRA-005-polyhaven.json"
 DOWNLOAD_MANIFEST = ROOT / "data" / "textures" / "polyhaven" / "download-manifest.json"
-BASE = ROOT / "bridge_output_003" / "coimbra-terrain-base.blend"
+BASE = ROOT / "bridge_output_004" / "coimbra-visual-dev.blend"
 OUT_DIR = ROOT / "bridge_output_005"
 OUT_BLEND = OUT_DIR / "coimbra-textured-base.blend"
 TEXTURE_MANIFEST = OUT_DIR / "texture-manifest.json"
