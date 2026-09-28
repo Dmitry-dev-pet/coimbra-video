@@ -7,6 +7,7 @@ on:
       - "docs/OPEN_SOURCE_STACK.md"
       - "scripts/fetch_dgt_laz_bridge.py"
       - "scripts/mosaic_pdal_hag.py"
+      - "scripts/materialize_pdal_hag_pipeline.py"
       - "config/pdal_hag_tile.json"
       - ".github/workflows/coimbra-009c-pdal.yml"
   workflow_dispatch:
@@ -80,17 +81,9 @@ jobs:
             rel="/work/$file"
             outrel="/work/$out"
 
-            python - "$rel" "$outrel" <<'PY'
-import json, sys
-from pathlib import Path
-
-template = json.loads(Path("config/pdal_hag_tile.json").read_text())
-template["pipeline"][0]["filename"] = sys.argv[1]
-template["pipeline"][-1]["filename"] = sys.argv[2]
-Path("bridge_output_009c/current-pdal-pipeline.json").write_text(
-    json.dumps(template, indent=2) + "\n"
-)
-PY
+            python scripts/materialize_pdal_hag_pipeline.py \
+              --input "$rel" \
+              --output "$outrel"
 
             echo "PDAL tile $count: $base"
             docker run --rm               -v "$PWD:/work"               -w /work               "$PDAL_IMAGE"               pdal pipeline /work/bridge_output_009c/current-pdal-pipeline.json
