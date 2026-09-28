@@ -181,3 +181,9 @@ frames 1, 181 and 360.
 Texture assets are CC0. API integration: **Powered by Poly Haven**.
 
 The 005 preparation step also replaces the legacy beveled road curves with flat terrain-following mesh ribbons, preserving the same centerlines and widths so roads read as roads rather than pipes.
+
+
+The 005 visual baseline now also generates one lightweight procedural
+`Facade_Windows` mesh from building wall quads. It adds repeated dark windows
+and a small deterministic warm-lit subset without creating thousands of Blender
+objects.
