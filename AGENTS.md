@@ -36,3 +36,20 @@ golden key light, render settings, and preview frames. Do not run the full
 360-frame MP4 render during normal 004 iteration. CI should emit the inspectable
 `.blend` plus previews for frames 1, 181, and 360. Protected `City_*` geometry
 and animation must remain unchanged.
+
+
+## Texture development bridge 005
+`COIMBRA-BRIDGE-005-TEXTURES` builds on the approved 004 visual look. Texture
+base preparation may fetch only the CC0 assets declared in
+`textures/COIMBRA-005-polyhaven.json`, at the declared resolution/maps, and must
+pack them into `bridge_output_005/coimbra-textured-base.blend`. That packed
+scene becomes the APatch baseline. After session start, protected `City_*`
+state and the PBR provenance scene keys must remain unchanged. Normal 005
+iteration renders only preview frames 1, 181 and 360, never the full movie.
+
+For 005, the legacy `City_Roads_*` CURVE bevel geometry may be converted before APatch session start into flat mesh ribbons with the same centerlines, elevations, and full widths. Once `coimbra-textured-base.blend` is frozen, those flat road meshes are protected `City_*` state.
+
+
+The 005 facade pass may generate one deterministic `Facade_Windows` mesh before
+APatch session start. Protect `Facade_*` alongside `City_*`; do not mutate
+window geometry or facade provenance after the textured baseline is frozen.

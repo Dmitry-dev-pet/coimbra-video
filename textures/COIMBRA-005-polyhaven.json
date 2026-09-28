@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "id": "COIMBRA-005-POLYHAVEN",
+  "provider": "Poly Haven",
+  "api": "https://api.polyhaven.com",
+  "license": "CC0",
+  "resolution": "1k",
+  "maps": [
+    "diffuse",
+    "rough"
+  ],
+  "assets": {
+    "white_plaster_02": {
+      "page": "https://polyhaven.com/a/white_plaster_02"
+    },
+    "beige_wall_001": {
+      "page": "https://polyhaven.com/a/beige_wall_001"
+    },
+    "rough_plaster_03": {
+      "page": "https://polyhaven.com/a/rough_plaster_03"
+    },
+    "white_rough_plaster": {
+      "page": "https://polyhaven.com/a/white_rough_plaster"
+    },
+    "stone_wall": {
+      "page": "https://polyhaven.com/a/stone_wall"
+    },
+    "clay_roof_tiles_02": {
+      "page": "https://polyhaven.com/a/clay_roof_tiles_02"
+    },
+    "asphalt_01": {
+      "page": "https://polyhaven.com/a/asphalt_01"
+    },
+    "cobblestone_pavement": {
+      "page": "https://polyhaven.com/a/cobblestone_pavement"
+    },
+    "roof_tiles": {
+      "page": "https://polyhaven.com/a/roof_tiles"
+    }
+  },
+  "materials": {
+    "City_Wall_00": {
+      "asset": "white_plaster_02",
+      "scale": 0.5
+    },
+    "City_Wall_01": {
+      "asset": "beige_wall_001",
+      "scale": 0.5
+    },
+    "City_Wall_02": {
+      "asset": "rough_plaster_03",
+      "scale": 0.5
+    },
+    "City_Wall_03": {
+      "asset": "white_rough_plaster",
+      "scale": 0.5
+    },
+    "City_Wall_04": {
+      "asset": "stone_wall",
+      "scale": 0.5
+    },
+    "City_Roof_00": {
+      "asset": "roof_tiles",
+      "scale": 0.5
+    },
+    "City_Roof_01": {
+      "asset": "clay_roof_tiles_02",
+      "scale": 0.4
+    },
+    "City_Roof_02": {
+      "asset": "roof_tiles",
+      "scale": 0.5,
+      "tint": [
+        0.92,
+        0.86,
+        0.82,
+        1
+      ]
+    },
+    "City_Roof_03": {
+      "asset": "clay_roof_tiles_02",
+      "scale": 0.4,
+      "tint": [
+        0.9,
+        0.82,
+        0.78,
+        1
+      ]
+    },
+    "City_Roads_major_Mat": {
+      "asset": "asphalt_01",
+      "scale": 0.5
+    },
+    "City_Roads_local_Mat": {
+      "asset": "asphalt_01",
+      "scale": 0.5
+    },
+    "City_Roads_service_Mat": {
+      "asset": "cobblestone_pavement",
+      "scale": 0.5
+    },
+    "City_Roads_paths_Mat": {
+      "asset": "cobblestone_pavement",
+      "scale": 0.5
+    }
+  }
+}
