@@ -1,0 +1,118 @@
+name: Coimbra OSS PDAL LiDAR benchmark 009C
+
+on:
+  pull_request:
+    paths:
+      - "config/open_source_stack.json"
+      - "docs/OPEN_SOURCE_STACK.md"
+      - "scripts/fetch_dgt_laz_bridge.py"
+      - "scripts/mosaic_pdal_hag.py"
+      - "config/pdal_hag_tile.json"
+      - ".github/workflows/coimbra-009c-pdal.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  DGT_USER: ${{ secrets.DGT_USER }}
+  DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
+  HIGHRES_RUN_ID: "36491512430"
+  PDAL_IMAGE: "pdal/pdal:2.9.0"
+
+jobs:
+  pdal-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host dependencies
+        run: |
+          python -m pip install             "requests>=2.32,<3"             "numpy>=2,<3"             "rasterio>=1.4,<2"             "pyproj>=3.7,<4"
+
+      - name: Fetch raw DGT LAZ tiles
+        run: |
+          python scripts/fetch_dgt_laz_bridge.py
+          cat data/raw/dgt_laz/download-manifest.json
+
+      - name: Download 008B reference HAG
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize 008B reference inputs
+        run: |
+          mkdir -p bridge_output_008b
+          for name in bridge_height_above_ground_1m.npz highres-geodata-manifest.json
+          do
+            found="$(find bridge_output_008b_download -type f -name "$name" -print -quit)"
+            test -n "$found"
+            cp "$found" "bridge_output_008b/$name"
+          done
+
+      - name: Pull pinned PDAL image
+        run: |
+          docker pull "$PDAL_IMAGE"
+          docker run --rm "$PDAL_IMAGE" pdal --version | tee bridge_output_008b/../pdal-version.txt
+
+      - name: Run PDAL HeightAboveGround per LAZ tile
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_009c/tiles
+          count=0
+          for file in data/raw/dgt_laz/*.laz data/raw/dgt_laz/*.las
+          do
+            [ -e "$file" ] || continue
+            count=$((count + 1))
+            base="$(basename "$file")"
+            stem="${base%.*}"
+            out="bridge_output_009c/tiles/${stem}.tif"
+            rel="/work/$file"
+            outrel="/work/$out"
+
+            python - "$rel" "$outrel" <<'PY'
+import json, sys
+from pathlib import Path
+
+template = json.loads(Path("config/pdal_hag_tile.json").read_text())
+template["pipeline"][0]["filename"] = sys.argv[1]
+template["pipeline"][-1]["filename"] = sys.argv[2]
+Path("bridge_output_009c/current-pdal-pipeline.json").write_text(
+    json.dumps(template, indent=2) + "\n"
+)
+PY
+
+            echo "PDAL tile $count: $base"
+            docker run --rm               -v "$PWD:/work"               -w /work               "$PDAL_IMAGE"               pdal pipeline /work/bridge_output_009c/current-pdal-pipeline.json
+            test -s "$out"
+          done
+          test "$count" -gt 0
+          echo "PDAL_TILE_COUNT=$count"
+
+      - name: Mosaic and compare PDAL HAG with MDS-MDT HAG
+        run: |
+          python scripts/mosaic_pdal_hag.py
+          cat bridge_output_009c/pdal-vs-raster-hag.json
+
+      - name: Upload PDAL benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-009c-pdal-benchmark
+          compression-level: 6
+          path: |
+            bridge_output_009c/pdal-height-above-ground-1m.tif
+            bridge_output_009c/pdal-vs-raster-hag.json
+            bridge_output_009c/current-pdal-pipeline.json
+            data/raw/dgt_laz/download-manifest.json
+            pdal-version.txt
+          if-no-files-found: error
