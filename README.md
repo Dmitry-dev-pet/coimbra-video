@@ -201,3 +201,16 @@ Trees are combined into one `Vegetation_Trees` mesh with a small material
 palette so the Blender file stays practical. Buildings, facades, roads,
 vegetation and provenance metadata are protected after the 006 baseline is
 frozen. Normal iteration still renders only frames 1, 181 and 360.
+
+
+## Miniature details 007
+
+`COIMBRA-BRIDGE-007-MINIATURE-DETAILS` adds deliberately readable scale cues
+to the approved 006 miniature scene: simplified cars, rooftop solar arrays,
+chimneys/vents/utility boxes, and sparse facade HVAC units. These details are
+procedural visual-model elements rather than claims of exact real-world object
+placement.
+
+Each detail category is consolidated into one `Detail_*` mesh so the scene
+remains practical to inspect. Normal iteration still renders only frames
+1, 181 and 360.
