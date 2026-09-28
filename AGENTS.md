@@ -62,3 +62,11 @@ data plus DGT terrain elevation. Avoid trees on buildings, facade quads and road
 ribbons via scene ray-cast rejection. After `coimbra-vegetation-base.blend` is
 frozen, protect `Vegetation_*` together with `City_*` and `Facade_*`.
 Cars are out of scope for this pass.
+
+
+## Miniature detail bridge 007
+`COIMBRA-BRIDGE-007-MINIATURE-DETAILS` may add deterministic `Detail_*` meshes
+before APatch session start: cars, solar panels, rooftop fixtures and HVAC.
+Slight oversizing is intentional because the target is a readable physical-model
+look, not an exact digital twin. After the details baseline is frozen, protect
+`Detail_*` together with `City_*`, `Facade_*`, and `Vegetation_*`.
