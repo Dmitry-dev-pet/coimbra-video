@@ -10,8 +10,10 @@ camera DOF, lighting and 360-frame timing while replacing the flat generated
 building/road materials in the reproducible base scene with a small CC0 PBR
 material set.
 
-Texture base preparation is deterministic and happens before the governed
-Blender plan. The resulting packed textured `.blend` is the baseline hashed
+Texture/base preparation is deterministic and happens before the governed
+Blender plan. During this preparation, legacy `City_Roads_*` beveled CURVE
+objects are converted from round tube geometry into flat mesh ribbons while
+preserving their centerlines, full widths and terrain elevations. The resulting packed textured `.blend` is the baseline hashed
 into the APatch SDD session. From that point onward protected `City_*`
 geometry, animation, material assignments and selected scene provenance
 metadata must remain unchanged.
@@ -39,6 +41,6 @@ downloaded maps. The project credits the API as Powered by Poly Haven.
 - retain the approved 004 miniature/golden-hour camera and light;
 - visible plaster variation across building walls;
 - visibly terracotta/weathered roofs instead of flat roof colors;
-- asphalt on major/local roads;
+- asphalt on major/local roads rendered on flat terrain-following ribbons, never round beveled tubes;
 - stone paving on service/path surfaces;
 - texture detail should read at drone distance without making the city noisy.
