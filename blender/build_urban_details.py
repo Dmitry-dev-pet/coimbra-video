@@ -147,6 +147,11 @@ def drape(obj, terrain):
 def join_objects(objects, name):
     objects=[o for o in objects if o and o.name in bpy.data.objects]
     if not objects: return None
+    # MOSAIQ geometry creators intentionally return unlinked Blender objects.
+    # Link them before selection/join so they belong to the active ViewLayer.
+    for o in objects:
+        if not o.users_collection:
+            bpy.context.collection.objects.link(o)
     bpy.ops.object.select_all(action="DESELECT")
     for o in objects: o.select_set(True)
     bpy.context.view_layer.objects.active=objects[0]
