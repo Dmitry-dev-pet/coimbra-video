@@ -1,0 +1,169 @@
+name: Coimbra texture dev 005
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/COIMBRA-BRIDGE-005-TEXTURES.json"
+      - "docs/specs/SPEC-COIMBRA-TEXTURES-1.md"
+      - "textures/COIMBRA-005-polyhaven.json"
+      - "scripts/fetch_polyhaven_coimbra_textures.py"
+      - "blender/apply_polyhaven_textures.py"
+      - "scripts/apatch_visual_dev_governance.py"
+      - "scripts/verify_texture_dev_evidence.py"
+      - "verification/COIMBRA-BRIDGE-005-TEXTURES.probe"
+      - ".github/workflows/coimbra-apatch-blender-005-textures.yml"
+      - "data/processed/bridge_terrain_6m.npz"
+      - "data/processed/bridge_terrain_6m.json"
+      - "scripts/prepare_osm_local_for_terrain.py"
+  pull_request:
+    paths:
+      - "contracts/COIMBRA-BRIDGE-005-TEXTURES.json"
+      - "docs/specs/SPEC-COIMBRA-TEXTURES-1.md"
+      - "textures/COIMBRA-005-polyhaven.json"
+      - "scripts/fetch_polyhaven_coimbra_textures.py"
+      - "blender/apply_polyhaven_textures.py"
+      - "scripts/verify_texture_dev_evidence.py"
+      - "verification/COIMBRA-BRIDGE-005-TEXTURES.probe"
+      - ".github/workflows/coimbra-apatch-blender-005-textures.yml"
+      - "data/processed/bridge_terrain_6m.npz"
+      - "data/processed/bridge_terrain_6m.json"
+      - "scripts/prepare_osm_local_for_terrain.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  BRIDGE_REF: "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0"
+
+jobs:
+  texture-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install geodata and APatch dependencies
+        run: |
+          python -m pip install \
+            "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" "Pillow>=11,<12" \
+            "apatch==0.8.48"
+
+      - name: Prepare public terrain inputs
+        run: |
+          set -euo pipefail
+          test -s data/processed/bridge_terrain_6m.npz
+          test -s data/processed/bridge_terrain_6m.json
+          python scripts/fetch_osm_bridge.py
+          python scripts/fetch_dgt_ortho_bridge.py
+          python scripts/prepare_osm_local_for_terrain.py
+
+      - name: Fetch CC0 Poly Haven PBR set
+        run: |
+          python scripts/fetch_polyhaven_coimbra_textures.py
+          cat data/textures/polyhaven/download-manifest.json
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Build terrain base
+        run: |
+          rm -rf bridge_output_003 bridge_output_005
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/build_dgt_terrain_scene.py
+
+      - name: Apply and pack Coimbra PBR textures
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/apply_polyhaven_textures.py
+          cat bridge_output_005/texture-manifest.json
+
+      - name: Start governed APatch texture-dev session
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_visual_dev_governance.py \
+              --root "$GITHUB_WORKSPACE" start \
+              --contract contracts/COIMBRA-BRIDGE-005-TEXTURES.json \
+              --baseline bridge_output_005/coimbra-textured-base.blend \
+              --output bridge_output_005/apatch-session-start.json
+
+      - name: Install APatch into Blender Python
+        run: |
+          set -euo pipefail
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "apatch==0.8.48"
+
+      - name: Build textured visual-dev blend and three previews
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/execute_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-005-TEXTURES.json" \
+            --root "$GITHUB_WORKSPACE"
+
+      - name: Verify protected textured city and visual contract
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/verify_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-005-TEXTURES.json" \
+            --root "$GITHUB_WORKSPACE"
+          cat bridge_output_005/texture-verification.json
+
+      - name: Run frozen APatch texture-dev verification
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_visual_dev_governance.py \
+              --root "$GITHUB_WORKSPACE" verify \
+              --output bridge_output_005/apatch-sdd-verification.json
+
+      - name: Upload Blender texture-dev artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-005-textures
+          path: |
+            bridge_output_005/coimbra-textures-visual-dev.blend
+            bridge_output_005/preview-001.png
+            bridge_output_005/preview-181.png
+            bridge_output_005/preview-360.png
+            bridge_output_005/texture-manifest.json
+            bridge_output_005/texture-execution.json
+            bridge_output_005/texture-verification.json
+            bridge_output_005/apatch-session-start.json
+            bridge_output_005/apatch-sdd-verification.json
+            data/textures/polyhaven/download-manifest.json
+          if-no-files-found: error
