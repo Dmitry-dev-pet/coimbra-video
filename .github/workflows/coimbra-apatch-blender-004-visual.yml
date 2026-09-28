@@ -6,7 +6,7 @@ on:
     paths:
       - "contracts/COIMBRA-BRIDGE-004-VISUAL.json"
       - "docs/specs/SPEC-COIMBRA-VISUAL-1.md"
-      - "scripts/apatch_blender_governance.py"
+      - "scripts/apatch_visual_dev_governance.py"
       - "scripts/verify_visual_dev_evidence.py"
       - "verification/COIMBRA-BRIDGE-004-VISUAL.probe"
       - ".github/workflows/coimbra-apatch-blender-004-visual.yml"
@@ -18,7 +18,7 @@ on:
     paths:
       - "contracts/COIMBRA-BRIDGE-004-VISUAL.json"
       - "docs/specs/SPEC-COIMBRA-VISUAL-1.md"
-      - "scripts/apatch_blender_governance.py"
+      - "scripts/apatch_visual_dev_governance.py"
       - "scripts/verify_visual_dev_evidence.py"
       - "verification/COIMBRA-BRIDGE-004-VISUAL.probe"
       - ".github/workflows/coimbra-apatch-blender-004-visual.yml"
@@ -101,7 +101,7 @@ jobs:
       - name: Start governed APatch visual-dev session
         run: |
           PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
-            python scripts/apatch_blender_governance.py \
+            python scripts/apatch_visual_dev_governance.py \
               --root "$GITHUB_WORKSPACE" start \
               --contract contracts/COIMBRA-BRIDGE-004-VISUAL.json \
               --baseline data/processed/bridge_terrain_6m.npz \
@@ -133,7 +133,7 @@ jobs:
       - name: Run frozen APatch visual-dev verification
         run: |
           PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
-            python scripts/apatch_blender_governance.py \
+            python scripts/apatch_visual_dev_governance.py \
               --root "$GITHUB_WORKSPACE" verify \
               --output bridge_output_004/apatch-sdd-verification.json
 
