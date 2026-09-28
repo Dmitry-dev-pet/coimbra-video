@@ -44,3 +44,15 @@ downloaded maps. The project credits the API as Powered by Poly Haven.
 - asphalt on major/local roads rendered on flat terrain-following ribbons, never round beveled tubes;
 - stone paving on service/path surfaces;
 - texture detail should read at drone distance without making the city noisy.
+
+
+## Facade layer
+
+The textured baseline may add a single deterministic `Facade_Windows` mesh
+derived from vertical `City_Buildings` wall quads. Windows are shallow
+rectangular facade quads with dark glass; a small deterministic subset may use
+a warm emissive material. The purpose is distant urban readability, not
+architectural reconstruction.
+
+The generated `Facade_*` object and facade provenance scene metadata become
+protected baseline state before APatch session start.
