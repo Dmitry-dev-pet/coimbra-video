@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "id": "COIMBRA-005-POLYHAVEN",
+  "provider": "Poly Haven",
+  "api": "https://api.polyhaven.com",
+  "license": "CC0",
+  "resolution": "1k",
+  "maps": [
+    "diffuse",
+    "rough",
+    "normal"
+  ],
+  "assets": {
+    "white_plaster_02": {
+      "page": "https://polyhaven.com/a/white_plaster_02"
+    },
+    "beige_wall_001": {
+      "page": "https://polyhaven.com/a/beige_wall_001"
+    },
+    "rough_plaster_03": {
+      "page": "https://polyhaven.com/a/rough_plaster_03"
+    },
+    "white_rough_plaster": {
+      "page": "https://polyhaven.com/a/white_rough_plaster"
+    },
+    "stone_wall": {
+      "page": "https://polyhaven.com/a/stone_wall"
+    },
+    "roof_09": {
+      "page": "https://polyhaven.com/a/roof_09"
+    },
+    "clay_roof_tiles_02": {
+      "page": "https://polyhaven.com/a/clay_roof_tiles_02"
+    },
+    "asphalt_01": {
+      "page": "https://polyhaven.com/a/asphalt_01"
+    },
+    "cobblestone_pavement": {
+      "page": "https://polyhaven.com/a/cobblestone_pavement"
+    }
+  },
+  "materials": {
+    "City_Wall_00": {
+      "asset": "white_plaster_02",
+      "scale": 1,
+      "normal_strength": 0.25
+    },
+    "City_Wall_01": {
+      "asset": "beige_wall_001",
+      "scale": 0.34,
+      "normal_strength": 0.22
+    },
+    "City_Wall_02": {
+      "asset": "rough_plaster_03",
+      "scale": 0.67,
+      "normal_strength": 0.32
+    },
+    "City_Wall_03": {
+      "asset": "white_rough_plaster",
+      "scale": 1,
+      "normal_strength": 0.28
+    },
+    "City_Wall_04": {
+      "asset": "stone_wall",
+      "scale": 0.5,
+      "normal_strength": 0.38
+    },
+    "City_Roof_00": {
+      "asset": "roof_09",
+      "scale": 0.25,
+      "normal_strength": 0.45
+    },
+    "City_Roof_01": {
+      "asset": "clay_roof_tiles_02",
+      "scale": 0.4,
+      "normal_strength": 0.45
+    },
+    "City_Roof_02": {
+      "asset": "roof_09",
+      "scale": 0.25,
+      "normal_strength": 0.4,
+      "tint": [
+        0.92,
+        0.8,
+        0.72,
+        1
+      ]
+    },
+    "City_Roof_03": {
+      "asset": "clay_roof_tiles_02",
+      "scale": 0.4,
+      "normal_strength": 0.4,
+      "tint": [
+        0.86,
+        0.78,
+        0.72,
+        1
+      ]
+    },
+    "City_Roads_major_Mat": {
+      "asset": "asphalt_01",
+      "scale": 0.45,
+      "normal_strength": 0.3
+    },
+    "City_Roads_local_Mat": {
+      "asset": "asphalt_01",
+      "scale": 0.45,
+      "normal_strength": 0.28
+    },
+    "City_Roads_service_Mat": {
+      "asset": "cobblestone_pavement",
+      "scale": 0.4,
+      "normal_strength": 0.35
+    },
+    "City_Roads_paths_Mat": {
+      "asset": "cobblestone_pavement",
+      "scale": 0.4,
+      "normal_strength": 0.32
+    }
+  }
+}
