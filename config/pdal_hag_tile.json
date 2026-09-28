@@ -5,7 +5,10 @@
       "filename": "INPUT.laz"
     },
     {
-      "type": "filters.hag_delaunay"
+      "type": "filters.hag_nn",
+      "count": 4,
+      "max_distance": 25,
+      "allow_extrapolation": false
     },
     {
       "type": "writers.gdal",
@@ -14,7 +17,7 @@
       "data_type": "float32",
       "gdaldriver": "GTiff",
       "output_type": "max",
-      "resolution": 1.0,
+      "resolution": 1,
       "nodata": -9999,
       "window_size": 0
     }
