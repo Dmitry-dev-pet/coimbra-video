@@ -18,3 +18,7 @@ For `contracts/COIMBRA-BRIDGE-001.json`:
 - OpenStreetMap attribution must remain visible in published video output.
 
 The first OSM scene is intentionally reproducible without DGT credentials. DGT MDS/LiDAR may replace or augment the geometry provider later without changing the bridge contract model.
+
+
+## DGT terrain bridge 003
+`COIMBRA-BRIDGE-003` is manual-only because DGT CDD currently requires authenticated download. Never commit DGT credentials. Use repository secrets `DGT_USER` and `DGT_PASSWORD`. The bridge contract still permits only world, camera-path, light, render, and preview operations; terrain/buildings/roads remain protected.

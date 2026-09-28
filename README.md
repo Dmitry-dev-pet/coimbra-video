@@ -132,3 +132,16 @@ This is separate from the Earth Studio path and exists specifically as the large
 - protected `City_*` geometry verified by semantic hashes.
 
 The DGT orthophoto is fetched only for the route bbox and is embedded into the prepared `.blend`, so parallel render jobs remain self-contained.
+
+
+## DGT terrain bridge 003
+
+`COIMBRA-BRIDGE-003` is the terrain upgrade:
+- authenticated DGT `MDS-2m` tiles;
+- 6 m render terrain generated from the official surface model;
+- OSM buildings and roads transformed to EPSG:3763 and draped onto the terrain;
+- DGT 2025 ortho packed into the terrain material;
+- the same generic APatch Blender camera/light/render contract;
+- all `City_*` terrain/building/road geometry protected by semantic verification.
+
+The DGT data are open-data, but the current CDD download flow requires an authenticated DGT session. The workflow is therefore manual-only and requires repository secrets `DGT_USER` and `DGT_PASSWORD`.
