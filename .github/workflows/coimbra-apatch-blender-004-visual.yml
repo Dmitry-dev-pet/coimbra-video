@@ -34,7 +34,7 @@ permissions:
 env:
   BLENDER_VERSION: "5.2.2"
   BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
-  BRIDGE_REF: "4cc6e9e3cc9a53289bdd1e71aebc68136adca116"
+  BRIDGE_REF: "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0"
 
 jobs:
   visual-dev:
