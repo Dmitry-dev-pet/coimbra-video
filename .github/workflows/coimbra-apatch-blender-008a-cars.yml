@@ -1,0 +1,166 @@
+name: Coimbra car reality 008A
+
+on:
+  pull_request:
+    paths:
+      - "contracts/COIMBRA-BRIDGE-008A-CAR-REALITY.json"
+      - "docs/specs/SPEC-COIMBRA-CAR-REALITY-1.md"
+      - "scripts/detect_cars_ortho.py"
+      - "blender/replace_cars_from_ortho.py"
+      - "scripts/verify_car_reality_evidence.py"
+      - "verification/COIMBRA-BRIDGE-008A-CAR-REALITY.probe"
+      - ".github/workflows/coimbra-apatch-blender-008a-cars.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  BRIDGE_REF: "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0"
+  BASELINE_RUN_ID: "36485237499"
+
+jobs:
+  car-reality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install detector and APatch dependencies
+        run: |
+          python -m pip install \
+            "requests>=2.32,<3" "Pillow>=11,<12" "pyproj>=3.7,<4" \
+            "ultralytics==8.4.161" "apatch==0.8.48"
+
+      - name: Download approved 007 miniature baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-007-miniature-details
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.BASELINE_RUN_ID }}
+          path: bridge_output_007_download
+
+      - name: Normalize 007 baseline
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_007
+          found="$(find bridge_output_007_download -type f -name 'coimbra-details-visual-dev.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_007/coimbra-details-visual-dev.blend
+          test -s bridge_output_007/coimbra-details-visual-dev.blend
+
+      - name: Fetch DGT 2025 orthophoto
+        run: |
+          python scripts/fetch_dgt_ortho_bridge.py
+          test -s data/processed/bridge_ortho_2025.jpg
+          test -s data/processed/bridge_ortho_2025.json
+
+      - name: Detect oriented vehicles in orthophoto
+        env:
+          YOLO_CONFIG_DIR: "$GITHUB_WORKSPACE/.cache/ultralytics"
+        run: |
+          python scripts/detect_cars_ortho.py
+          cat data/processed/bridge_cars_ortho_2025.json | python -c \
+            'import json,sys; d=json.load(sys.stdin); print(json.dumps({"total": d["total"], "counts": d["counts"], "detector": d["detector"]}, indent=2))'
+          test -s data/processed/bridge_cars_ortho_2025_preview.jpg
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Replace procedural cars with ortho detections
+        run: |
+          rm -rf bridge_output_008a
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/replace_cars_from_ortho.py
+          cat bridge_output_008a/car-reality-manifest.json
+
+      - name: Start governed APatch car-reality session
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_visual_dev_governance.py \
+              --root "$GITHUB_WORKSPACE" start \
+              --contract contracts/COIMBRA-BRIDGE-008A-CAR-REALITY.json \
+              --baseline bridge_output_008a/coimbra-car-reality-base.blend \
+              --output bridge_output_008a/apatch-session-start.json
+
+      - name: Install APatch into Blender Python
+        run: |
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "apatch==0.8.48"
+
+      - name: Build car-reality visual-dev blend and previews
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/execute_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-008A-CAR-REALITY.json" \
+            --root "$GITHUB_WORKSPACE"
+
+      - name: Verify protected car-reality scene
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/verify_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-008A-CAR-REALITY.json" \
+            --root "$GITHUB_WORKSPACE"
+          cat bridge_output_008a/car-reality-verification.json
+
+      - name: Run frozen APatch car-reality verification
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_visual_dev_governance.py \
+              --root "$GITHUB_WORKSPACE" verify \
+              --output bridge_output_008a/apatch-sdd-verification.json
+
+      - name: Upload car-reality artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-008a-car-reality
+          path: |
+            bridge_output_008a/coimbra-car-reality-visual-dev.blend
+            bridge_output_008a/preview-001.png
+            bridge_output_008a/preview-181.png
+            bridge_output_008a/preview-360.png
+            bridge_output_008a/car-reality-manifest.json
+            bridge_output_008a/car-reality-execution.json
+            bridge_output_008a/car-reality-verification.json
+            bridge_output_008a/apatch-session-start.json
+            bridge_output_008a/apatch-sdd-verification.json
+            data/processed/bridge_cars_ortho_2025.json
+            data/processed/bridge_cars_ortho_2025_preview.jpg
+          if-no-files-found: error
