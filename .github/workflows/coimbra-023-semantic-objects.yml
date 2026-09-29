@@ -24,7 +24,6 @@ env:
   HIGHRES_008B_RUN_ID: "36491512430"
   OSM_009A_RUN_ID: "36495771020"
   ROOF_019_RUN_ID: "36589306803"
-  HF_HOME: "/home/runner/.cache/huggingface"
 
 jobs:
   semantic-objects:
@@ -136,12 +135,6 @@ jobs:
           repository: cliffbb/oem-lightweight
           ref: ${{ env.OEM_REF }}
           path: OEM-LightweightModel
-
-      - name: Cache Hugging Face model
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/.cache/huggingface
-          key: grounding-dino-tiny-c7309d1
 
       - name: Install semantic inference dependencies
         run: |
