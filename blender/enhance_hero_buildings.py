@@ -10,6 +10,7 @@ import bpy
 import numpy as np
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
+from mathutils.geometry import tessellate_polygon
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -324,6 +325,92 @@ def select_hero_buildings(scene, source, terrain):
     return selected
 
 
+def point_near_footprint_vertex(x, y, footprint, tolerance=0.9):
+    return any(
+        math.hypot(x - px, y - py) <= tolerance
+        for px, py in footprint
+    )
+
+
+def delete_existing_roof_faces(selected):
+    obj = bpy.data.objects.get("City_Buildings")
+    if obj is None or obj.type != "MESH":
+        raise RuntimeError("City_Buildings missing from photo patch")
+
+    footprints = [item["footprint"] for item in selected]
+    matrix = obj.matrix_world.copy()
+    normal_matrix = matrix.to_3x3().inverted().transposed()
+
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    before = len(bm.faces)
+    doomed = []
+    by_building = {str(item["way_id"]): 0 for item in selected}
+
+    for face in bm.faces:
+        world_normal = normal_matrix @ face.normal
+        if float(world_normal.z) <= 0.78:
+            continue
+        if int(face.material_index) < 5:
+            continue
+
+        world_points = [matrix @ vertex.co for vertex in face.verts]
+        center = sum(world_points, Vector()) / max(1, len(world_points))
+
+        matched = None
+        for item in selected:
+            footprint = item["footprint"]
+            center_inside = point_in_polygon(
+                float(center.x), float(center.y), footprint
+            )
+            boundary_match = any(
+                point_in_polygon(float(point.x), float(point.y), footprint)
+                or point_near_footprint_vertex(
+                    float(point.x), float(point.y), footprint
+                )
+                for point in world_points
+            )
+            if center_inside or boundary_match:
+                matched = str(item["way_id"])
+                break
+
+        if matched is not None:
+            doomed.append(face)
+            by_building[matched] += 1
+
+    if doomed:
+        bmesh.ops.delete(bm, geom=doomed, context="FACES")
+    loose_edges = [edge for edge in bm.edges if not edge.link_faces]
+    if loose_edges:
+        bmesh.ops.delete(bm, geom=loose_edges, context="EDGES")
+    loose_verts = [vertex for vertex in bm.verts if not vertex.link_faces]
+    if loose_verts:
+        bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
+
+    after = len(bm.faces)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+    missing = [
+        int(way_id)
+        for way_id, count in by_building.items()
+        if count <= 0
+    ]
+    if missing:
+        raise RuntimeError(
+            f"No legacy roof face removed for selected buildings: {missing}"
+        )
+
+    return {
+        "object": obj.name,
+        "before_faces": before,
+        "after_faces": after,
+        "removed_faces": before - after,
+        "removed_by_building": by_building,
+    }
+
+
 def delete_existing_detail_faces(selected):
     polygons = [item["footprint"] for item in selected]
     stats = {}
@@ -518,19 +605,67 @@ def add_door(
     )
 
 
-def add_flat_roof(vertices, faces, indices, footprint, top_z, roof_index, parapet_index):
-    center = polygon_centroid(footprint)
-    center_index = len(vertices)
-    vertices.append((center[0], center[1], top_z + 0.085))
-    ring = []
-    for x, y in footprint:
-        ring.append(len(vertices))
-        vertices.append((x, y, top_z + 0.085))
-    for i in range(len(ring)):
-        faces.append((center_index, ring[i], ring[(i + 1) % len(ring)]))
-        indices.append(roof_index)
+def triangle_area_xy(a, b, c):
+    return abs(
+        (b.x - a.x) * (c.y - a.y)
+        - (b.y - a.y) * (c.x - a.x)
+    ) * 0.5
 
+
+def add_flat_roof(vertices, faces, indices, footprint, top_z, roof_index, parapet_index):
+    # A centroid fan is invalid for concave footprints because some rays from
+    # the centroid can leave the polygon. Blender's tessellator handles the
+    # actual polygon boundary instead.
     signed = polygon_signed_area(footprint)
+    ordered = footprint if signed > 0 else list(reversed(footprint))
+    loop = [Vector((x, y, top_z + 0.085)) for x, y in ordered]
+    triangles = tessellate_polygon([loop])
+    if not triangles:
+        raise RuntimeError("Flat roof tessellation produced no triangles")
+
+    footprint_area = polygon_area(footprint)
+    triangle_area = 0.0
+    outside = 0
+    triangle_count = 0
+
+    for triangle in triangles:
+        if len(triangle) != 3:
+            continue
+        a, b, c = triangle
+        area = triangle_area_xy(a, b, c)
+        if area <= 1e-8:
+            continue
+        centroid = (a + b + c) / 3.0
+        if not point_in_polygon(float(centroid.x), float(centroid.y), footprint):
+            # A triangle centroid may land numerically on a boundary for very
+            # small triangles. Accept only a very tight boundary-near case.
+            if not point_near_footprint_vertex(
+                float(centroid.x), float(centroid.y), footprint, tolerance=0.08
+            ):
+                outside += 1
+        start = len(vertices)
+        vertices.extend((tuple(a), tuple(b), tuple(c)))
+        faces.append((start, start + 1, start + 2))
+        indices.append(roof_index)
+        triangle_area += area
+        triangle_count += 1
+
+    if triangle_count <= 0:
+        raise RuntimeError("Flat roof tessellation contained no usable triangles")
+    relative_area_error = abs(triangle_area - footprint_area) / max(
+        footprint_area, 1e-8
+    )
+    if outside:
+        raise RuntimeError(
+            f"Flat roof tessellation leaked outside footprint: {outside} triangles"
+        )
+    if relative_area_error > 0.003:
+        raise RuntimeError(
+            "Flat roof tessellation area mismatch: "
+            f"roof={triangle_area:.3f} footprint={footprint_area:.3f} "
+            f"error={relative_area_error:.6f}"
+        )
+
     for p0, p1 in zip(footprint, footprint[1:] + footprint[:1]):
         outward = outward_for_edge(p0, p1, signed)
         dx = p1[0] - p0[0]
@@ -539,7 +674,13 @@ def add_flat_roof(vertices, faces, indices, footprint, top_z, roof_index, parape
         if length < 0.4:
             continue
         along = Vector((dx / length, dy / length, 0.0))
-        midpoint = Vector(((p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5, top_z + 0.22))
+        midpoint = Vector(
+            (
+                (p0[0] + p1[0]) * 0.5,
+                (p0[1] + p1[1]) * 0.5,
+                top_z + 0.22,
+            )
+        )
         add_oriented_box(
             vertices, faces, indices,
             center=midpoint + outward * 0.03,
@@ -547,6 +688,15 @@ def add_flat_roof(vertices, faces, indices, footprint, top_z, roof_index, parape
             sx=length, sy=0.14, sz=0.28,
             material_index=parapet_index,
         )
+
+    return {
+        "footprint_area_m2": footprint_area,
+        "triangle_area_m2": triangle_area,
+        "triangle_count": triangle_count,
+        "outside_triangles": outside,
+        "relative_area_error": relative_area_error,
+        "method": "mathutils.geometry.tessellate_polygon",
+    }
 
 
 def add_hipped_roof(vertices, faces, indices, footprint, top_z, roof_index):
@@ -794,8 +944,9 @@ def build_hero_geometry(selected, scene):
 
         roof_requested = item["roof"]
         roof_built = roof_requested
+        flat_roof_geometry = None
         if roof_requested == "flat":
-            add_flat_roof(
+            flat_roof_geometry = add_flat_roof(
                 vertices, faces, indices,
                 footprint, top_z, flat_index, parapet_index,
             )
@@ -824,6 +975,7 @@ def build_hero_geometry(selected, scene):
                 "roof_built": roof_built,
                 "roof_source": item["roof_source"],
                 "uses_tile_material": roof_built != "flat",
+                "flat_roof_geometry": flat_roof_geometry,
                 "front_edge": front_edge,
                 "walls": wall_stats,
             }
@@ -905,6 +1057,7 @@ def main():
 
     flat_roof_reassignment = replace_flat_roof_materials()
     selected = select_hero_buildings(scene, source, terrain)
+    removed_roofs = delete_existing_roof_faces(selected)
     removed_details = delete_existing_detail_faces(selected)
     hero_obj, buildings = build_hero_geometry(selected, scene)
 
@@ -935,6 +1088,7 @@ def main():
         "hero_count": len(buildings),
         "selection": buildings,
         "flat_roof_reassignment": flat_roof_reassignment,
+        "removed_old_roof_faces": removed_roofs,
         "removed_old_detail_faces": removed_details,
         "geometry": {
             "object": hero_obj.name,
