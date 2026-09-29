@@ -1,0 +1,317 @@
+name: Coimbra full route with new geometry 016B
+
+on:
+  push:
+    branches:
+      - feature/coimbra-016b-full-render-new-geometry
+    paths:
+      - "blender/prepare_full_render_new_geometry.py"
+      - "blender/build_photo_patch.py"
+      - "blender/enhance_hero_buildings.py"
+      - "blender/enhance_hero_realism.py"
+      - "scripts/verify_full_render_new_geometry.py"
+      - "docs/specs/SPEC-COIMBRA-FULL-RENDER-NEW-GEOMETRY-1.md"
+      - ".github/workflows/coimbra-016b-full-render-new-geometry.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  URBAN_010_RUN_ID: "36543166578"
+  HIGHRES_008B_RUN_ID: "36491512430"
+  OSM_009A_RUN_ID: "36495771020"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download accepted Coimbra 010 scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-010-urban-quality
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.URBAN_010_RUN_ID }}
+          path: bridge_output_010_download
+
+      - name: Normalize Coimbra 010 scene
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_010
+          found="$(find bridge_output_010_download -type f -name 'coimbra-urban-quality.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_010/coimbra-urban-quality.blend
+          test -s bridge_output_010/coimbra-urban-quality.blend
+
+      - name: Download pinned rich OSM semantics
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-009a-mosaiq-benchmark
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.OSM_009A_RUN_ID }}
+          path: osm_009a_download
+
+      - name: Normalize OSM semantics
+        run: |
+          set -euo pipefail
+          mkdir -p data/processed
+          found="$(find osm_009a_download -type f -name 'bridge_osm_oss_local.json' -print -quit)"
+          test -n "$found"
+          cp "$found" data/processed/bridge_osm_oss_local.json
+          test -s data/processed/bridge_osm_oss_local.json
+
+      - name: Download high-resolution terrain
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_008B_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize terrain
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_008b
+          found="$(find bridge_output_008b_download -type f -name 'bridge_terrain_highres_2m.npz' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_008b/bridge_terrain_highres_2m.npz
+          test -s bridge_output_008b/bridge_terrain_highres_2m.npz
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Integrate Polo II geometry into full scene
+        run: |
+          set -euo pipefail
+          rm -rf bridge_output_016b
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/prepare_full_render_new_geometry.py
+          test -s bridge_output_016b/coimbra-full-render-new-geometry.blend
+          cat bridge_output_016b/full-render-new-geometry-manifest.json
+
+      - name: Upload prepared full scene
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-016b-full-render-prepared
+          path: |
+            bridge_output_016b/coimbra-full-render-new-geometry.blend
+            bridge_output_016b/full-render-new-geometry-manifest.json
+          if-no-files-found: error
+          compression-level: 1
+
+  render:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: "01", start: 1, end: 30 }
+          - { shard: "02", start: 31, end: 60 }
+          - { shard: "03", start: 61, end: 90 }
+          - { shard: "04", start: 91, end: 120 }
+          - { shard: "05", start: 121, end: 150 }
+          - { shard: "06", start: 151, end: 180 }
+          - { shard: "07", start: 181, end: 210 }
+          - { shard: "08", start: 211, end: 240 }
+          - { shard: "09", start: 241, end: 270 }
+          - { shard: "10", start: 271, end: 300 }
+          - { shard: "11", start: 301, end: 330 }
+          - { shard: "12", start: 331, end: 360 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-016b-full-render-prepared
+          path: bridge_output_016b
+
+      - name: Render shard ${{ matrix.shard }}
+        env:
+          START_FRAME: ${{ matrix.start }}
+          END_FRAME: ${{ matrix.end }}
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_016b/frames
+          blender bridge_output_016b/coimbra-full-render-new-geometry.blend --background \
+            -s "$START_FRAME" -e "$END_FRAME" \
+            -o "$GITHUB_WORKSPACE/bridge_output_016b/frames/frame_" \
+            -F PNG --render-anim
+          count="$(find bridge_output_016b/frames -name 'frame_*.png' | wc -l)"
+          test "$count" -eq $((END_FRAME - START_FRAME + 1))
+
+      - name: Upload frame shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-016b-frames-${{ matrix.shard }}
+          path: bridge_output_016b/frames/
+          if-no-files-found: error
+          compression-level: 1
+
+  finalize:
+    needs: [prepare, render]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install finalization tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-016b-full-render-prepared
+          path: bridge_output_016b
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coimbra-016b-frames-*
+          path: bridge_output_016b/frames
+          merge-multiple: true
+
+      - name: Check complete frame sequence
+        run: |
+          set -euo pipefail
+          count="$(find bridge_output_016b/frames -name 'frame_*.png' | wc -l)"
+          test "$count" -eq 360
+          for frame in 0001 0090 0180 0270 0360; do
+            test -s "bridge_output_016b/frames/frame_${frame}.png"
+          done
+
+      - name: Encode full route
+        run: |
+          set -euo pipefail
+          ffmpeg -y -framerate 30 -start_number 1 \
+            -i bridge_output_016b/frames/frame_%04d.png \
+            -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Terrain / Ortho © DGT · Open data / CC BY 4.0   |   Map data © OpenStreetMap contributors · ODbL':fontcolor=white:fontsize=15:x=14:y=h-th-12:box=1:boxcolor=black@0.38:boxborderw=5" \
+            -c:v libx264 -pix_fmt yuv420p -crf 19 -preset medium -movflags +faststart \
+            bridge_output_016b/coimbra-full-route-new-geometry-12s.mp4
+          test -s bridge_output_016b/coimbra-full-route-new-geometry-12s.mp4
+
+      - name: Preserve review frames
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_016b/review
+          cp bridge_output_016b/frames/frame_0001.png bridge_output_016b/review/frame-001.png
+          cp bridge_output_016b/frames/frame_0090.png bridge_output_016b/review/frame-090.png
+          cp bridge_output_016b/frames/frame_0180.png bridge_output_016b/review/frame-180.png
+          cp bridge_output_016b/frames/frame_0270.png bridge_output_016b/review/frame-270.png
+          cp bridge_output_016b/frames/frame_0360.png bridge_output_016b/review/frame-360.png
+
+      - name: Record video metadata
+        run: |
+          set -euo pipefail
+          ffprobe -v error -select_streams v:0 -show_entries \
+            stream=codec_name,width,height,r_frame_rate,nb_frames:format=duration \
+            -of json bridge_output_016b/coimbra-full-route-new-geometry-12s.mp4 \
+            > bridge_output_016b/ffprobe.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("bridge_output_016b")
+          probe = json.loads((root / "ffprobe.json").read_text())
+          stream = probe["streams"][0]
+          num, den = map(int, stream["r_frame_rate"].split("/"))
+          manifest = {
+              "version": "coimbra-full-render-new-geometry-final-v1",
+              "video": "bridge_output_016b/coimbra-full-route-new-geometry-12s.mp4",
+              "frame_count": int(stream.get("nb_frames") or 360),
+              "resolution": [int(stream["width"]), int(stream["height"])],
+              "fps": round(num / den),
+              "duration_seconds": float(probe["format"]["duration"]),
+              "codec": stream["codec_name"],
+              "inspection_frames": [1, 90, 180, 270, 360],
+              "attribution_burned_in": True,
+          }
+          (root / "full-render-new-geometry-final-manifest.json").write_text(
+              json.dumps(manifest, indent=2) + "\n"
+          )
+          print(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Verify final render with new geometry
+        run: |
+          python scripts/verify_full_render_new_geometry.py \
+            bridge_output_016b/full-render-new-geometry-manifest.json \
+            bridge_output_016b/full-render-new-geometry-final-manifest.json
+
+      - name: Remove intermediate frames
+        run: rm -rf bridge_output_016b/frames
+
+      - name: Upload full-route result
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-016b-full-route-new-geometry
+          path: |
+            bridge_output_016b/coimbra-full-route-new-geometry-12s.mp4
+            bridge_output_016b/review/frame-001.png
+            bridge_output_016b/review/frame-090.png
+            bridge_output_016b/review/frame-180.png
+            bridge_output_016b/review/frame-270.png
+            bridge_output_016b/review/frame-360.png
+            bridge_output_016b/full-render-new-geometry-manifest.json
+            bridge_output_016b/full-render-new-geometry-final-manifest.json
+          if-no-files-found: error
+          compression-level: 1
