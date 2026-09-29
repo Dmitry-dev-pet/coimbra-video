@@ -17,10 +17,10 @@ preserved.
 
 Solar:
 - DGT Orthophotos 2025 RGB;
-- `IDEA-Research/grounding-dino-tiny`, Apache-2.0;
-- pinned model revision `c7309d120267d81bf3ed68383062e12a9102602d`;
-- accepted detections must be centered inside an OSM building footprint;
-- OSM solar features may be used as authoritative supplements.
+- deterministic OpenCV color/shape detection constrained to OSM building footprints;
+- dark blue / blue-gray / near-black rectangular roof components are candidates;
+- OSM solar features may be used as authoritative supplements;
+- large dark roof membranes and shadows are rejected by rectangularity, area and color checks.
 
 Parking / sports:
 - pinned OSM semantics from the 009A artifact;
