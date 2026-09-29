@@ -235,6 +235,82 @@ def build_canopy_masses(items, terrain):
     return obj, accepted
 
 
+def undergrowth_materials():
+    return [
+        vegetation.tree_material("Semantic_Undergrowth_Green_A", (0.10, 0.22, 0.055, 1.0), 0.97),
+        vegetation.tree_material("Semantic_Undergrowth_Green_B", (0.16, 0.29, 0.075, 1.0), 0.97),
+        vegetation.tree_material("Semantic_Undergrowth_Dry_A", (0.26, 0.27, 0.10, 1.0), 0.98),
+        vegetation.tree_material("Semantic_Undergrowth_Dry_B", (0.34, 0.30, 0.12, 1.0), 0.98),
+    ]
+
+
+def build_undergrowth(items, terrain):
+    vertices = []
+    faces = []
+    indices = []
+    accepted = []
+
+    for item in items:
+        x = float(item["x"])
+        y = float(item["y"])
+        z = terrain.sample(x, y)
+        if z is None:
+            continue
+
+        token = f"undergrowth:{x:.2f}:{y:.2f}"
+        kind = str(item.get("kind") or "green-scrub")
+        base_height = float(item["height"])
+        radius = float(item["radius"])
+        u0 = hero.stable_unit(token, 0)
+        u1 = hero.stable_unit(token, 1)
+
+        if kind == "green-scrub":
+            slot = 0 if u1 < 0.60 else 1
+        else:
+            slot = 2 if u1 < 0.58 else 3
+
+        height = max(0.55, min(3.0, base_height * (0.78 + 0.34 * u0)))
+        vegetation.add_crown(
+            vertices,
+            faces,
+            indices,
+            center=Vector((x, y, z)),
+            base_z=z + 0.02,
+            height=height,
+            radius=max(0.65, min(1.95, radius)),
+            sides=6,
+            material_index=slot,
+            rotation=hero.stable_unit(token, 2) * math.tau,
+            variant=0,
+        )
+        accepted.append(
+            {
+                "x": x,
+                "y": y,
+                "z": z,
+                "height": height,
+                "radius": radius,
+                "kind": kind,
+            }
+        )
+
+    mesh = bpy.data.meshes.new("Semantic_Undergrowth_Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new("Semantic_Undergrowth", mesh)
+    bpy.context.collection.objects.link(obj)
+
+    for mat in undergrowth_materials():
+        mesh.materials.append(mat)
+    for polygon, slot in zip(mesh.polygons, indices):
+        polygon.material_index = slot
+        polygon.use_smooth = True
+
+    obj["source"] = "OpenEarthMap rangeland + DGT ortho color + local HAG"
+    obj["undergrowth_count"] = len(accepted)
+    return obj, accepted
+
+
 def pool_materials():
     water = hero.material("Semantic_Pool_Water", (0.025, 0.24, 0.43, 1.0), 0.18)
     water.use_nodes = True
@@ -337,9 +413,11 @@ def visible(scene, camera, point):
     )
 
 
-def choose_review_frame(scene, camera, trees, pools):
+def choose_review_frame(scene, camera, trees, masses, undergrowth, pools):
     original = scene.frame_current
     tree_sample = trees[:: max(1, len(trees) // 650)]
+    mass_sample = masses[:: max(1, len(masses) // 850)]
+    under_sample = undergrowth[:: max(1, len(undergrowth) // 900)]
     best = None
 
     for frame in range(1, 361, 2):
@@ -349,24 +427,73 @@ def choose_review_frame(scene, camera, trees, pools):
             if visible(scene, camera, pool["center"])
         ]
         tree_count = sum(
-            visible(scene, camera, (tree["x"], tree["y"], tree["z"] + tree["height"] * 0.55))
+            visible(
+                scene,
+                camera,
+                (
+                    tree["x"],
+                    tree["y"],
+                    tree["z"] + tree["height"] * 0.55,
+                ),
+            )
             for tree in tree_sample
         )
+        mass_count = sum(
+            visible(
+                scene,
+                camera,
+                (
+                    item["x"],
+                    item["y"],
+                    item["z"] + item["height"] * 0.55,
+                ),
+            )
+            for item in mass_sample
+        )
+        under_count = sum(
+            visible(
+                scene,
+                camera,
+                (
+                    item["x"],
+                    item["y"],
+                    item["z"] + item["height"] * 0.55,
+                ),
+            )
+            for item in under_sample
+        )
+
+        # Prefer a vegetation-rich production frame. Pools are still useful
+        # landmarks, but they no longer dominate camera selection.
         pool_score = sum(
-            24.0 + min(25.0, pool["area_m2"] * 0.18)
+            2.0 + min(8.0, pool["area_m2"] * 0.05)
             for pool in visible_pools
         )
-        score = pool_score + tree_count * 0.15
-        row = (score, len(visible_pools), tree_count, frame)
+        score = (
+            tree_count * 0.12
+            + mass_count * 0.18
+            + under_count * 0.22
+            + pool_score
+        )
+        row = (
+            score,
+            under_count,
+            mass_count,
+            tree_count,
+            len(visible_pools),
+            frame,
+        )
         if best is None or row > best:
             best = row
 
     scene.frame_set(original)
     assert best is not None
     return {
-        "frame": int(best[3]),
-        "visible_pools": int(best[1]),
-        "sampled_visible_trees": int(best[2]),
+        "frame": int(best[5]),
+        "visible_pools": int(best[4]),
+        "sampled_visible_trees": int(best[3]),
+        "sampled_visible_canopy_masses": int(best[2]),
+        "sampled_visible_undergrowth": int(best[1]),
         "score": float(best[0]),
     }
 
@@ -443,30 +570,30 @@ def main():
     removed = remove_old_tree_layer()
     tree_obj, trees = build_semantic_trees(data.get("trees") or [], terrain)
     mass_obj, masses = build_canopy_masses(data.get("canopy_masses") or [], terrain)
+    under_obj, undergrowth = build_undergrowth(data.get("undergrowth") or [], terrain)
     pool_obj, pools = build_pools(data.get("pools") or [], terrain)
 
     if len(trees) < 250:
         raise RuntimeError(f"Semantic tree replacement too sparse: {len(trees)}")
     if len(masses) < 1000:
         raise RuntimeError(f"Semantic canopy mass layer too sparse: {len(masses)}")
+    if len(undergrowth) < 1000:
+        raise RuntimeError(f"Semantic undergrowth layer too sparse: {len(undergrowth)}")
     if len(pools) < 1:
         raise RuntimeError("No swimming-pool candidates survived semantic filtering")
 
-    review = choose_review_frame(scene, production_camera, trees, pools)
+    review = choose_review_frame(
+        scene,
+        production_camera,
+        trees,
+        masses,
+        undergrowth,
+        pools,
+    )
     custom_camera = None
-    if review["visible_pools"] > 0:
-        scene.frame_set(review["frame"])
-        scene.camera = production_camera
-        camera_mode = "production-route"
-    else:
-        custom_camera, nearest_frame = make_pool_review_camera(
-            scene,
-            production_camera,
-            pools,
-            terrain,
-        )
-        scene.camera = custom_camera
-        camera_mode = f"pool-detail-near-production-frame-{nearest_frame}"
+    scene.frame_set(review["frame"])
+    scene.camera = production_camera
+    camera_mode = "production-route-vegetation-rich"
 
     scene.render.engine = "BLENDER_EEVEE"
     scene.render.resolution_x = 1600
@@ -485,6 +612,8 @@ def main():
         "placed_trees": len(trees),
         "detected_canopy_mass_points": len(data.get("canopy_masses") or []),
         "placed_canopy_mass_points": len(masses),
+        "detected_undergrowth_points": len(data.get("undergrowth") or []),
+        "placed_undergrowth_points": len(undergrowth),
         "detected_pools": len(data.get("pools") or []),
         "placed_pools": len(pools),
         "removed_old_tree_objects": removed,
@@ -492,6 +621,7 @@ def main():
         "camera_mode": camera_mode,
         "tree_faces": len(tree_obj.data.polygons),
         "canopy_mass_faces": len(mass_obj.data.polygons),
+        "undergrowth_faces": len(under_obj.data.polygons),
         "pool_faces": len(pool_obj.data.polygons),
     }
     INTERNAL.write_text(json.dumps(internal, indent=2) + "\n")
