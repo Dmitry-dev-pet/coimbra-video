@@ -1,0 +1,157 @@
+name: Coimbra miniature details dev 007
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "contracts/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.json"
+      - "docs/specs/SPEC-COIMBRA-DETAILS-1.md"
+      - "blender/add_miniature_details.py"
+      - "scripts/apatch_visual_dev_governance.py"
+      - "scripts/verify_details_dev_evidence.py"
+      - "verification/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.probe"
+      - ".github/workflows/coimbra-apatch-blender-007-details.yml"
+  pull_request:
+    paths:
+      - "contracts/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.json"
+      - "docs/specs/SPEC-COIMBRA-DETAILS-1.md"
+      - "blender/add_miniature_details.py"
+      - "scripts/verify_details_dev_evidence.py"
+      - "verification/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.probe"
+      - ".github/workflows/coimbra-apatch-blender-007-details.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  BRIDGE_REF: "e95e0edaf21e68a987ac9bb0f4e3522b13534dc0"
+  BASELINE_RUN_ID: "36484872740"
+
+jobs:
+  detail-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout APatch Blender
+        uses: actions/checkout@v4
+        with:
+          repository: Dmitry-dev-pet/apatch-blender
+          ref: ${{ env.BRIDGE_REF }}
+          path: _bridge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install APatch
+        run: python -m pip install "apatch==0.8.48"
+
+      - name: Download approved 006 vegetation baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-006-vegetation
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.BASELINE_RUN_ID }}
+          path: bridge_output_006_download
+
+      - name: Normalize approved 006 baseline path
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_006
+          found="$(find bridge_output_006_download -type f -name 'coimbra-vegetation-visual-dev.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_006/coimbra-vegetation-visual-dev.blend
+          test -s bridge_output_006/coimbra-vegetation-visual-dev.blend
+          ls -lh bridge_output_006/coimbra-vegetation-visual-dev.blend
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Build miniature-detail baseline
+        run: |
+          rm -rf bridge_output_007
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/add_miniature_details.py
+          cat bridge_output_007/details-manifest.json
+
+      - name: Start governed APatch detail session
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_visual_dev_governance.py \
+              --root "$GITHUB_WORKSPACE" start \
+              --contract contracts/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.json \
+              --baseline bridge_output_007/coimbra-details-base.blend \
+              --output bridge_output_007/apatch-session-start.json
+
+      - name: Install APatch into Blender Python
+        run: |
+          set -euo pipefail
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "apatch==0.8.48"
+
+      - name: Build detail visual-dev blend and three previews
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/execute_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.json" \
+            --root "$GITHUB_WORKSPACE"
+
+      - name: Verify protected miniature scene
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python _bridge/scripts/verify_contract.py -- \
+            --contract "$GITHUB_WORKSPACE/contracts/COIMBRA-BRIDGE-007-MINIATURE-DETAILS.json" \
+            --root "$GITHUB_WORKSPACE"
+          cat bridge_output_007/details-verification.json
+
+      - name: Run frozen APatch detail verification
+        run: |
+          PYTHONPATH="$GITHUB_WORKSPACE/_bridge/src" \
+            python scripts/apatch_visual_dev_governance.py \
+              --root "$GITHUB_WORKSPACE" verify \
+              --output bridge_output_007/apatch-sdd-verification.json
+
+      - name: Upload Blender detail-dev artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-007-miniature-details
+          path: |
+            bridge_output_007/coimbra-details-visual-dev.blend
+            bridge_output_007/preview-001.png
+            bridge_output_007/preview-181.png
+            bridge_output_007/preview-360.png
+            bridge_output_007/details-manifest.json
+            bridge_output_007/details-execution.json
+            bridge_output_007/details-verification.json
+            bridge_output_007/apatch-session-start.json
+            bridge_output_007/apatch-sdd-verification.json
+          if-no-files-found: error
