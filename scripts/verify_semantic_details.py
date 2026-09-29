@@ -28,6 +28,12 @@ def main() -> None:
     counts = detections.get("counts") or {}
     if int(counts.get("trees", 0)) < 250:
         fail("semantic tree detection unexpectedly sparse")
+    if int(counts.get("crown_segments", 0)) < 250:
+        fail("too few crown segments")
+    if int(counts.get("tree_heights_from_lidar", 0)) < 100:
+        fail("too few crown heights measured from LiDAR")
+    if int(counts.get("canopy_mass_points", 0)) < 1000:
+        fail("canopy mass layer unexpectedly sparse")
     if int(counts.get("pools", 0)) < 1:
         fail("no pool candidates survived filtering")
 
@@ -35,6 +41,8 @@ def main() -> None:
         fail("wrong render version")
     if int(render.get("placed_trees", 0)) < 250:
         fail("too few semantic trees placed")
+    if int(render.get("placed_canopy_mass_points", 0)) < 1000:
+        fail("too few canopy mass points placed")
     if int(render.get("placed_pools", 0)) < 1:
         fail("no pools placed")
 
@@ -50,8 +58,12 @@ def main() -> None:
     print(json.dumps({
         "ok": True,
         "trees": counts.get("trees"),
+        "crown_segments": counts.get("crown_segments"),
+        "tree_heights_from_lidar": counts.get("tree_heights_from_lidar"),
+        "canopy_mass_points": counts.get("canopy_mass_points"),
         "pools": counts.get("pools"),
         "placed_trees": render.get("placed_trees"),
+        "placed_canopy_mass_points": render.get("placed_canopy_mass_points"),
         "placed_pools": render.get("placed_pools"),
         "camera_mode": render.get("camera_mode"),
     }, indent=2))
