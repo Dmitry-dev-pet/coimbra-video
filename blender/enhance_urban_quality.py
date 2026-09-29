@@ -856,8 +856,55 @@ def render_production_previews(scene):
     return paths
 
 
-def render_qa_previews(scene, terrain):
+def nearest_road_pose(anchor_xy, desired_target_xy, nodes, ways):
+    ax, ay = anchor_xy
+    desired = Vector((
+        float(desired_target_xy[0]) - float(ax),
+        float(desired_target_xy[1]) - float(ay),
+    ))
+    skip = {
+        "footway", "path", "cycleway", "steps", "track",
+        "construction", "proposed",
+    }
+    best = None
+
+    for way in ways:
+        tags = way.get("tags") or {}
+        highway = str(tags.get("highway") or "").lower()
+        if not highway or highway in skip:
+            continue
+        line = line_for_way(way, nodes)
+        for p0, p1 in zip(line[:-1], line[1:]):
+            x0, y0 = p0
+            x1, y1 = p1
+            dx = x1 - x0
+            dy = y1 - y0
+            length2 = dx * dx + dy * dy
+            if length2 < 1e-6:
+                continue
+            t = ((ax - x0) * dx + (ay - y0) * dy) / length2
+            t = max(0.0, min(1.0, t))
+            px = x0 + dx * t
+            py = y0 + dy * t
+            distance2 = (px - ax) ** 2 + (py - ay) ** 2
+            if best is None or distance2 < best["distance2"]:
+                tangent = Vector((dx, dy))
+                tangent.normalize()
+                if desired.length > 1e-6 and tangent.dot(desired.normalized()) < 0.0:
+                    tangent = -tangent
+                best = {
+                    "distance2": distance2,
+                    "xy": (px, py),
+                    "tangent": tangent,
+                    "way_id": int(way.get("id") or 0),
+                    "highway": highway,
+                }
+    return best
+
+
+def render_qa_previews(scene, terrain, nodes, ways):
     original_camera = scene.camera
+    original_frame = scene.frame_current
     original_resolution = (
         scene.render.resolution_x,
         scene.render.resolution_y,
@@ -868,9 +915,10 @@ def render_qa_previews(scene, terrain):
     bpy.context.collection.objects.link(camera)
     camera.data.sensor_width = 36.0
     camera.data.dof.use_dof = False
-    camera.data.clip_start = 0.05
+    camera.data.clip_start = 0.18
     camera.data.clip_end = 3500.0
     scene.camera = camera
+    scene.frame_set(181)
     scene.render.resolution_x = 960
     scene.render.resolution_y = 540
     scene.render.resolution_percentage = 100
@@ -878,16 +926,41 @@ def render_qa_previews(scene, terrain):
 
     results = []
     for view in QA_VIEWS:
-        x, y = view["location_xy"]
-        tx, ty = view["target_xy"]
-        z = terrain.sample(x, y)
-        tz = terrain.sample(tx, ty)
-        if z is None or tz is None:
+        pose = nearest_road_pose(
+            view["location_xy"],
+            view["target_xy"],
+            nodes,
+            ways,
+        )
+        if pose is None:
             results.append({"name": view["name"], "rendered": False})
             continue
-        camera.location = (x, y, z + 3.0)
+
+        x, y = pose["xy"]
+        tangent = pose["tangent"]
+        z = terrain.sample(x, y)
+        target_x = x + float(tangent.x) * 32.0
+        target_y = y + float(tangent.y) * 32.0
+        target_z = terrain.sample(target_x, target_y)
+        if z is None:
+            results.append({"name": view["name"], "rendered": False})
+            continue
+        if target_z is None:
+            target_z = z
+
+        # Put the camera just off the centreline so the lane itself and the
+        # street edge both remain readable.  The lateral offset is small enough
+        # to stay inside ordinary urban carriageways.
+        side = Vector((-tangent.y, tangent.x))
+        camera_x = x + float(side.x) * 0.85
+        camera_y = y + float(side.y) * 0.85
+        camera_z = terrain.sample(camera_x, camera_y)
+        if camera_z is None:
+            camera_x, camera_y, camera_z = x, y, z
+
+        camera.location = (camera_x, camera_y, camera_z + 2.65)
         camera.data.lens = float(view["lens"])
-        point_at(camera, (tx, ty, tz + 1.7))
+        point_at(camera, (target_x, target_y, target_z + 1.55))
         path = OUT / f"street-{view['name']}.png"
         scene.render.filepath = str(path)
         bpy.ops.render.render(write_still=True)
@@ -896,14 +969,18 @@ def render_qa_previews(scene, terrain):
                 "name": view["name"],
                 "rendered": True,
                 "path": path.relative_to(ROOT).as_posix(),
-                "location": [x, y, z + 3.0],
-                "target": [tx, ty, tz + 1.7],
+                "location": [camera_x, camera_y, camera_z + 2.65],
+                "target": [target_x, target_y, target_z + 1.55],
                 "lens": float(view["lens"]),
+                "road_way_id": pose["way_id"],
+                "highway": pose["highway"],
+                "anchor_distance_m": math.sqrt(float(pose["distance2"])),
             }
         )
 
     bpy.data.objects.remove(camera, do_unlink=True)
     scene.camera = original_camera
+    scene.frame_set(original_frame)
     (
         scene.render.resolution_x,
         scene.render.resolution_y,
@@ -1005,7 +1082,7 @@ def main():
     bpy.ops.wm.save_as_mainfile(filepath=str(OUT_BLEND))
 
     production_previews = render_production_previews(scene)
-    street_previews = render_qa_previews(scene, terrain)
+    street_previews = render_qa_previews(scene, terrain, nodes, ways)
 
     result = {
         "version": VERSION,
