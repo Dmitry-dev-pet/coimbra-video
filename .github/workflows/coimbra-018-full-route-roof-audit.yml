@@ -87,6 +87,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
 
+      - name: Install Pillow into Blender Python
+        run: |
+          set -euo pipefail
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "Pillow>=11,<13"
+
       - name: Audit route roofs
         run: |
           set -euo pipefail
