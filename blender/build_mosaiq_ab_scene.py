@@ -17,7 +17,7 @@ BASE = ROOT / "bridge_output_003" / "coimbra-terrain-base.blend"
 TERRAIN = ROOT / "data" / "processed" / "bridge_terrain_6m.npz"
 TERRAIN_META = ROOT / "data" / "processed" / "bridge_terrain_6m.json"
 CONFIG = ROOT / "config" / "coimbra_bridge.json"
-OSM = ROOT / "data" / "osm" / "coimbra-route-mosaiq.osm"
+OSM = ROOT / "data" / "osm" / "coimbra-route-mosaiq.osm.pbf"
 MOSAIQ_DIR = Path(
     os.environ.get("MOSAIQ_ADDON_DIR", ROOT / "_mosaiq" / "mosaiq_osm_vr")
 ).resolve()
