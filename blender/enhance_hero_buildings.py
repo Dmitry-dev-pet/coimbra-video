@@ -283,13 +283,13 @@ def select_hero_buildings(scene, source, terrain):
         zs = [p.z for p in projections]
         if max(zs) <= 0.0:
             continue
-        if max(xs) < -0.05 or min(xs) > 1.05 or max(ys) < -0.05 or min(ys) > 1.05:
+        if max(xs) < -0.12 or min(xs) > 1.12 or max(ys) < -0.12 or min(ys) > 1.12:
             continue
 
         clipped_w = max(0.0, min(1.0, max(xs)) - max(0.0, min(xs)))
         clipped_h = max(0.0, min(1.0, max(ys)) - max(0.0, min(ys)))
         screen_area = clipped_w * clipped_h
-        if screen_area <= 0.0004:
+        if screen_area <= 0.00008:
             continue
 
         distance = (
@@ -650,6 +650,13 @@ def build_hero_geometry(selected, scene):
 
         front_edge = None
         front_score = -1e9
+        for edge_index, (p0, p1) in enumerate(zip(footprint, footprint[1:] + footprint[:1])):
+            outward = outward_for_edge(p0, p1, signed)
+            facing = outward.dot(to_camera)
+            if facing > front_score:
+                front_score = facing
+                front_edge = edge_index
+
         wall_stats = []
         for edge_index, (p0, p1) in enumerate(zip(footprint, footprint[1:] + footprint[:1])):
             dx = p1[0] - p0[0]
@@ -663,10 +670,6 @@ def build_hero_geometry(selected, scene):
                 vertices, faces, indices,
                 p0, p1, base_z, top_z, outward, wall_index,
             )
-            facing = outward.dot(to_camera)
-            if facing > front_score:
-                front_score = facing
-                front_edge = edge_index
 
             if length < 3.3:
                 wall_stats.append({"edge": edge_index, "length": length, "windows": 0})
