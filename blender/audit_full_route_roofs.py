@@ -8,8 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import bpy
-import numpy as np
-from PIL import Image
+from statistics import median
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 from mathutils.kdtree import KDTree
@@ -25,8 +24,6 @@ import enhance_hero_buildings as hero  # type: ignore
 
 SOURCE = ROOT / "bridge_output_016b" / "coimbra-full-render-new-geometry.blend"
 OSM_LOCAL = ROOT / "data" / "processed" / "bridge_osm_oss_local.json"
-ORTHO = ROOT / "data" / "processed" / "bridge_ortho_2025.jpg"
-ORTHO_META = ROOT / "data" / "processed" / "bridge_ortho_2025.json"
 OUT = ROOT / "bridge_output_018"
 OUT_BLEND = OUT / "coimbra-full-route-roof-audit.blend"
 MANIFEST = OUT / "roof-audit-manifest.json"
@@ -186,38 +183,82 @@ def match_building(x, y, grid):
 
 
 class OrthoSampler:
-    def __init__(self, image_path, meta_path, center_epsg):
-        self.image = Image.open(image_path).convert("RGB")
-        self.array = np.asarray(self.image, dtype=np.uint8)
-        self.meta = json.loads(Path(meta_path).read_text())
-        self.minx, self.miny, self.maxx, self.maxy = map(
-            float, self.meta["bbox_epsg3763"]
-        )
-        self.resolution = float(self.meta["resolution_m"])
-        self.center_x, self.center_y = map(float, center_epsg)
+    def __init__(self):
+        terrain = bpy.data.objects.get("City_Terrain")
+        if terrain is None or terrain.type != "MESH":
+            raise RuntimeError("City_Terrain missing; cannot locate packed DGT ortho")
+
+        image = None
+        for mat in terrain.data.materials:
+            if mat is None or not mat.use_nodes or mat.node_tree is None:
+                continue
+            for node in mat.node_tree.nodes:
+                if node.type == "TEX_IMAGE" and node.image is not None:
+                    image = node.image
+                    break
+            if image is not None:
+                break
+
+        if image is None:
+            raise RuntimeError("Packed DGT orthophoto image node not found")
+        if not image.has_data:
+            image.reload()
+        if not image.has_data:
+            raise RuntimeError("Packed DGT orthophoto has no pixel data")
+
+        self.image = image
+        self.width = int(image.size[0])
+        self.height = int(image.size[1])
+        if self.width <= 0 or self.height <= 0:
+            raise RuntimeError("Invalid packed DGT orthophoto dimensions")
+
+        world_corners = [
+            terrain.matrix_world @ Vector(corner)
+            for corner in terrain.bound_box
+        ]
+        self.minx = min(float(p.x) for p in world_corners)
+        self.maxx = max(float(p.x) for p in world_corners)
+        self.miny = min(float(p.y) for p in world_corners)
+        self.maxy = max(float(p.y) for p in world_corners)
+        self.pixels = image.pixels
 
     def pixel(self, x_local, y_local):
-        x_abs = self.center_x + x_local
-        y_abs = self.center_y + y_local
-        px = (x_abs - self.minx) / self.resolution
-        py = (self.maxy - y_abs) / self.resolution
-        return px, py
+        if not (self.minx <= x_local <= self.maxx and self.miny <= y_local <= self.maxy):
+            return None
+        u = (x_local - self.minx) / max(1e-9, self.maxx - self.minx)
+        v = (y_local - self.miny) / max(1e-9, self.maxy - self.miny)
+        return (
+            u * (self.width - 1),
+            v * (self.height - 1),
+        )
+
+    def rgb_at(self, x, y):
+        x = max(0, min(int(x), self.width - 1))
+        y = max(0, min(int(y), self.height - 1))
+        index = (y * self.width + x) * 4
+        return (
+            float(self.pixels[index]) * 255.0,
+            float(self.pixels[index + 1]) * 255.0,
+            float(self.pixels[index + 2]) * 255.0,
+        )
 
     def median_rgb(self, x_local, y_local, radius_px=8):
-        px, py = self.pixel(x_local, y_local)
-        x = int(round(px))
-        y = int(round(py))
-        if x < 0 or y < 0 or x >= self.image.width or y >= self.image.height:
+        point = self.pixel(x_local, y_local)
+        if point is None:
             return None
-        x0 = max(0, x - radius_px)
-        x1 = min(self.image.width, x + radius_px + 1)
-        y0 = max(0, y - radius_px)
-        y1 = min(self.image.height, y + radius_px + 1)
-        crop = self.array[y0:y1, x0:x1].reshape(-1, 3)
-        if crop.size == 0:
-            return None
-        med = np.median(crop, axis=0)
-        return tuple(float(v) for v in med)
+        px, py = point
+        # 25 samples across roughly a 4 m square at the original 25 cm DGT
+        # resolution. Sparse sampling avoids materializing the full packed
+        # ~65M-pixel image as a Python array.
+        offsets = (-radius_px, -radius_px // 2, 0, radius_px // 2, radius_px)
+        rs, gs, bs = [], [], []
+        for dx in offsets:
+            for dy in offsets:
+                r, g, b = self.rgb_at(round(px + dx), round(py + dy))
+                rs.append(r)
+                gs.append(g)
+                bs.append(b)
+        return (median(rs), median(gs), median(bs))
 
 
 def ortho_roof_signal(rgb):
@@ -319,7 +360,7 @@ def select_review_frames(scene, camera, corrected_centers):
 
 
 def main():
-    for required in (SOURCE, OSM_LOCAL, ORTHO, ORTHO_META):
+    for required in (SOURCE, OSM_LOCAL):
         if not required.is_file():
             raise SystemExit(f"Missing input: {required}")
 
@@ -334,12 +375,8 @@ def main():
     camera_tree, camera_points = build_camera_kdtree(scene, camera)
 
     source = json.loads(OSM_LOCAL.read_text())
-    center_epsg = source.get("center_epsg3763")
-    if not center_epsg:
-        raise RuntimeError("OSM local source has no center_epsg3763")
-
     grid, buildings = build_building_index(source)
-    ortho = OrthoSampler(ORTHO, ORTHO_META, center_epsg)
+    ortho = OrthoSampler()
 
     city = bpy.data.objects.get("City_Buildings")
     if city is None or city.type != "MESH":
@@ -480,6 +517,7 @@ def main():
             "explicit_roof_shape_wins": True,
             "flat_roof_never_tile": True,
             "unknown_uses_dgt_ortho_color": True,
+            "dgt_ortho_from_packed_scene": True,
             "google_not_bulk_scraped": True,
             "full_route_scene": True,
         },
