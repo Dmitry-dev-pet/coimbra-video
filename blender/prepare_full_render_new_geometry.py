@@ -17,6 +17,7 @@ if str(BLENDER_DIR) not in sys.path:
 import build_photo_patch as patch  # type: ignore
 import enhance_hero_buildings as hero  # type: ignore
 import enhance_hero_realism as realism  # type: ignore
+import enhance_environment_realism as environment  # type: ignore
 
 
 SOURCE = ROOT / "bridge_output_010" / "coimbra-urban-quality.blend"
@@ -152,9 +153,11 @@ def main():
     hero.add_window = realism.realistic_add_window
     hero_obj, buildings = hero.build_hero_geometry(selected, scene)
     realism_obj, realism_stats = realism.build_realism_overlay(selected, scene)
+    groundcover_stats = environment.build_green_environment(source, terrain)
 
-    # The full render keeps the production 010 lighting/environment. Only the
-    # localized 012b/013 building geometry is integrated.
+    # The full render keeps the production 010 lighting. Localized 012b/013
+    # architecture and 014 OSM-grounded groundcover geometry are integrated,
+    # but the photo-specific 014 lighting and global surface treatment are not.
     bpy.data.objects.remove(reference_camera, do_unlink=True)
     scene.camera = production_camera
 
@@ -217,12 +220,14 @@ def main():
                 "vertices": len(realism_obj.data.vertices),
                 "faces": len(realism_obj.data.polygons),
             },
+            "groundcover": groundcover_stats,
             "flat_tile_violations": tile_violations,
         },
         "scope": {
             "full_city_base": "Coimbra 010 Urban Quality",
-            "localized_new_geometry": "Polo II 012b + 013 only",
+            "localized_new_geometry": "Polo II 012b + 013 + 014 groundcover",
             "photo_specific_014_lighting_not_applied": True,
+            "photo_specific_014_global_surface_materials_not_applied": True,
             "photo_specific_015_grade_not_applied": True,
         },
     }
