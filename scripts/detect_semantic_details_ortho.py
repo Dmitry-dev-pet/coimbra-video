@@ -166,86 +166,93 @@ def pixel_to_local(
     return x_abs - center_x, y_abs - center_y
 
 
+def hag_height_near(x_local: float, y_local: float, hag_data) -> float | None:
+    height = hag_data["height"].astype(np.float32)
+    xs = hag_data["xs"].astype(np.float32)
+    ys = hag_data["ys"].astype(np.float32)
+
+    col = int(np.argmin(np.abs(xs - x_local)))
+    row = int(np.argmin(np.abs(ys - y_local)))
+
+    r0 = max(0, row - 2)
+    r1 = min(height.shape[0], row + 3)
+    c0 = max(0, col - 2)
+    c1 = min(height.shape[1], col + 3)
+    local = height[r0:r1, c0:c1]
+    local = local[np.isfinite(local)]
+    if local.size == 0:
+        return None
+
+    return float(np.percentile(local, 80))
+
+
 def extract_trees(
     tree_mask: np.ndarray,
     hag_data,
     ortho_meta: dict,
     resolution: float,
 ):
-    height = hag_data["height"].astype(np.float32)
-    xs = hag_data["xs"].astype(np.float32)
-    ys = hag_data["ys"].astype(np.float32)
     center_x = float(hag_data["center_x"])
     center_y = float(hag_data["center_y"])
     minx, _miny, _maxx, maxy = map(float, ortho_meta["bbox_epsg3763"])
 
-    candidate = np.zeros_like(height, dtype=bool)
-    radius_map = np.zeros_like(height, dtype=np.float32)
-
+    # Tree centers come from the semantic canopy itself, not HAG maxima.
     distance = ndi.distance_transform_edt(tree_mask) * resolution
-    for row, y in enumerate(ys):
-        py = (maxy - (center_y + float(y))) / resolution
-        iy = int(round(py))
-        if iy < 0 or iy >= tree_mask.shape[0]:
-            continue
-        for col, x in enumerate(xs):
-            hag = float(height[row, col])
-            if hag < MIN_TREE_HAG_M:
+    step_px = max(3, int(round(2.4 / resolution)))
+    candidates = []
+
+    row_index = 0
+    for py in range(step_px // 2, tree_mask.shape[0], step_px):
+        offset = (step_px // 2) if (row_index % 2) else 0
+        for px in range(step_px // 2 + offset, tree_mask.shape[1], step_px):
+            if not tree_mask[py, px]:
                 continue
-            px = ((center_x + float(x)) - minx) / resolution
-            ix = int(round(px))
-            if ix < 0 or ix >= tree_mask.shape[1]:
+            edge_distance = float(distance[py, px])
+            if edge_distance < 0.55:
                 continue
-            if tree_mask[iy, ix]:
-                candidate[row, col] = True
-                radius_map[row, col] = float(distance[iy, ix])
 
-    local_max = height >= (ndi.maximum_filter(height, size=3, mode="nearest") - 1e-5)
-    coords = np.argwhere(candidate & local_max)
-    items = []
-    for row, col in coords:
-        items.append(
-            {
-                "x": float(xs[col]),
-                "y": float(ys[row]),
-                "height": float(height[row, col]),
-                "radius": float(max(1.1, min(5.8, radius_map[row, col] * 0.88))),
-            }
-        )
+            x_local, y_local = pixel_to_local(
+                float(px),
+                float(py),
+                center_x=center_x,
+                center_y=center_y,
+                minx=minx,
+                maxy=maxy,
+                resolution=resolution,
+            )
+            hag_height = hag_height_near(x_local, y_local, hag_data)
 
-    items.sort(key=lambda item: item["height"], reverse=True)
-    kept = []
-    min_d2 = TREE_DEDUPE_M * TREE_DEDUPE_M
-    cell = TREE_DEDUPE_M
-    occupied: dict[tuple[int, int], list[dict]] = {}
+            radius = max(1.05, min(5.2, edge_distance * 0.82))
+            if hag_height is None or hag_height < 2.0:
+                height = 4.5 + radius * 1.25
+                height_source = "semantic-fallback"
+            else:
+                height = max(3.8, min(18.0, hag_height))
+                height_source = "lidar-hag"
 
-    for item in items:
-        gx = int(math.floor(item["x"] / cell))
-        gy = int(math.floor(item["y"] / cell))
-        duplicate = False
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for old in occupied.get((gx + dx, gy + dy), []):
-                    if (
-                        (item["x"] - old["x"]) ** 2
-                        + (item["y"] - old["y"]) ** 2
-                        < min_d2
-                    ):
-                        duplicate = True
-                        break
-                if duplicate:
-                    break
-            if duplicate:
-                break
-        if duplicate:
-            continue
-        kept.append(item)
-        occupied.setdefault((gx, gy), []).append(item)
-        if len(kept) >= MAX_TREES:
-            break
+            candidates.append(
+                {
+                    "x": float(x_local),
+                    "y": float(y_local),
+                    "height": float(height),
+                    "radius": float(radius),
+                    "height_source": height_source,
+                    "canopy_distance_m": edge_distance,
+                }
+            )
+        row_index += 1
 
-    return sorted(kept, key=lambda item: (item["y"], item["x"]))
+    if len(candidates) > MAX_TREES:
+        import hashlib
 
+        def rank(item):
+            token = ("%.2f:%.2f" % (item["x"], item["y"])).encode()
+            return hashlib.sha256(token).digest()
+
+        candidates.sort(key=rank)
+        candidates = candidates[:MAX_TREES]
+
+    return sorted(candidates, key=lambda item: (item["y"], item["x"]))
 
 def region_hag(
     cx_local: float,
