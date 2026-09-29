@@ -206,14 +206,16 @@ class OrthoSampler:
             extracted = OUT / "packed-dgt-ortho.jpg"
             extracted.parent.mkdir(parents=True, exist_ok=True)
             packed_entry = image.packed_files[0]
-            packed_entry.filepath = str(extracted)
-            packed_entry.save()
+            raw = bytes(packed_entry.packed_file.data)
+            if not raw:
+                raise RuntimeError("Embedded DGT orthophoto payload is empty")
+            extracted.write_bytes(raw)
             image.filepath_raw = str(extracted)
             image.reload()
 
         if not image.has_data:
             raise RuntimeError(
-                "Packed DGT orthophoto exists but could not be saved from ImagePackedFile"
+                "Embedded DGT orthophoto bytes were extracted but Blender could not load them"
             )
 
         self.image = image
