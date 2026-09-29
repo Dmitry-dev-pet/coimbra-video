@@ -28,13 +28,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install DGT fetch dependencies
-        run: python -m pip install "requests>=2.32,<3" "pyproj>=3.7,<4" "Pillow>=11,<13"
-
       - name: Download accepted 016B full scene
         uses: actions/download-artifact@v4
         with:
@@ -71,13 +64,6 @@ jobs:
           cp "$found" data/processed/bridge_osm_oss_local.json
           test -s data/processed/bridge_osm_oss_local.json
 
-      - name: Fetch DGT Orthophotos 2025
-        run: |
-          set -euo pipefail
-          python scripts/fetch_dgt_ortho_bridge.py
-          test -s data/processed/bridge_ortho_2025.jpg
-          test -s data/processed/bridge_ortho_2025.json
-
       - uses: actions/cache@v4
         with:
           path: /home/runner/.cache/blender-5.2.2
@@ -100,14 +86,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
-
-      - name: Install Pillow into Blender Python
-        run: |
-          set -euo pipefail
-          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
-          test -n "$BLENDER_PYTHON"
-          "$BLENDER_PYTHON" -m ensurepip --upgrade
-          "$BLENDER_PYTHON" -m pip install "Pillow>=11,<13" "numpy>=2,<3"
 
       - name: Audit route roofs
         run: |
