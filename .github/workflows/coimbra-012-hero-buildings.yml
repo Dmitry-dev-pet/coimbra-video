@@ -22,6 +22,7 @@ env:
   BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
   PHOTO_011_RUN_ID: "36545015151"
   HIGHRES_008B_RUN_ID: "36491512430"
+  OSM_009A_RUN_ID: "36495771020"
 
 jobs:
   hero-buildings:
@@ -31,17 +32,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Download pinned rich OSM semantics
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
+          name: coimbra-009a-mosaiq-benchmark
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.OSM_009A_RUN_ID }}
+          path: osm_009a_download
 
-      - name: Install host geodata dependencies
-        run: python -m pip install "requests>=2.32,<3" "pyproj>=3.7,<4"
-
-      - name: Fetch local OSM building semantics
+      - name: Normalize OSM building semantics
         run: |
-          python scripts/fetch_osm_oss_bridge.py
-          python scripts/prepare_osm_oss_local.py
+          set -euo pipefail
+          mkdir -p data/processed
+          found="$(find osm_009a_download -type f -name 'bridge_osm_oss_local.json' -print -quit)"
+          test -n "$found"
+          cp "$found" data/processed/bridge_osm_oss_local.json
           test -s data/processed/bridge_osm_oss_local.json
 
       - name: Download Polo II 011 photo patch
