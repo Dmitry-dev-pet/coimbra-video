@@ -1,0 +1,239 @@
+name: Coimbra render backend A-B-C 024
+
+on:
+  push:
+    branches:
+      - feature/coimbra-024-render-backend-ab
+    paths:
+      - "blender/render_backend_comparison.py"
+      - "blender/build_semantic_objects.py"
+      - "blender/build_semantic_details.py"
+      - "scripts/detect_semantic_objects_ortho.py"
+      - "scripts/detect_semantic_details_ortho.py"
+      - "blender/export_semantic_object_bbox.py"
+      - "docs/specs/SPEC-COIMBRA-RENDER-BACKEND-1.md"
+      - ".github/workflows/coimbra-024-render-backend-ab.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  OEM_REF: "8b301688b870f0eb8a5b93337ca3bc90a28734c4"
+  HIGHRES_008B_RUN_ID: "36491512430"
+  OSM_009A_RUN_ID: "36495771020"
+  ROOF_019_RUN_ID: "36589306803"
+
+jobs:
+  render-backend-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download accepted 019 corrected-roof scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-019-pitched-roofs-prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.ROOF_019_RUN_ID }}
+          path: bridge_output_019_download
+
+      - name: Normalize 019 source scene
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_019
+          found="$(find bridge_output_019_download -type f -name 'coimbra-full-route-pitched-roofs.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_019/coimbra-full-route-pitched-roofs.blend
+
+      - name: Download high-resolution terrain and HAG
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_008B_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize high-resolution grids
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_008b
+          hag="$(find bridge_output_008b_download -type f -name 'bridge_height_above_ground_1m.npz' -print -quit)"
+          terrain="$(find bridge_output_008b_download -type f -name 'bridge_terrain_highres_2m.npz' -print -quit)"
+          test -n "$hag"
+          test -n "$terrain"
+          cp "$hag" bridge_output_008b/bridge_height_above_ground_1m.npz
+          cp "$terrain" bridge_output_008b/bridge_terrain_highres_2m.npz
+
+      - name: Download pinned OSM semantics
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-009a-mosaiq-benchmark
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.OSM_009A_RUN_ID }}
+          path: osm_009a_download
+
+      - name: Normalize OSM semantics
+        run: |
+          set -euo pipefail
+          mkdir -p data/processed
+          found="$(find osm_009a_download -type f -name 'bridge_osm_oss_local.json' -print -quit)"
+          test -n "$found"
+          cp "$found" data/processed/bridge_osm_oss_local.json
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Extract packed DGT orthophoto
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/extract_packed_ortho.py
+          test -s data/processed/bridge_ortho_2025.jpg
+          test -s data/processed/bridge_ortho_2025.json
+
+      - name: Export semantic-object review crop
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/export_semantic_object_bbox.py
+          test -s bridge_output_023/review-bbox.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Checkout pinned OpenEarthMap lightweight model
+        uses: actions/checkout@v4
+        with:
+          repository: cliffbb/oem-lightweight
+          ref: ${{ env.OEM_REF }}
+          path: OEM-LightweightModel
+
+      - name: Install semantic inference dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            --index-url https://download.pytorch.org/whl/cpu \
+            "torch==2.2.2" "torchvision==0.17.2"
+          python -m pip install \
+            "numpy==1.26.4" \
+            "Pillow>=11,<13" \
+            "opencv-python-headless>=4.10,<5" \
+            "scipy>=1.13,<2" \
+            "scikit-image>=0.24,<1" \
+            "easydict>=1.13,<2" \
+            "gdown>=5.2,<6"
+
+      - name: Download pinned OpenEarthMap FasterSeg weights
+        run: |
+          set -euo pipefail
+          mkdir -p OEM-LightweightModel/models/FasterSeg
+          gdown "https://drive.google.com/uc?id=12oDzi-sDnD_Y4CBONei_g2SZBMZ6cx-2" \
+            -O OEM-LightweightModel/models/FasterSeg/arch_1.pt
+          gdown "https://drive.google.com/uc?id=1BgCu1Rz2PvTPJzI_J97hNkr4HvlvI-pE" \
+            -O OEM-LightweightModel/models/FasterSeg/weights1.pt
+          test -s OEM-LightweightModel/models/FasterSeg/arch_1.pt
+          test -s OEM-LightweightModel/models/FasterSeg/weights1.pt
+
+      - name: Rebuild 022 semantic vegetation evidence
+        run: |
+          set -euo pipefail
+          python scripts/detect_semantic_details_ortho.py \
+            --oem-root OEM-LightweightModel \
+            --arch OEM-LightweightModel/models/FasterSeg/arch_1.pt \
+            --weights OEM-LightweightModel/models/FasterSeg/weights1.pt
+          test -s data/processed/bridge_semantic_details_2025.json
+          test -s data/processed/bridge_oem_landcover_masks.npz
+
+      - name: Rebuild verified 023 semantic objects
+        run: |
+          set -euo pipefail
+          python scripts/detect_semantic_objects_ortho.py
+          test -s data/processed/bridge_semantic_objects_2025.json
+
+      - name: Render identical scene with A-B-C backends
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/render_backend_comparison.py
+          test -s bridge_output_024/A-eevee-current.png
+          test -s bridge_output_024/B-eevee-quality.png
+          test -s bridge_output_024/C-cycles-denoised.png
+          test -s bridge_output_024/render-backend-comparison.json
+          cat bridge_output_024/render-backend-comparison.json
+
+      - name: Build comparison sheet
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+
+          root = Path("bridge_output_024")
+          inputs = [
+              ("A — EEVEE current 023", root / "A-eevee-current.png"),
+              ("B — EEVEE quality", root / "B-eevee-quality.png"),
+              ("C — Cycles 16spp + denoise", root / "C-cycles-denoised.png"),
+          ]
+          thumb_w = 720
+          title_h = 52
+          thumbs = []
+          for title, path in inputs:
+              image = Image.open(path).convert("RGB")
+              h = round(image.height * thumb_w / image.width)
+              image = image.resize((thumb_w, h), Image.Resampling.LANCZOS)
+              thumbs.append((title, image))
+
+          panel_h = title_h + thumbs[0][1].height
+          sheet = Image.new("RGB", (thumb_w * 3, panel_h), (245, 245, 245))
+          draw = ImageDraw.Draw(sheet)
+          font = ImageFont.load_default(size=22)
+          for index, (title, image) in enumerate(thumbs):
+              x = index * thumb_w
+              draw.text((x + 16, 15), title, fill=(15, 15, 15), font=font)
+              sheet.paste(image, (x, title_h))
+          sheet.save(root / "render-backend-comparison-sheet.png")
+          PY
+          test -s bridge_output_024/render-backend-comparison-sheet.png
+
+      - name: Upload render backend comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-024-render-backend-comparison
+          path: |
+            bridge_output_024/A-eevee-current.png
+            bridge_output_024/B-eevee-quality.png
+            bridge_output_024/C-cycles-denoised.png
+            bridge_output_024/render-backend-comparison-sheet.png
+            bridge_output_024/render-backend-comparison.json
+          if-no-files-found: error
+          compression-level: 1

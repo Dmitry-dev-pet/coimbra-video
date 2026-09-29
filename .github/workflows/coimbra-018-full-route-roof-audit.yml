@@ -1,0 +1,319 @@
+name: Coimbra full-route roof audit 018
+
+on:
+  push:
+    branches:
+      - feature/coimbra-018-full-route-roof-audit
+    paths:
+      - "blender/audit_full_route_roofs.py"
+      - "scripts/verify_route_roof_audit.py"
+      - "docs/specs/SPEC-COIMBRA-FULL-ROOF-AUDIT-1.md"
+      - ".github/workflows/coimbra-018-full-route-roof-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  SOURCE_RUN_ID: "36556659386"
+  OSM_009A_RUN_ID: "36495771020"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download accepted 016B full scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-016b-full-render-prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          path: source_016b
+
+      - name: Normalize accepted full scene
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_016b
+          found="$(find source_016b -type f -name 'coimbra-full-render-new-geometry.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_016b/coimbra-full-render-new-geometry.blend
+          test -s bridge_output_016b/coimbra-full-render-new-geometry.blend
+
+      - name: Download pinned rich OSM semantics
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-009a-mosaiq-benchmark
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.OSM_009A_RUN_ID }}
+          path: osm_009a_download
+
+      - name: Normalize OSM semantics
+        run: |
+          set -euo pipefail
+          mkdir -p data/processed
+          found="$(find osm_009a_download -type f -name 'bridge_osm_oss_local.json' -print -quit)"
+          test -n "$found"
+          cp "$found" data/processed/bridge_osm_oss_local.json
+          test -s data/processed/bridge_osm_oss_local.json
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Install Pillow into Blender Python
+        run: |
+          set -euo pipefail
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "Pillow>=11,<13"
+
+      - name: Audit route roofs
+        run: |
+          set -euo pipefail
+          rm -rf bridge_output_018
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/audit_full_route_roofs.py
+          test -s bridge_output_018/coimbra-full-route-roof-audit.blend
+          cat bridge_output_018/roof-audit-manifest.json
+
+      - name: Sanity-check roof mix before rendering
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("bridge_output_018/roof-audit-manifest.json").read_text())
+          s=m["stats"]
+          assert s["matched"] >= 50, s
+          assert s["tile_removed"] >= 20, s
+          assert s["flat_non_tile"] > 0, s
+          assert s["pitched_tile"] > 0, s
+          assert m["camera_unchanged"] is True
+          print(json.dumps({
+            "matched":s["matched"],
+            "tile_removed":s["tile_removed"],
+            "flat_non_tile":s["flat_non_tile"],
+            "pitched_tile":s["pitched_tile"],
+            "review_frames":m["review_frames"],
+          },indent=2))
+          PY
+
+      - name: Upload audited full scene
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-018-roof-audit-prepared
+          path: |
+            bridge_output_018/coimbra-full-route-roof-audit.blend
+            bridge_output_018/roof-audit-manifest.json
+          if-no-files-found: error
+          compression-level: 1
+
+  render:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: "01", start: 1, end: 30 }
+          - { shard: "02", start: 31, end: 60 }
+          - { shard: "03", start: 61, end: 90 }
+          - { shard: "04", start: 91, end: 120 }
+          - { shard: "05", start: 121, end: 150 }
+          - { shard: "06", start: 151, end: 180 }
+          - { shard: "07", start: 181, end: 210 }
+          - { shard: "08", start: 211, end: 240 }
+          - { shard: "09", start: 241, end: 270 }
+          - { shard: "10", start: 271, end: 300 }
+          - { shard: "11", start: 301, end: 330 }
+          - { shard: "12", start: 331, end: 360 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-018-roof-audit-prepared
+          path: bridge_output_018
+
+      - name: Render roof-audit shard
+        env:
+          START_FRAME: ${{ matrix.start }}
+          END_FRAME: ${{ matrix.end }}
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_018/frames
+          blender bridge_output_018/coimbra-full-route-roof-audit.blend --background \
+            -s "$START_FRAME" -e "$END_FRAME" \
+            -o "$GITHUB_WORKSPACE/bridge_output_018/frames/frame_" \
+            -F PNG --render-anim
+          count="$(find bridge_output_018/frames -name 'frame_*.png' | wc -l)"
+          test "$count" -eq $((END_FRAME - START_FRAME + 1))
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-018-frames-${{ matrix.shard }}
+          path: bridge_output_018/frames/
+          if-no-files-found: error
+          compression-level: 1
+
+  finalize:
+    needs: [prepare, render]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install finalization tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-018-roof-audit-prepared
+          path: bridge_output_018
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coimbra-018-frames-*
+          path: bridge_output_018/frames
+          merge-multiple: true
+
+      - name: Check 360-frame sequence
+        run: |
+          set -euo pipefail
+          count="$(find bridge_output_018/frames -name 'frame_*.png' | wc -l)"
+          test "$count" -eq 360
+
+      - name: Encode 12-second roof-audit route
+        run: |
+          set -euo pipefail
+          ffmpeg -y -framerate 30 -start_number 1 \
+            -i bridge_output_018/frames/frame_%04d.png \
+            -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Terrain / Ortho © DGT · Open data / CC BY 4.0   |   Map data © OpenStreetMap contributors · ODbL':fontcolor=white:fontsize=15:x=14:y=h-th-12:box=1:boxcolor=black@0.38:boxborderw=5" \
+            -c:v libx264 -pix_fmt yuv420p -crf 19 -preset medium -movflags +faststart \
+            bridge_output_018/coimbra-full-route-roof-audit-12s.mp4
+          test -s bridge_output_018/coimbra-full-route-roof-audit-12s.mp4
+
+      - name: Preserve automatically selected review frames
+        run: |
+          python - <<'PY'
+          import json, shutil
+          from pathlib import Path
+          root=Path("bridge_output_018")
+          m=json.loads((root/"roof-audit-manifest.json").read_text())
+          review=root/"review"
+          review.mkdir(exist_ok=True)
+          for frame in m["review_frames"]:
+              src=root/"frames"/f"frame_{int(frame):04d}.png"
+              dst=review/f"frame-{int(frame):03d}.png"
+              assert src.is_file(), src
+              shutil.copy2(src,dst)
+          PY
+
+      - name: Record final video metadata
+        run: |
+          set -euo pipefail
+          ffprobe -v error -select_streams v:0 -show_entries \
+            stream=codec_name,width,height,r_frame_rate,nb_frames:format=duration \
+            -of json bridge_output_018/coimbra-full-route-roof-audit-12s.mp4 \
+            > bridge_output_018/ffprobe.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("bridge_output_018")
+          probe=json.loads((root/"ffprobe.json").read_text())
+          stream=probe["streams"][0]
+          num,den=map(int,stream["r_frame_rate"].split("/"))
+          result={
+            "version":"coimbra-route-roof-audit-video-v1",
+            "video":"bridge_output_018/coimbra-full-route-roof-audit-12s.mp4",
+            "frame_count":int(stream.get("nb_frames") or 360),
+            "resolution":[int(stream["width"]),int(stream["height"])],
+            "fps":round(num/den),
+            "duration_seconds":float(probe["format"]["duration"]),
+            "codec":stream["codec_name"],
+          }
+          (root/"roof-audit-video-manifest.json").write_text(
+              json.dumps(result,indent=2)+"\n"
+          )
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Verify full-route roof audit
+        run: |
+          python scripts/verify_route_roof_audit.py \
+            bridge_output_018/roof-audit-manifest.json \
+            bridge_output_018/roof-audit-video-manifest.json
+
+      - name: Remove intermediate frames
+        run: rm -rf bridge_output_018/frames
+
+      - name: Upload full-route roof-audit result
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-018-full-route-roof-audit
+          path: |
+            bridge_output_018/coimbra-full-route-roof-audit-12s.mp4
+            bridge_output_018/review/
+            bridge_output_018/roof-audit-manifest.json
+            bridge_output_018/roof-audit-video-manifest.json
+          if-no-files-found: error
+          compression-level: 1

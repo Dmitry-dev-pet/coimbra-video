@@ -1,0 +1,332 @@
+name: Coimbra full-route pitched roofs 019
+
+on:
+  push:
+    branches:
+      - feature/coimbra-019-full-route-pitched-roofs
+    paths:
+      - "blender/build_full_route_pitched_roofs.py"
+      - "scripts/verify_full_route_pitched_roofs.py"
+      - "docs/specs/SPEC-COIMBRA-FULL-PITCHED-ROOFS-1.md"
+      - ".github/workflows/coimbra-019-full-route-pitched-roofs.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  ROOF_018_RUN_ID: "36581341201"
+  OSM_009A_RUN_ID: "36495771020"
+  HIGHRES_008B_RUN_ID: "36491512430"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download accepted 018 roof-audit scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-018-roof-audit-prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.ROOF_018_RUN_ID }}
+          path: source_018
+
+      - name: Normalize 018 source scene
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_018
+          found="$(find source_018 -type f -name 'coimbra-full-route-roof-audit.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_018/coimbra-full-route-roof-audit.blend
+          test -s bridge_output_018/coimbra-full-route-roof-audit.blend
+
+      - name: Download pinned OSM semantics
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-009a-mosaiq-benchmark
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.OSM_009A_RUN_ID }}
+          path: osm_009a_download
+
+      - name: Normalize OSM semantics
+        run: |
+          set -euo pipefail
+          mkdir -p data/processed
+          found="$(find osm_009a_download -type f -name 'bridge_osm_oss_local.json' -print -quit)"
+          test -n "$found"
+          cp "$found" data/processed/bridge_osm_oss_local.json
+          test -s data/processed/bridge_osm_oss_local.json
+
+      - name: Download DGT LiDAR HAG
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_008B_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize HAG grid
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_008b
+          found="$(find bridge_output_008b_download -type f -name 'bridge_height_above_ground_1m.npz' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_008b/bridge_height_above_ground_1m.npz
+          test -s bridge_output_008b/bridge_height_above_ground_1m.npz
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Install Pillow into Blender Python
+        run: |
+          set -euo pipefail
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "Pillow>=11,<13"
+
+      - name: Build real pitched roof geometry
+        run: |
+          set -euo pipefail
+          rm -rf bridge_output_019
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/build_full_route_pitched_roofs.py
+          test -s bridge_output_019/coimbra-full-route-pitched-roofs.blend
+          cat bridge_output_019/pitched-roofs-manifest.json
+
+      - name: Verify geometry invariants before rendering
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("bridge_output_019/pitched-roofs-manifest.json").read_text())
+          s=m["stats"]
+          assert s["buildings_converted"] >= 40, s
+          assert s["new_roof_faces"] > 0, s
+          assert s["remaining_horizontal_tile_faces"] == 0, s
+          assert m["camera_unchanged"] is True
+          print(json.dumps({
+            "buildings_converted":s["buildings_converted"],
+            "new_roof_faces":s["new_roof_faces"],
+            "complex_non_tile_fallback":s.get("complex_non_tile_fallback",0),
+            "review_frames":m["review_frames"],
+          },indent=2))
+          PY
+
+      - name: Upload prepared 019 scene
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-019-pitched-roofs-prepared
+          path: |
+            bridge_output_019/coimbra-full-route-pitched-roofs.blend
+            bridge_output_019/pitched-roofs-manifest.json
+          if-no-files-found: error
+          compression-level: 1
+
+  render:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: "01", start: 1, end: 30 }
+          - { shard: "02", start: 31, end: 60 }
+          - { shard: "03", start: 61, end: 90 }
+          - { shard: "04", start: 91, end: 120 }
+          - { shard: "05", start: 121, end: 150 }
+          - { shard: "06", start: 151, end: 180 }
+          - { shard: "07", start: 181, end: 210 }
+          - { shard: "08", start: 211, end: 240 }
+          - { shard: "09", start: 241, end: 270 }
+          - { shard: "10", start: 271, end: 300 }
+          - { shard: "11", start: 301, end: 330 }
+          - { shard: "12", start: 331, end: 360 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-019-pitched-roofs-prepared
+          path: bridge_output_019
+
+      - name: Render 019 shard
+        env:
+          START_FRAME: ${{ matrix.start }}
+          END_FRAME: ${{ matrix.end }}
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_019/frames
+          blender bridge_output_019/coimbra-full-route-pitched-roofs.blend --background \
+            -s "$START_FRAME" -e "$END_FRAME" \
+            -o "$GITHUB_WORKSPACE/bridge_output_019/frames/frame_" \
+            -F PNG --render-anim
+          count="$(find bridge_output_019/frames -name 'frame_*.png' | wc -l)"
+          test "$count" -eq $((END_FRAME - START_FRAME + 1))
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-019-frames-${{ matrix.shard }}
+          path: bridge_output_019/frames/
+          if-no-files-found: error
+          compression-level: 1
+
+  finalize:
+    needs: [prepare, render]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install finalization tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-019-pitched-roofs-prepared
+          path: bridge_output_019
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coimbra-019-frames-*
+          path: bridge_output_019/frames
+          merge-multiple: true
+
+      - name: Check complete QA frame sequence
+        run: |
+          count="$(find bridge_output_019/frames -name 'frame_*.png' | wc -l)"
+          test "$count" -eq 360
+
+      - name: Encode 12-second pitched-roof QA route
+        run: |
+          ffmpeg -y -framerate 30 -start_number 1 \
+            -i bridge_output_019/frames/frame_%04d.png \
+            -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Terrain / Ortho © DGT · Open data / CC BY 4.0   |   Map data © OpenStreetMap contributors · ODbL':fontcolor=white:fontsize=15:x=14:y=h-th-12:box=1:boxcolor=black@0.38:boxborderw=5" \
+            -c:v libx264 -pix_fmt yuv420p -crf 19 -preset medium -movflags +faststart \
+            bridge_output_019/coimbra-full-route-pitched-roofs-12s.mp4
+
+      - name: Preserve selected review frames
+        run: |
+          python - <<'PY'
+          import json, shutil
+          from pathlib import Path
+          root=Path("bridge_output_019")
+          m=json.loads((root/"pitched-roofs-manifest.json").read_text())
+          review=root/"review"
+          review.mkdir(exist_ok=True)
+          for frame in m["review_frames"]:
+              src=root/"frames"/f"frame_{int(frame):04d}.png"
+              dst=review/f"frame-{int(frame):03d}.png"
+              assert src.is_file(), src
+              shutil.copy2(src,dst)
+          PY
+
+      - name: Record QA video metadata
+        run: |
+          ffprobe -v error -select_streams v:0 -show_entries \
+            stream=codec_name,width,height,r_frame_rate,nb_frames:format=duration \
+            -of json bridge_output_019/coimbra-full-route-pitched-roofs-12s.mp4 \
+            > bridge_output_019/ffprobe.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("bridge_output_019")
+          probe=json.loads((root/"ffprobe.json").read_text())
+          stream=probe["streams"][0]
+          num,den=map(int,stream["r_frame_rate"].split("/"))
+          result={
+            "version":"coimbra-route-pitched-roofs-video-v1",
+            "video":"bridge_output_019/coimbra-full-route-pitched-roofs-12s.mp4",
+            "frame_count":int(stream.get("nb_frames") or 360),
+            "resolution":[int(stream["width"]),int(stream["height"])],
+            "fps":round(num/den),
+            "duration_seconds":float(probe["format"]["duration"]),
+            "codec":stream["codec_name"],
+          }
+          (root/"pitched-roofs-video-manifest.json").write_text(
+              json.dumps(result,indent=2)+"\n"
+          )
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Verify 019 full-route QA
+        run: |
+          python scripts/verify_full_route_pitched_roofs.py \
+            bridge_output_019/pitched-roofs-manifest.json \
+            bridge_output_019/pitched-roofs-video-manifest.json
+
+      - name: Remove intermediate frames
+        run: rm -rf bridge_output_019/frames
+
+      - name: Upload 019 full-route QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-019-full-route-pitched-roofs
+          path: |
+            bridge_output_019/coimbra-full-route-pitched-roofs-12s.mp4
+            bridge_output_019/review/
+            bridge_output_019/pitched-roofs-manifest.json
+            bridge_output_019/pitched-roofs-video-manifest.json
+          if-no-files-found: error
+          compression-level: 1
