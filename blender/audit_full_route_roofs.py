@@ -201,10 +201,20 @@ class OrthoSampler:
 
         if image is None:
             raise RuntimeError("Packed DGT orthophoto image node not found")
+
+        if not image.has_data and image.packed_file is not None:
+            packed_data = getattr(image.packed_file, "data", None)
+            if packed_data:
+                extracted = OUT / "packed-dgt-ortho.jpg"
+                extracted.parent.mkdir(parents=True, exist_ok=True)
+                extracted.write_bytes(bytes(packed_data))
+                image.filepath_raw = str(extracted)
+                image.reload()
+
         if not image.has_data:
-            image.reload()
-        if not image.has_data:
-            raise RuntimeError("Packed DGT orthophoto has no pixel data")
+            raise RuntimeError(
+                "Packed DGT orthophoto exists but could not be materialized"
+            )
 
         self.image = image
         self.width = int(image.size[0])
