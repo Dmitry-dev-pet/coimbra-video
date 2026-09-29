@@ -50,7 +50,7 @@ The workflow renders:
 - production-camera frames 1 / 181 / 360;
 - temporary street-level views at Sanches/Brasil, Polo II and Portela.
 
-Street QA cameras are render-only and must not be saved into the output scene.
+Street QA cameras and neutral inspection fill lights are render-only and must not be saved into the output scene. Production-camera checkpoints must hash identically before and after preparation.
 
 This is a visual-development lane. Promotion into a new APatch-governed
 production contract happens only after the rendered QA is reviewed.
