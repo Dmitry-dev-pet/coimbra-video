@@ -219,7 +219,7 @@ def add_balcony(
     building_token,
 ):
     length = edge["length"]
-    if length < 5.2:
+    if length < 3.6:
         return False
 
     along = edge["along"]
@@ -229,7 +229,7 @@ def add_balcony(
     midpoint = (p0 + p1) * 0.5
 
     width_fraction = 0.48 + hero.stable_unit(building_token, 31 + floor) * 0.24
-    width = min(7.2, max(2.8, length * width_fraction))
+    width = min(7.2, max(2.0, length * width_fraction), length * 0.86)
     depth = 1.05 + hero.stable_unit(building_token, 41 + floor) * 0.28
     slab_z = base_z + floor_height * floor + 0.12
 
@@ -397,6 +397,7 @@ def build_realism_overlay(selected, scene):
             if item["levels"] >= 4 and hero.stable_unit(token, 70) < 0.72:
                 floors.append(2)
 
+        built_floors = []
         for floor in floors:
             if add_balcony(
                 vertices,
@@ -409,6 +410,7 @@ def build_realism_overlay(selected, scene):
                 building_token=token,
             ):
                 balcony_count += 1
+                built_floors.append(floor)
 
         # Flat roofs get restrained technical clutter, placed at a guaranteed
         # interior point so nothing floats outside an L-shaped footprint.
@@ -440,7 +442,8 @@ def build_realism_overlay(selected, scene):
                 "way_id": item["way_id"],
                 "front_edge": edge["index"],
                 "front_facing": edge["facing"],
-                "balcony_floors": floors,
+                "balcony_floors": built_floors,
+                "front_edge_length_m": edge["length"],
                 "roof_units": unit_count,
             }
         )
