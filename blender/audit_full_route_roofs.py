@@ -210,12 +210,14 @@ class OrthoSampler:
             if not raw:
                 raise RuntimeError("Embedded DGT orthophoto payload is empty")
             extracted.write_bytes(raw)
-            image.filepath_raw = str(extracted)
-            image.reload()
+
+            # Do not reload the original datablock: its packed/original-path
+            # bookkeeping can keep pointing at the missing source path.
+            image = bpy.data.images.load(str(extracted), check_existing=False)
 
         if not image.has_data:
             raise RuntimeError(
-                "Embedded DGT orthophoto bytes were extracted but Blender could not load them"
+                "Extracted DGT orthophoto could not be loaded as a new image datablock"
             )
 
         self.image = image
