@@ -28,6 +28,10 @@ def main() -> None:
     if int(reassignment.get("faces_changed", 0)) <= 0:
         fail("legacy flat roof tile faces were not reassigned")
 
+    removed_roofs = manifest.get("removed_old_roof_faces") or {}
+    if int(removed_roofs.get("removed_faces", 0)) < 4:
+        fail("selected legacy roof faces were not removed")
+
     violations = (
         (manifest.get("roof_rule") or {}).get("flat_tile_violations") or []
     )
@@ -48,6 +52,13 @@ def main() -> None:
             flat_count += 1
             if building.get("uses_tile_material") is not False:
                 fail(f"flat building {way_id} is marked as tile")
+            roof_geometry = building.get("flat_roof_geometry") or {}
+            if roof_geometry.get("method") != "mathutils.geometry.tessellate_polygon":
+                fail(f"flat building {way_id} did not use polygon tessellation")
+            if int(roof_geometry.get("outside_triangles", -1)) != 0:
+                fail(f"flat building {way_id} has triangles outside footprint")
+            if float(roof_geometry.get("relative_area_error", 1.0)) > 0.003:
+                fail(f"flat building {way_id} roof area mismatch")
         else:
             sloped_count += 1
         total_windows += sum(
@@ -74,6 +85,7 @@ def main() -> None:
         "windows": total_windows,
         "faces": geometry.get("faces"),
         "legacy_flat_roof_faces_fixed": reassignment.get("faces_changed"),
+        "selected_old_roof_faces_removed": removed_roofs.get("removed_faces"),
     }, indent=2))
 
 
