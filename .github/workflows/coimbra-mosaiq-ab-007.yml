@@ -1,0 +1,120 @@
+name: Coimbra MOSAIQ A/B 007
+
+on:
+  push:
+    branches:
+      - experiment/mosaiq-ab-007
+    paths:
+      - "scripts/fetch_osm_mosaiq.py"
+      - "blender/build_mosaiq_ab_scene.py"
+      - "docs/specs/SPEC-COIMBRA-MOSAIQ-AB-1.md"
+      - ".github/workflows/coimbra-mosaiq-ab-007.yml"
+      - "config/coimbra_bridge.json"
+      - "data/processed/bridge_terrain_6m.npz"
+      - "data/processed/bridge_terrain_6m.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  MOSAIQ_COMMIT: "f73d030aecd3289007472a887d78aae2e74b6ea0"
+
+jobs:
+  mosaiq-ab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host geodata dependencies
+        run: |
+          python -m pip install \
+            "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" "Pillow>=11,<12"
+
+      - name: Fetch identical Coimbra bbox inputs
+        run: |
+          set -euo pipefail
+          test -s data/processed/bridge_terrain_6m.npz
+          test -s data/processed/bridge_terrain_6m.json
+          python scripts/fetch_osm_bridge.py
+          python scripts/fetch_dgt_ortho_bridge.py
+          python scripts/prepare_osm_local_for_terrain.py
+          python scripts/fetch_osm_mosaiq.py
+          ls -lh data/osm/coimbra-route.json data/osm/coimbra-route-mosaiq.osm
+
+      - name: Checkout pinned MOSAIQ
+        run: |
+          set -euo pipefail
+          mkdir -p _mosaiq
+          git clone --filter=blob:none \
+            https://github.com/TUMFTM/MOSAIQ-OpenStreetMap-to-Blender-Add-On.git \
+            _mosaiq/mosaiq_osm_vr
+          git -C _mosaiq/mosaiq_osm_vr checkout "$MOSAIQ_COMMIT"
+          test "$(git -C _mosaiq/mosaiq_osm_vr rev-parse HEAD)" = "$MOSAIQ_COMMIT"
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+          BLENDER_PYTHON="$(find "$BLENDER_CACHE" -type f -path '*/python/bin/python3.*' -perm -111 | head -n 1)"
+          test -n "$BLENDER_PYTHON"
+          "$BLENDER_PYTHON" -m ensurepip --upgrade
+          "$BLENDER_PYTHON" -m pip install "osmium" "pyproj>=3.7,<4"
+
+      - name: Build current Coimbra geometry baseline
+        run: |
+          set -euo pipefail
+          rm -rf bridge_output_003 bridge_output_007
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/build_dgt_terrain_scene.py
+          cat bridge_output_003/base-manifest.json
+
+      - name: Build MOSAIQ reprojection A/B scene
+        env:
+          MOSAIQ_ADDON_DIR: ${{ github.workspace }}/_mosaiq/mosaiq_osm_vr
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/build_mosaiq_ab_scene.py
+          cat bridge_output_007/mosaiq-manifest.json
+
+      - name: Upload A/B Blender artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-007-mosaiq-ab
+          path: |
+            bridge_output_003/coimbra-terrain-base.blend
+            bridge_output_003/base-manifest.json
+            bridge_output_007/coimbra-mosaiq-ab.blend
+            bridge_output_007/current-preview.png
+            bridge_output_007/mosaiq-preview.png
+            bridge_output_007/mosaiq-manifest.json
+            data/osm/coimbra-route-mosaiq.osm
+          if-no-files-found: error
