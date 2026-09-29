@@ -161,3 +161,18 @@ restrained post-render grades: neutral, warm, and soft cinematic.
 
 No Blender file or oversampled master should be published as a user-facing
 artifact; upload only the three final review images plus manifests.
+
+
+## Cycles production baseline 025
+`feature/coimbra-025-cycles-production-baseline` is a render-backend validation
+lane stacked on the successful 024 A/B/C comparison. It must preserve the 023
+semantic geometry/material state and the production camera exactly.
+
+Render the established route checkpoints 1, 181 and 360 with both the inherited
+current EEVEE path and Cycles CPU at 16 samples with denoising. 025 may change
+render-backend settings only; it must not change route timing, camera animation,
+geometry, materials, semantic evidence or solar-promotion rules.
+
+Upload paired stills, one comparison sheet, exact render/camera metadata and
+basic image metrics. Promotion of Cycles to a full-route renderer happens only
+after multi-frame visual review.
