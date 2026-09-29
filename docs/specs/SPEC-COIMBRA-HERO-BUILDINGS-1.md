@@ -16,7 +16,12 @@ geometry.
 The material rule is strict:
 
 - **flat roof → no roof-tile material**
-- every horizontal legacy roof face in the small 011 patch is reassigned away from tile;\n- flat hero roofs use a rough membrane/concrete-like surface and a small parapet;
+- every horizontal legacy roof face in the small 011 patch is reassigned away from tile;
+- the old roof faces of the four selected hero buildings are removed before replacement;
+- flat hero roofs use Blender polygon tessellation rather than a centroid fan;
+- each generated flat-roof triangle must remain inside the OSM footprint;
+- total generated roof area must match the footprint area within 0.3%;
+- flat hero roofs use a rough membrane/concrete-like surface and a small parapet;
 - sloped roofs may use the existing packed Coimbra roof-tile material;
 - explicit OSM `roof:shape` wins when present;
 - otherwise building type, footprint area and aspect ratio provide a deterministic
