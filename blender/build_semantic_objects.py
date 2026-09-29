@@ -69,15 +69,19 @@ def raycast_height(scene, x, y):
     depsgraph = bpy.context.evaluated_depsgraph_get()
     origin = Vector((float(x), float(y), 1000.0))
     direction = Vector((0.0, 0.0, -1.0))
-    hit, location, _normal, _index, obj, _matrix = scene.ray_cast(
+    hit, location, normal, _index, obj, _matrix = scene.ray_cast(
         depsgraph,
         origin,
         direction,
         distance=2000.0,
     )
     if not hit:
-        return None, None
-    return float(location.z), obj.name if obj is not None else None
+        return None, None, None
+    return (
+        float(location.z),
+        obj.name if obj is not None else None,
+        float(normal.z),
+    )
 
 
 def build_solar(scene, detections, osm_solar):
@@ -87,10 +91,15 @@ def build_solar(scene, detections, osm_solar):
     ]
     vertices, faces, indices = [], [], []
     accepted = []
+    rejected = {
+        "no_hit": 0,
+        "non_building_hit": 0,
+        "non_roof_normal": 0,
+    }
 
     candidates = list(detections)
     # OSM solar is authoritative when present; add a conservative array at the
-    # polygon centroid if GroundingDINO has not already matched nearby.
+    # polygon centroid if the orthophoto detector has not already matched nearby.
     for item in osm_solar:
         cx, cy = map(float, item["center"])
         if any(
@@ -116,13 +125,22 @@ def build_solar(scene, detections, osm_solar):
 
     for item in candidates:
         cx, cy = map(float, item["center_local"])
-        z, hit_name = raycast_height(scene, cx, cy)
+        z, hit_name, normal_z = raycast_height(scene, cx, cy)
         if z is None:
+            rejected["no_hit"] += 1
             continue
-        # A detector matched to a building footprint should hit a roof/facade
-        # stack, not bare terrain. Keep OSM solar even on ground-mounted arrays.
-        if item.get("source") != "OSM" and hit_name == "City_Terrain":
-            continue
+
+        # Orthophoto candidates are allowed onto the scene only when the
+        # downward ray actually lands on the governed building mesh. This
+        # prevents stale OSM/OEM detections from becoming panels on trees,
+        # roads, facade helpers or semantic ground objects.
+        if item.get("source") != "OSM":
+            if hit_name != "City_Buildings":
+                rejected["non_building_hit"] += 1
+                continue
+            if normal_z is None or normal_z < 0.35:
+                rejected["non_roof_normal"] += 1
+                continue
 
         axis = Vector(item.get("building_axis") or [1.0, 0.0])
         axis = Vector((axis.x, axis.y, 0.0))
@@ -167,8 +185,9 @@ def build_solar(scene, detections, osm_solar):
             {
                 "center": [cx, cy, z + 0.12],
                 "score": float(item.get("score", 1.0)),
-                "source": item.get("source", "GroundingDINO"),
+                "source": item.get("source", "OpenCV+DGT+OpenEarthMap"),
                 "hit": hit_name,
+                "hit_normal_z": normal_z,
             }
         )
 
@@ -181,9 +200,10 @@ def build_solar(scene, detections, osm_solar):
         mesh.materials.append(mat)
     for polygon, slot in zip(mesh.polygons, indices):
         polygon.material_index = slot
-    obj["source"] = "GroundingDINO + OSM + DGT Orthophotos 2025"
+    obj["source"] = "OpenCV + OpenEarthMap + OSM + DGT Orthophotos 2025"
     obj["array_count"] = len(accepted)
-    return obj, accepted
+    obj["rejected_non_building_hit"] = rejected["non_building_hit"]
+    return obj, accepted, rejected
 
 
 def polygon_surface(vertices, faces, indices, polygon, terrain, material_index, z_offset=0.035):
@@ -394,7 +414,7 @@ def main():
         objects.get("pitches") or [],
         terrain,
     )
-    solar_obj, solar = build_solar(
+    solar_obj, solar, solar_rejections = build_solar(
         scene,
         objects.get("solar") or [],
         objects.get("osm_solar") or [],
@@ -427,6 +447,7 @@ def main():
         "placed_undergrowth_points": len(undergrowth),
         "placed_pools": len(pools),
         "solar_arrays": len(solar),
+        "solar_rejections": solar_rejections,
         "parking_areas": len(parking),
         "sports_areas": len(pitches),
         "review": review,
