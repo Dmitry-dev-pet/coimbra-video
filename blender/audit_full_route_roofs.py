@@ -9,6 +9,7 @@ from pathlib import Path
 
 import bpy
 from statistics import median
+from PIL import Image
 from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Vector
 from mathutils.kdtree import KDTree
@@ -201,36 +202,22 @@ class OrthoSampler:
 
         if image is None:
             raise RuntimeError("Packed DGT orthophoto image node not found")
+        if len(image.packed_files) <= 0:
+            raise RuntimeError("DGT orthophoto is not packed in the accepted scene")
 
-        if not image.has_data and len(image.packed_files) > 0:
-            extracted = OUT / "packed-dgt-ortho.jpg"
-            extracted.parent.mkdir(parents=True, exist_ok=True)
-            packed_entry = image.packed_files[0]
-            raw = bytes(packed_entry.packed_file.data)
-            if not raw:
-                raise RuntimeError("Embedded DGT orthophoto payload is empty")
-            print(json.dumps({
-                "packed_image_name": image.name,
-                "packed_image_filepath": image.filepath,
-                "packed_bytes": len(raw),
-                "packed_magic_hex": raw[:16].hex(),
-            }))
-            extracted.write_bytes(raw)
+        extracted = OUT / "packed-dgt-ortho.jpg"
+        extracted.parent.mkdir(parents=True, exist_ok=True)
+        packed_entry = image.packed_files[0]
+        raw = bytes(packed_entry.packed_file.data)
+        if not raw:
+            raise RuntimeError("Embedded DGT orthophoto payload is empty")
+        extracted.write_bytes(raw)
 
-            # Do not reload the original datablock: its packed/original-path
-            # bookkeeping can keep pointing at the missing source path.
-            image = bpy.data.images.load(str(extracted), check_existing=False)
-
-        if not image.has_data:
-            raise RuntimeError(
-                "Extracted DGT orthophoto could not be loaded as a new image datablock"
-            )
-
-        self.image = image
-        self.width = int(image.size[0])
-        self.height = int(image.size[1])
+        self.image = Image.open(extracted).convert("RGB")
+        self.width, self.height = self.image.size
         if self.width <= 0 or self.height <= 0:
-            raise RuntimeError("Invalid packed DGT orthophoto dimensions")
+            raise RuntimeError("Invalid embedded DGT orthophoto dimensions")
+        self.pixels = self.image.load()
 
         world_corners = [
             terrain.matrix_world @ Vector(corner)
@@ -240,36 +227,39 @@ class OrthoSampler:
         self.maxx = max(float(p.x) for p in world_corners)
         self.miny = min(float(p.y) for p in world_corners)
         self.maxy = max(float(p.y) for p in world_corners)
-        self.pixels = image.pixels
+
+        print(json.dumps({
+            "ortho_source": "embedded DGT Orthophotos 2025",
+            "ortho_image_name": image.name,
+            "ortho_size": [self.width, self.height],
+            "ortho_bytes": len(raw),
+        }))
 
     def pixel(self, x_local, y_local):
-        if not (self.minx <= x_local <= self.maxx and self.miny <= y_local <= self.maxy):
+        if not (
+            self.minx <= x_local <= self.maxx
+            and self.miny <= y_local <= self.maxy
+        ):
             return None
         u = (x_local - self.minx) / max(1e-9, self.maxx - self.minx)
         v = (y_local - self.miny) / max(1e-9, self.maxy - self.miny)
+        # Pillow uses top-left origin while Blender terrain UV uses bottom-left.
         return (
             u * (self.width - 1),
-            v * (self.height - 1),
+            (1.0 - v) * (self.height - 1),
         )
 
     def rgb_at(self, x, y):
         x = max(0, min(int(x), self.width - 1))
         y = max(0, min(int(y), self.height - 1))
-        index = (y * self.width + x) * 4
-        return (
-            float(self.pixels[index]) * 255.0,
-            float(self.pixels[index + 1]) * 255.0,
-            float(self.pixels[index + 2]) * 255.0,
-        )
+        r, g, b = self.pixels[x, y]
+        return float(r), float(g), float(b)
 
     def median_rgb(self, x_local, y_local, radius_px=8):
         point = self.pixel(x_local, y_local)
         if point is None:
             return None
         px, py = point
-        # 25 samples across roughly a 4 m square at the original 25 cm DGT
-        # resolution. Sparse sampling avoids materializing the full packed
-        # ~65M-pixel image as a Python array.
         offsets = (-radius_px, -radius_px // 2, 0, radius_px // 2, radius_px)
         rs, gs, bs = [], [], []
         for dx in offsets:
@@ -278,7 +268,7 @@ class OrthoSampler:
                 rs.append(r)
                 gs.append(g)
                 bs.append(b)
-        return (median(rs), median(gs), median(bs))
+        return median(rs), median(gs), median(bs)
 
 
 def ortho_roof_signal(rgb):
