@@ -389,12 +389,6 @@ def main():
         if not point_in_any(item["x"], item["y"], hardscape)
     ]
 
-    details.remove_old_tree_layer()
-    tree_obj, trees = details.build_semantic_trees(filtered_trees, terrain)
-    mass_obj, masses = details.build_canopy_masses(filtered_masses, terrain)
-    under_obj, undergrowth = details.build_undergrowth(filtered_under, terrain)
-    pool_obj, pools = details.build_pools(semantic.get("pools") or [], terrain)
-
     ground_obj, parking, pitches = build_ground_objects(
         objects.get("parking") or [],
         objects.get("pitches") or [],
@@ -405,6 +399,12 @@ def main():
         objects.get("solar") or [],
         objects.get("osm_solar") or [],
     )
+
+    details.remove_old_tree_layer()
+    tree_obj, trees = details.build_semantic_trees(filtered_trees, terrain)
+    mass_obj, masses = details.build_canopy_masses(filtered_masses, terrain)
+    under_obj, undergrowth = details.build_undergrowth(filtered_under, terrain)
+    pool_obj, pools = details.build_pools(semantic.get("pools") or [], terrain)
 
     review = choose_frame(scene, camera, solar, parking, pitches, undergrowth)
     scene.frame_set(review["frame"])
