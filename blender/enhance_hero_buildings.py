@@ -631,7 +631,11 @@ def add_flat_roof(vertices, faces, indices, footprint, top_z, roof_index, parape
     for triangle in triangles:
         if len(triangle) != 3:
             continue
-        a, b, c = triangle
+        resolved = [
+            loop[value] if isinstance(value, int) else value
+            for value in triangle
+        ]
+        a, b, c = resolved
         area = triangle_area_xy(a, b, c)
         if area <= 1e-8:
             continue
