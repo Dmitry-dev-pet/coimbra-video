@@ -29,6 +29,9 @@ WATER_CLASS = 5
 MIN_TREE_HAG_M = 1.8
 TREE_DEDUPE_M = 2.0
 MAX_TREES = 12000
+MAX_CANOPY_MASS_POINTS = 22000
+MIN_CANOPY_REGION_M2 = 60.0
+CANOPY_STEP_M = 1.65
 POOL_MIN_AREA_M2 = 8.0
 POOL_MAX_AREA_M2 = 900.0
 
@@ -254,6 +257,85 @@ def extract_trees(
 
     return sorted(candidates, key=lambda item: (item["y"], item["x"]))
 
+def extract_canopy_masses(
+    tree_mask: np.ndarray,
+    hag_data,
+    ortho_meta: dict,
+    resolution: float,
+):
+    center_x = float(hag_data["center_x"])
+    center_y = float(hag_data["center_y"])
+    minx, _miny, _maxx, maxy = map(float, ortho_meta["bbox_epsg3763"])
+
+    labels = measure.label(tree_mask, connectivity=2)
+    step_px = max(2, int(round(CANOPY_STEP_M / resolution)))
+    points = []
+    region_summaries = []
+
+    for region in measure.regionprops(labels):
+        area_m2 = float(region.area) * resolution * resolution
+        if area_m2 < MIN_CANOPY_REGION_M2:
+            continue
+
+        minr, minc, maxr, maxc = region.bbox
+        component = labels[minr:maxr, minc:maxc] == region.label
+        local_distance = ndi.distance_transform_edt(component) * resolution
+        accepted = 0
+
+        for local_y in range(step_px // 2, component.shape[0], step_px):
+            offset = (step_px // 2) if ((local_y // step_px) % 2) else 0
+            for local_x in range(step_px // 2 + offset, component.shape[1], step_px):
+                if not component[local_y, local_x]:
+                    continue
+                edge_distance = float(local_distance[local_y, local_x])
+                if edge_distance < 0.45:
+                    continue
+
+                px = float(minc + local_x)
+                py = float(minr + local_y)
+                x_local, y_local = pixel_to_local(
+                    px, py,
+                    center_x=center_x,
+                    center_y=center_y,
+                    minx=minx,
+                    maxy=maxy,
+                    resolution=resolution,
+                )
+                hag_height = hag_height_near(x_local, y_local, hag_data)
+                if hag_height is not None and hag_height >= 3.6:
+                    kind = "forest"
+                    height = max(2.8, min(8.5, hag_height * 0.55))
+                    radius = max(1.15, min(2.55, 1.10 + edge_distance * 0.32))
+                else:
+                    kind = "scrub"
+                    height = max(1.15, min(3.2, 1.25 + edge_distance * 0.35))
+                    radius = max(0.95, min(2.05, 0.95 + edge_distance * 0.26))
+
+                points.append({
+                    "x": float(x_local),
+                    "y": float(y_local),
+                    "height": float(height),
+                    "radius": float(radius),
+                    "kind": kind,
+                    "region_area_m2": area_m2,
+                })
+                accepted += 1
+
+        region_summaries.append({
+            "area_m2": area_m2,
+            "points": accepted,
+        })
+
+    if len(points) > MAX_CANOPY_MASS_POINTS:
+        import hashlib
+        def rank(item):
+            token = ("mass:%.2f:%.2f" % (item["x"], item["y"])).encode()
+            return hashlib.sha256(token).digest()
+        points.sort(key=rank)
+        points = points[:MAX_CANOPY_MASS_POINTS]
+
+    return points, region_summaries
+
 def region_hag(
     cx_local: float,
     cy_local: float,
@@ -469,6 +551,12 @@ def main():
         meta,
         MODEL_RESOLUTION_M,
     )
+    canopy_masses, canopy_regions = extract_canopy_masses(
+        tree_mask,
+        hag_data,
+        meta,
+        MODEL_RESOLUTION_M,
+    )
     pools = extract_pools(
         water_mask,
         image,
@@ -491,10 +579,14 @@ def main():
         "counts": {
             "trees": len(trees),
             "pools": len(pools),
+            "canopy_mass_points": len(canopy_masses),
+            "canopy_regions": len(canopy_regions),
             "tree_mask_pixels": int(tree_mask.sum()),
             "water_mask_pixels": int(water_mask.sum()),
         },
         "trees": trees,
+        "canopy_masses": canopy_masses,
+        "canopy_regions": canopy_regions,
         "pools": pools,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
