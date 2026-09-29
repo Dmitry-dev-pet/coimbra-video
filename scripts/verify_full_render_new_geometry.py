@@ -49,6 +49,14 @@ def main():
     if int(realism_stats.get("trim_pieces", 0)) != 8:
         fail("013 facade trims missing")
 
+    groundcover = patch.get("groundcover") or {}
+    if int(groundcover.get("green_ways", 0)) <= 0:
+        fail("014 green-area geometry missing")
+    if int(groundcover.get("shrubs", 0)) < 6:
+        fail("014 shrubs missing")
+    if int(groundcover.get("grass_tufts", 0)) < 20:
+        fail("014 grass geometry missing")
+
     if int(final.get("frame_count", 0)) != 360:
         fail("final frame count mismatch")
     if final.get("resolution") != [1280, 720]:
@@ -70,6 +78,8 @@ def main():
         "hero_ids": sorted(expected),
         "windows_emitted": windows.get("emitted"),
         "roof_units": realism_stats.get("roof_units"),
+        "shrubs": groundcover.get("shrubs"),
+        "grass_tufts": groundcover.get("grass_tufts"),
     }, indent=2))
 
 
