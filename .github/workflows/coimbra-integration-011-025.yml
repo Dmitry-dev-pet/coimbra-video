@@ -1,0 +1,44 @@
+name: Coimbra 011-025 integration audit
+
+on:
+  push:
+    branches: [integration/coimbra-011-025]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  verify-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile the integrated Python tree
+        run: python -m compileall -q blender scripts
+      - name: Verify 025 source preservation and the additive 020 merge
+        run: |
+          set -euo pipefail
+          git diff --exit-code d178382d10eef41ec00da3fe562fcc445438f8da HEAD -- blender
+          git diff --exit-code dcae729af2d4a6c3ee8d236696337d74697d05e0 HEAD -- \
+            .github/workflows/coimbra-020-smooth-pitched-roofs.yml \
+            docs/specs/SPEC-COIMBRA-SMOOTH-PITCHED-ROOFS-1.md
+          git merge-base --is-ancestor d178382d10eef41ec00da3fe562fcc445438f8da HEAD
+          git merge-base --is-ancestor dcae729af2d4a6c3ee8d236696337d74697d05e0 HEAD
+      - name: Verify all thirteen source PRs against live GitHub and successful render runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/audit_integration_011_025.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coimbra-011-025-integration-audit
+          path: integration-audit.json
+          if-no-files-found: warn
