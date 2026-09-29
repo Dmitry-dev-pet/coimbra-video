@@ -48,7 +48,12 @@ jobs:
           python scripts/fetch_dgt_ortho_bridge.py
           python scripts/prepare_osm_local_for_terrain.py
           python scripts/fetch_osm_mosaiq.py
-          ls -lh data/osm/coimbra-route.json data/osm/coimbra-route-mosaiq.osm
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends osmium-tool
+          osmium sort data/osm/coimbra-route-mosaiq.osm \
+            -o data/osm/coimbra-route-mosaiq.osm.pbf --overwrite
+          osmium fileinfo data/osm/coimbra-route-mosaiq.osm.pbf
+          ls -lh data/osm/coimbra-route.json data/osm/coimbra-route-mosaiq.osm*
 
       - name: Checkout pinned MOSAIQ
         run: |
@@ -117,4 +122,5 @@ jobs:
             bridge_output_007/mosaiq-preview.png
             bridge_output_007/mosaiq-manifest.json
             data/osm/coimbra-route-mosaiq.osm
+            data/osm/coimbra-route-mosaiq.osm.pbf
           if-no-files-found: error
