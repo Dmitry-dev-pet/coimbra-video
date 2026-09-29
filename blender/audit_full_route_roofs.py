@@ -203,17 +203,15 @@ class OrthoSampler:
             raise RuntimeError("Packed DGT orthophoto image node not found")
 
         if not image.has_data and image.packed_file is not None:
-            packed_data = getattr(image.packed_file, "data", None)
-            if packed_data:
-                extracted = OUT / "packed-dgt-ortho.jpg"
-                extracted.parent.mkdir(parents=True, exist_ok=True)
-                extracted.write_bytes(bytes(packed_data))
-                image.filepath_raw = str(extracted)
-                image.reload()
+            # Let Blender materialize its own packed payload. WRITE_LOCAL writes
+            # into a local textures/ directory next to the opened .blend and
+            # updates image.filepath accordingly.
+            image.unpack(method="WRITE_LOCAL")
+            image.reload()
 
         if not image.has_data:
             raise RuntimeError(
-                "Packed DGT orthophoto exists but could not be materialized"
+                "Packed DGT orthophoto exists but could not be unpacked"
             )
 
         self.image = image
