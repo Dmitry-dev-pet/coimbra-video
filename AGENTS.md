@@ -120,3 +120,17 @@ local overlay is built.
 
 012 uploads review images and a manifest only; do not publish a Blender artifact
 from this stage.
+
+
+## Hero realism pass 013
+`feature/coimbra-013-hero-realism` is a photo-only refinement stacked on the
+corrected 012b Polo II hero geometry. It must not expand the patch or change the
+full-city production scene.
+
+013 may reduce the regularity of generated windows deterministically, add
+restrained facade trims/downpipes, add balconies only where a camera-facing
+hero facade is physically wide enough, and add small technical units only on
+flat hero roofs at guaranteed interior footprint points.
+
+The review lane uploads images and a manifest only; do not publish a Blender
+artifact from 013.
