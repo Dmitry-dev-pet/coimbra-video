@@ -7,7 +7,7 @@
 Work only inside the existing 011 Polo II photo patch. Do not improve the full
 Coimbra scene and do not expand the patch.
 
-Select exactly five buildings with the largest visible screen contribution in
+Select exactly four buildings with the largest visible screen contribution in
 the 011 hero camera. These are the only buildings that receive higher-detail
 geometry.
 
@@ -28,7 +28,7 @@ geometry.
 
 ## Facades and windows
 
-For the five selected buildings:
+For the four selected buildings:
 
 - add an opaque facade shell over the old low-detail building surface;
 - remove the old procedural facade-window faces within those footprints;
