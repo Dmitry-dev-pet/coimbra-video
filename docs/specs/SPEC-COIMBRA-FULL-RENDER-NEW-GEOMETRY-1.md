@@ -8,15 +8,16 @@ building geometry included where it actually exists.
 ## Scene composition
 
 - full-city source remains the accepted Coimbra 010 Urban Quality scene;
-- integrate the corrected 012b + 013 geometry only for the four validated Polo
+- integrate the corrected 012b + 013 architecture for the four validated Polo
   II OSM buildings:
   - 143294113
   - 143294117
   - 143294126
   - 379862984
+- also integrate the localized 014 OSM-grounded green-ground / shrub / grass geometry inside Polo II;
 - preserve the Coimbra 010 production camera animation exactly;
-- preserve 010 lighting and full-city environment;
-- do not apply the photo-specific 014 lighting treatment globally;
+- preserve 010 lighting and full-city environment outside the local patch;
+- do not apply the photo-specific 014 lighting treatment or global sidewalk/curb material treatment;
 - do not apply the still-image 015 post-render grade to the animation.
 
 The temporary 011 photo camera may be reconstructed only to make the localized
