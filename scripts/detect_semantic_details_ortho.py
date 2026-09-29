@@ -24,6 +24,7 @@ PREVIEW = ROOT / "data" / "processed" / "bridge_semantic_details_2025_preview.jp
 MODEL_RESOLUTION_M = 0.50
 TILE = 1024
 OVERLAP = 128
+RANGELAND_CLASS = 1
 TREE_CLASS = 4
 WATER_CLASS = 5
 MIN_TREE_HAG_M = 1.8
@@ -32,6 +33,9 @@ MAX_TREES = 12000
 MAX_CANOPY_MASS_POINTS = 22000
 MIN_CANOPY_REGION_M2 = 60.0
 CANOPY_STEP_M = 1.65
+MAX_UNDERGROWTH_POINTS = 18000
+MIN_UNDERGROWTH_REGION_M2 = 24.0
+UNDERGROWTH_STEP_M = 1.35
 POOL_MIN_AREA_M2 = 8.0
 POOL_MAX_AREA_M2 = 900.0
 
@@ -92,9 +96,10 @@ def semantic_masks(
     config,
     model,
     device,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     rgb = np.asarray(image, dtype=np.uint8)
     height, width = rgb.shape[:2]
+    rangeland_votes = np.zeros((height, width), dtype=np.uint8)
     tree_votes = np.zeros((height, width), dtype=np.uint8)
     water_votes = np.zeros((height, width), dtype=np.uint8)
     coverage = np.zeros((height, width), dtype=np.uint8)
@@ -118,23 +123,28 @@ def semantic_masks(
             pred = pred[:valid_h, :valid_w]
             sl = np.s_[y0 : y0 + valid_h, x0 : x0 + valid_w]
             coverage[sl] += 1
+            rangeland_votes[sl] += (pred == RANGELAND_CLASS).astype(np.uint8)
             tree_votes[sl] += (pred == TREE_CLASS).astype(np.uint8)
             water_votes[sl] += (pred == WATER_CLASS).astype(np.uint8)
             print(
                 f"OEM tile {index}/{total}: "
+                f"rangeland={int(np.sum(pred == RANGELAND_CLASS))} "
                 f"tree={int(np.sum(pred == TREE_CLASS))} "
                 f"water={int(np.sum(pred == WATER_CLASS))}"
             )
 
     threshold = np.maximum(1, np.ceil(coverage * 0.5)).astype(np.uint8)
+    rangeland = rangeland_votes >= threshold
     tree = tree_votes >= threshold
     water = water_votes >= threshold
 
+    rangeland = morphology.remove_small_objects(rangeland, min_size=16)
+    rangeland = morphology.remove_small_holes(rangeland, area_threshold=24)
     tree = morphology.remove_small_objects(tree, min_size=20)
     tree = morphology.remove_small_holes(tree, area_threshold=32)
     water = morphology.remove_small_objects(water, min_size=12)
     water = morphology.remove_small_holes(water, area_threshold=20)
-    return tree, water
+    return rangeland, tree, water
 
 
 def local_to_pixel(
@@ -475,6 +485,135 @@ def extract_canopy_masses(
 
     return points, region_summaries
 
+
+def extract_undergrowth(
+    rangeland_mask: np.ndarray,
+    image: Image.Image,
+    hag_data,
+    ortho_meta: dict,
+    resolution: float,
+):
+    rgb = np.asarray(image, dtype=np.uint8)
+    center_x = float(hag_data["center_x"])
+    center_y = float(hag_data["center_y"])
+    minx, _miny, _maxx, maxy = map(float, ortho_meta["bbox_epsg3763"])
+
+    hag_grid = hag_grid_for_model(
+        hag_data,
+        ortho_meta,
+        rangeland_mask.shape,
+        resolution,
+    )
+    labels = measure.label(rangeland_mask, connectivity=2)
+    step_px = max(2, int(round(UNDERGROWTH_STEP_M / resolution)))
+
+    points = []
+    regions = []
+    for region in measure.regionprops(labels):
+        area_m2 = float(region.area) * resolution * resolution
+        if area_m2 < MIN_UNDERGROWTH_REGION_M2:
+            continue
+
+        region_mask = labels == region.label
+        minr, minc, maxr, maxc = region.bbox
+        component = region_mask[minr:maxr, minc:maxc]
+        local_distance = ndi.distance_transform_edt(component) * resolution
+        accepted = 0
+        green_points = 0
+        dry_points = 0
+
+        for local_y in range(step_px // 2, component.shape[0], step_px):
+            offset = (step_px // 2) if ((local_y // step_px) % 2) else 0
+            for local_x in range(step_px // 2 + offset, component.shape[1], step_px):
+                if not component[local_y, local_x]:
+                    continue
+                edge_distance = float(local_distance[local_y, local_x])
+                if edge_distance < 0.35:
+                    continue
+
+                py = int(minr + local_y)
+                px = int(minc + local_x)
+                r, g, b = map(float, rgb[py, px])
+
+                # OpenEarthMap rangeland includes both lush and dry Mediterranean
+                # scrub. Keep both, but render them with different materials.
+                green_score = g - 0.5 * (r + b)
+                dry_score = r - b
+                if green_score >= 2.0:
+                    kind = "green-scrub"
+                    green_points += 1
+                else:
+                    kind = "dry-scrub"
+                    dry_points += 1
+
+                x_local, y_local = pixel_to_local(
+                    float(px),
+                    float(py),
+                    center_x=center_x,
+                    center_y=center_y,
+                    minx=minx,
+                    maxy=maxy,
+                    resolution=resolution,
+                )
+
+                hag_height, hag_samples = masked_local_height(
+                    hag_grid,
+                    region_mask,
+                    py,
+                    px,
+                    radius_px=max(2, int(round(2.0 / resolution))),
+                )
+                if hag_height is None:
+                    height = 0.85 + min(1.15, edge_distance * 0.28)
+                    height_source = "semantic-fallback"
+                else:
+                    # Low vegetation only. Tall HAG outliers are capped rather
+                    # than turning rangeland into accidental trees/buildings.
+                    height = max(
+                        0.65,
+                        min(2.8, 0.65 + min(3.2, hag_height) * 0.55),
+                    )
+                    height_source = "region-local-lidar"
+
+                radius = max(
+                    0.72,
+                    min(1.85, 0.72 + edge_distance * 0.30),
+                )
+                points.append(
+                    {
+                        "x": float(x_local),
+                        "y": float(y_local),
+                        "height": float(height),
+                        "radius": float(radius),
+                        "kind": kind,
+                        "height_source": height_source,
+                        "hag_samples": hag_samples,
+                        "region_area_m2": area_m2,
+                    }
+                )
+                accepted += 1
+
+        regions.append(
+            {
+                "area_m2": area_m2,
+                "points": accepted,
+                "green_points": green_points,
+                "dry_points": dry_points,
+            }
+        )
+
+    if len(points) > MAX_UNDERGROWTH_POINTS:
+        import hashlib
+
+        def rank(item):
+            token = ("under:%.2f:%.2f" % (item["x"], item["y"])).encode()
+            return hashlib.sha256(token).digest()
+
+        points.sort(key=rank)
+        points = points[:MAX_UNDERGROWTH_POINTS]
+
+    return points, regions
+
 def region_hag(
     cx_local: float,
     cy_local: float,
@@ -675,7 +814,7 @@ def main():
         Path(args.arch).resolve(),
         Path(args.weights).resolve(),
     )
-    tree_mask, water_mask = semantic_masks(
+    rangeland_mask, tree_mask, water_mask = semantic_masks(
         image,
         torch,
         config,
@@ -697,6 +836,13 @@ def main():
         MODEL_RESOLUTION_M,
         hag_grid=hag_grid,
     )
+    undergrowth, undergrowth_regions = extract_undergrowth(
+        rangeland_mask,
+        image,
+        hag_data,
+        meta,
+        MODEL_RESOLUTION_M,
+    )
     pools = extract_pools(
         water_mask,
         image,
@@ -714,7 +860,7 @@ def main():
             "project": "cliffbb/oem-lightweight",
             "model": "FasterSeg",
             "dataset": "OpenEarthMap",
-            "classes_used": ["tree", "water"],
+            "classes_used": ["rangeland", "tree", "water"],
         },
         "counts": {
             "trees": len(trees),
@@ -730,12 +876,17 @@ def main():
             "pools": len(pools),
             "canopy_mass_points": len(canopy_masses),
             "canopy_regions": len(canopy_regions),
+            "undergrowth_points": len(undergrowth),
+            "undergrowth_regions": len(undergrowth_regions),
+            "rangeland_mask_pixels": int(rangeland_mask.sum()),
             "tree_mask_pixels": int(tree_mask.sum()),
             "water_mask_pixels": int(water_mask.sum()),
         },
         "trees": trees,
         "canopy_masses": canopy_masses,
         "canopy_regions": canopy_regions,
+        "undergrowth": undergrowth,
+        "undergrowth_regions": undergrowth_regions,
         "pools": pools,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
