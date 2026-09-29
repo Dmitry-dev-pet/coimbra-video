@@ -16,7 +16,7 @@ geometry.
 The material rule is strict:
 
 - **flat roof → no roof-tile material**
-- flat roofs use a rough membrane/concrete-like surface and a small parapet;
+- every horizontal legacy roof face in the small 011 patch is reassigned away from tile;\n- flat hero roofs use a rough membrane/concrete-like surface and a small parapet;
 - sloped roofs may use the existing packed Coimbra roof-tile material;
 - explicit OSM `roof:shape` wins when present;
 - otherwise building type, footprint area and aspect ratio provide a deterministic
