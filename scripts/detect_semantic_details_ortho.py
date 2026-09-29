@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 from scipy import ndimage as ndi
-from skimage import measure, morphology
+from skimage import measure, morphology, segmentation
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -169,24 +169,93 @@ def pixel_to_local(
     return x_abs - center_x, y_abs - center_y
 
 
-def hag_height_near(x_local: float, y_local: float, hag_data) -> float | None:
+def hag_grid_for_model(
+    hag_data,
+    ortho_meta: dict,
+    shape: tuple[int, int],
+    resolution: float,
+) -> np.ndarray:
     height = hag_data["height"].astype(np.float32)
     xs = hag_data["xs"].astype(np.float32)
     ys = hag_data["ys"].astype(np.float32)
+    center_x = float(hag_data["center_x"])
+    center_y = float(hag_data["center_y"])
+    minx, _miny, _maxx, maxy = map(float, ortho_meta["bbox_epsg3763"])
 
-    col = int(np.argmin(np.abs(xs - x_local)))
-    row = int(np.argmin(np.abs(ys - y_local)))
+    rows, cols = shape
+    x_local = (
+        minx + (np.arange(cols, dtype=np.float32) + 0.5) * resolution
+        - center_x
+    )
+    y_local = (
+        maxy - (np.arange(rows, dtype=np.float32) + 0.5) * resolution
+        - center_y
+    )
 
-    r0 = max(0, row - 2)
-    r1 = min(height.shape[0], row + 3)
-    c0 = max(0, col - 2)
-    c1 = min(height.shape[1], col + 3)
-    local = height[r0:r1, c0:c1]
-    local = local[np.isfinite(local)]
-    if local.size == 0:
-        return None
+    x_index = np.interp(
+        x_local,
+        xs,
+        np.arange(len(xs), dtype=np.float32),
+    )
+    if ys[0] > ys[-1]:
+        y_index = np.interp(
+            y_local,
+            ys[::-1],
+            np.arange(len(ys), dtype=np.float32)[::-1],
+        )
+    else:
+        y_index = np.interp(
+            y_local,
+            ys,
+            np.arange(len(ys), dtype=np.float32),
+        )
 
-    return float(np.percentile(local, 80))
+    xi = np.clip(np.rint(x_index).astype(np.int32), 0, len(xs) - 1)
+    yi = np.clip(np.rint(y_index).astype(np.int32), 0, len(ys) - 1)
+    return height[yi[:, None], xi[None, :]]
+
+
+def crown_labels(tree_mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    distance_px = ndi.distance_transform_edt(tree_mask)
+
+    # Shape-driven crown seeds. The semantic mask says "this is canopy";
+    # LiDAR is deliberately not used to choose tree centers.
+    local_max = (
+        distance_px
+        >= ndi.maximum_filter(distance_px, size=9, mode="nearest") - 1e-6
+    )
+    seeds = local_max & tree_mask & (distance_px >= 2.2)
+    markers, _ = ndi.label(seeds)
+
+    if int(markers.max()) <= 0:
+        markers, _ = ndi.label(tree_mask)
+
+    labels = segmentation.watershed(
+        -distance_px,
+        markers,
+        mask=tree_mask,
+        watershed_line=False,
+    )
+    return labels.astype(np.int32), distance_px
+
+
+def robust_crown_height(values: np.ndarray, crown_radius_m: float):
+    valid = values[np.isfinite(values)]
+    valid = valid[(valid >= 0.0) & (valid <= 40.0)]
+    elevated = valid[valid >= 1.2]
+
+    if elevated.size >= 3:
+        return (
+            float(np.percentile(elevated, 90)),
+            "crown-p90-lidar-hag",
+            int(elevated.size),
+        )
+
+    # HAG can be weak over foliage. In that case keep the semantically proven
+    # crown instead of deleting the tree, but use a conservative geometry-only
+    # fallback height.
+    fallback = 4.2 + min(5.0, crown_radius_m * 1.35)
+    return float(fallback), "crown-semantic-fallback", int(elevated.size)
 
 
 def extract_trees(
@@ -199,73 +268,115 @@ def extract_trees(
     center_y = float(hag_data["center_y"])
     minx, _miny, _maxx, maxy = map(float, ortho_meta["bbox_epsg3763"])
 
-    # Tree centers come from the semantic canopy itself, not HAG maxima.
-    distance = ndi.distance_transform_edt(tree_mask) * resolution
-    step_px = max(3, int(round(2.4 / resolution)))
+    labels, distance_px = crown_labels(tree_mask)
+    hag_grid = hag_grid_for_model(
+        hag_data,
+        ortho_meta,
+        tree_mask.shape,
+        resolution,
+    )
+
     candidates = []
+    for region in measure.regionprops(labels):
+        area_m2 = float(region.area) * resolution * resolution
+        if area_m2 < 2.5:
+            continue
 
-    row_index = 0
-    for py in range(step_px // 2, tree_mask.shape[0], step_px):
-        offset = (step_px // 2) if (row_index % 2) else 0
-        for px in range(step_px // 2 + offset, tree_mask.shape[1], step_px):
-            if not tree_mask[py, px]:
-                continue
-            edge_distance = float(distance[py, px])
-            if edge_distance < 0.55:
-                continue
+        cy_px, cx_px = region.centroid
+        radius_area = math.sqrt(area_m2 / math.pi)
+        radius_distance = float(distance_px[labels == region.label].max()) * resolution
+        radius = max(
+            1.0,
+            min(6.2, max(radius_area * 0.82, radius_distance * 0.92)),
+        )
 
-            x_local, y_local = pixel_to_local(
-                float(px),
-                float(py),
-                center_x=center_x,
-                center_y=center_y,
-                minx=minx,
-                maxy=maxy,
-                resolution=resolution,
-            )
-            hag_height = hag_height_near(x_local, y_local, hag_data)
+        region_values = hag_grid[labels == region.label]
+        height, height_source, hag_samples = robust_crown_height(
+            region_values,
+            radius,
+        )
 
-            radius = max(1.05, min(5.2, edge_distance * 0.82))
-            if hag_height is None or hag_height < 2.0:
-                height = 4.5 + radius * 1.25
-                height_source = "semantic-fallback"
-            else:
-                height = max(3.8, min(18.0, hag_height))
-                height_source = "lidar-hag"
+        x_local, y_local = pixel_to_local(
+            float(cx_px),
+            float(cy_px),
+            center_x=center_x,
+            center_y=center_y,
+            minx=minx,
+            maxy=maxy,
+            resolution=resolution,
+        )
 
-            candidates.append(
-                {
-                    "x": float(x_local),
-                    "y": float(y_local),
-                    "height": float(height),
-                    "radius": float(radius),
-                    "height_source": height_source,
-                    "canopy_distance_m": edge_distance,
-                }
-            )
-        row_index += 1
+        candidates.append(
+            {
+                "x": float(x_local),
+                "y": float(y_local),
+                "height": float(max(3.0, min(20.0, height))),
+                "radius": float(radius),
+                "height_source": height_source,
+                "crown_area_m2": area_m2,
+                "hag_samples": hag_samples,
+            }
+        )
 
     if len(candidates) > MAX_TREES:
+        # Prefer larger, better-supported crowns; use stable spatial tie-break.
         import hashlib
 
         def rank(item):
             token = ("%.2f:%.2f" % (item["x"], item["y"])).encode()
-            return hashlib.sha256(token).digest()
+            tie = int.from_bytes(hashlib.sha256(token).digest()[:8], "big")
+            support = min(30, int(item["hag_samples"]))
+            score = (
+                float(item["crown_area_m2"]) * 1000.0
+                + support * 50.0
+                + min(20.0, float(item["height"])) * 10.0
+            )
+            return (-score, tie)
 
         candidates.sort(key=rank)
         candidates = candidates[:MAX_TREES]
 
-    return sorted(candidates, key=lambda item: (item["y"], item["x"]))
+    return sorted(candidates, key=lambda item: (item["y"], item["x"])), labels, hag_grid
+
+
+def masked_local_height(
+    hag_grid: np.ndarray,
+    region_mask: np.ndarray,
+    cy: int,
+    cx: int,
+    radius_px: int = 6,
+):
+    y0 = max(0, cy - radius_px)
+    y1 = min(hag_grid.shape[0], cy + radius_px + 1)
+    x0 = max(0, cx - radius_px)
+    x1 = min(hag_grid.shape[1], cx + radius_px + 1)
+
+    values = hag_grid[y0:y1, x0:x1][region_mask[y0:y1, x0:x1]]
+    values = values[np.isfinite(values)]
+    values = values[(values >= 0.0) & (values <= 40.0)]
+    if values.size < 3:
+        return None, int(values.size)
+    return float(np.percentile(values, 75)), int(values.size)
+
 
 def extract_canopy_masses(
     tree_mask: np.ndarray,
     hag_data,
     ortho_meta: dict,
     resolution: float,
+    hag_grid: np.ndarray | None = None,
 ):
     center_x = float(hag_data["center_x"])
     center_y = float(hag_data["center_y"])
     minx, _miny, _maxx, maxy = map(float, ortho_meta["bbox_epsg3763"])
+
+    if hag_grid is None:
+        hag_grid = hag_grid_for_model(
+            hag_data,
+            ortho_meta,
+            tree_mask.shape,
+            resolution,
+        )
 
     labels = measure.label(tree_mask, connectivity=2)
     step_px = max(2, int(round(CANOPY_STEP_M / resolution)))
@@ -277,10 +388,13 @@ def extract_canopy_masses(
         if area_m2 < MIN_CANOPY_REGION_M2:
             continue
 
+        region_mask = labels == region.label
         minr, minc, maxr, maxc = region.bbox
-        component = labels[minr:maxr, minc:maxc] == region.label
+        component = region_mask[minr:maxr, minc:maxc]
         local_distance = ndi.distance_transform_edt(component) * resolution
         accepted = 0
+        forest_points = 0
+        scrub_points = 0
 
         for local_y in range(step_px // 2, component.shape[0], step_px):
             offset = (step_px // 2) if ((local_y // step_px) % 2) else 0
@@ -291,46 +405,71 @@ def extract_canopy_masses(
                 if edge_distance < 0.45:
                     continue
 
-                px = float(minc + local_x)
-                py = float(minr + local_y)
+                py = int(minr + local_y)
+                px = int(minc + local_x)
                 x_local, y_local = pixel_to_local(
-                    px, py,
+                    float(px),
+                    float(py),
                     center_x=center_x,
                     center_y=center_y,
                     minx=minx,
                     maxy=maxy,
                     resolution=resolution,
                 )
-                hag_height = hag_height_near(x_local, y_local, hag_data)
+
+                # Crucially: height samples come only from this same connected
+                # canopy region, so neighboring buildings/slopes cannot leak in.
+                hag_height, hag_samples = masked_local_height(
+                    hag_grid,
+                    region_mask,
+                    py,
+                    px,
+                    radius_px=max(3, int(round(3.0 / resolution))),
+                )
+
                 if hag_height is not None and hag_height >= 3.6:
                     kind = "forest"
-                    height = max(2.8, min(8.5, hag_height * 0.55))
-                    radius = max(1.15, min(2.55, 1.10 + edge_distance * 0.32))
+                    height = max(2.8, min(9.0, hag_height * 0.60))
+                    radius = max(1.15, min(2.65, 1.10 + edge_distance * 0.34))
+                    forest_points += 1
+                    height_source = "region-local-p75-lidar-hag"
                 else:
                     kind = "scrub"
-                    height = max(1.15, min(3.2, 1.25 + edge_distance * 0.35))
-                    radius = max(0.95, min(2.05, 0.95 + edge_distance * 0.26))
+                    height = max(1.10, min(3.4, 1.20 + edge_distance * 0.38))
+                    radius = max(0.95, min(2.15, 0.95 + edge_distance * 0.28))
+                    scrub_points += 1
+                    height_source = "semantic-scrub"
 
-                points.append({
-                    "x": float(x_local),
-                    "y": float(y_local),
-                    "height": float(height),
-                    "radius": float(radius),
-                    "kind": kind,
-                    "region_area_m2": area_m2,
-                })
+                points.append(
+                    {
+                        "x": float(x_local),
+                        "y": float(y_local),
+                        "height": float(height),
+                        "radius": float(radius),
+                        "kind": kind,
+                        "height_source": height_source,
+                        "hag_samples": hag_samples,
+                        "region_area_m2": area_m2,
+                    }
+                )
                 accepted += 1
 
-        region_summaries.append({
-            "area_m2": area_m2,
-            "points": accepted,
-        })
+        region_summaries.append(
+            {
+                "area_m2": area_m2,
+                "points": accepted,
+                "forest_points": forest_points,
+                "scrub_points": scrub_points,
+            }
+        )
 
     if len(points) > MAX_CANOPY_MASS_POINTS:
         import hashlib
+
         def rank(item):
             token = ("mass:%.2f:%.2f" % (item["x"], item["y"])).encode()
             return hashlib.sha256(token).digest()
+
         points.sort(key=rank)
         points = points[:MAX_CANOPY_MASS_POINTS]
 
@@ -545,7 +684,7 @@ def main():
     )
 
     hag_data = np.load(HAG)
-    trees = extract_trees(
+    trees, crown_map, hag_grid = extract_trees(
         tree_mask,
         hag_data,
         meta,
@@ -556,6 +695,7 @@ def main():
         hag_data,
         meta,
         MODEL_RESOLUTION_M,
+        hag_grid=hag_grid,
     )
     pools = extract_pools(
         water_mask,
@@ -578,6 +718,15 @@ def main():
         },
         "counts": {
             "trees": len(trees),
+            "crown_segments": int(crown_map.max()),
+            "tree_heights_from_lidar": sum(
+                item.get("height_source") == "crown-p90-lidar-hag"
+                for item in trees
+            ),
+            "tree_heights_fallback": sum(
+                item.get("height_source") == "crown-semantic-fallback"
+                for item in trees
+            ),
             "pools": len(pools),
             "canopy_mass_points": len(canopy_masses),
             "canopy_regions": len(canopy_regions),
