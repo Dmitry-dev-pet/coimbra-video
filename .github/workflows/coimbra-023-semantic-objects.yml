@@ -163,6 +163,10 @@ jobs:
           set -euo pipefail
           python scripts/detect_semantic_objects_ortho.py
           test -s data/processed/bridge_semantic_objects_2025.json
+          test -s bridge_output_023/solar-detections-qa.png
+          test -s bridge_output_023/solar-candidates-sheet.png
+          test -s bridge_output_023/solar-qa-summary.json
+          cat bridge_output_023/solar-qa-summary.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -187,5 +191,16 @@ jobs:
         with:
           name: coimbra-023-semantic-objects-image
           path: bridge_output_023/semantic-objects.png
+          if-no-files-found: error
+          compression-level: 1
+
+      - name: Upload solar detection QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-023-solar-qa
+          path: |
+            bridge_output_023/solar-detections-qa.png
+            bridge_output_023/solar-candidates-sheet.png
+            bridge_output_023/solar-qa-summary.json
           if-no-files-found: error
           compression-level: 1

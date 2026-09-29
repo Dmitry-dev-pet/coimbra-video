@@ -16,6 +16,10 @@ ORTHO_META = ROOT / "data" / "processed" / "bridge_ortho_2025.json"
 OSM = ROOT / "data" / "processed" / "bridge_osm_oss_local.json"
 BBOX = ROOT / "bridge_output_023" / "review-bbox.json"
 OUT = ROOT / "data" / "processed" / "bridge_semantic_objects_2025.json"
+QA_DIR = ROOT / "bridge_output_023"
+QA_OVERLAY = QA_DIR / "solar-detections-qa.png"
+QA_CONTACT_SHEET = QA_DIR / "solar-candidates-sheet.png"
+QA_SUMMARY = QA_DIR / "solar-qa-summary.json"
 
 SOLAR_DETECTOR = "OpenCV roof-component detector"
 SOLAR_MIN_AREA_M2 = 0.8
@@ -399,6 +403,230 @@ def detect_solar_cv(image, meta, buildings):
     return kept
 
 
+
+def detection_world_corners(item):
+    cx, cy = map(float, item["center_local"])
+    axis = np.asarray(item.get("building_axis") or [1.0, 0.0], dtype=np.float32)
+    norm = float(np.linalg.norm(axis))
+    if norm < 1e-8:
+        axis = np.asarray([1.0, 0.0], dtype=np.float32)
+    else:
+        axis = axis / norm
+    side = np.asarray([-axis[1], axis[0]], dtype=np.float32)
+    half_w = float(item["width_m"]) * 0.5
+    half_h = float(item["height_m"]) * 0.5
+    center = np.asarray([cx, cy], dtype=np.float32)
+    return np.asarray(
+        [
+            center - axis * half_w - side * half_h,
+            center + axis * half_w - side * half_h,
+            center + axis * half_w + side * half_h,
+            center - axis * half_w + side * half_h,
+        ],
+        dtype=np.float32,
+    )
+
+
+def evenly_spaced_indices(count, limit=64):
+    if count <= 0:
+        return []
+    if count <= limit:
+        return list(range(count))
+    return sorted(
+        set(
+            int(round(i * (count - 1) / (limit - 1)))
+            for i in range(limit)
+        )
+    )
+
+
+def qa_summary(detections, sampled_indices):
+    scores = np.asarray([float(item["score"]) for item in detections], dtype=np.float64)
+    areas = np.asarray([float(item["area_m2"]) for item in detections], dtype=np.float64)
+    rectangularity = np.asarray(
+        [float(item.get("rectangularity", 0.0)) for item in detections],
+        dtype=np.float64,
+    )
+
+    def stats(values):
+        if values.size == 0:
+            return {"min": None, "p25": None, "median": None, "p75": None, "max": None}
+        return {
+            "min": float(values.min()),
+            "p25": float(np.quantile(values, 0.25)),
+            "median": float(np.quantile(values, 0.50)),
+            "p75": float(np.quantile(values, 0.75)),
+            "max": float(values.max()),
+        }
+
+    return {
+        "version": "coimbra-solar-qa-v1",
+        "detections": len(detections),
+        "unique_buildings": len({int(item["building_way_id"]) for item in detections}),
+        "score": stats(scores),
+        "area_m2": stats(areas),
+        "rectangularity": stats(rectangularity),
+        "score_bands": {
+            "gte_0_90": int(np.sum(scores >= 0.90)) if scores.size else 0,
+            "0_80_to_0_90": int(np.sum((scores >= 0.80) & (scores < 0.90))) if scores.size else 0,
+            "0_70_to_0_80": int(np.sum((scores >= 0.70) & (scores < 0.80))) if scores.size else 0,
+            "lt_0_70": int(np.sum(scores < 0.70)) if scores.size else 0,
+        },
+        "sampled_indices": [int(index) for index in sampled_indices],
+        "overlay": QA_OVERLAY.relative_to(ROOT).as_posix(),
+        "contact_sheet": QA_CONTACT_SHEET.relative_to(ROOT).as_posix(),
+    }
+
+
+def render_solar_qa(image, meta, buildings, detections, crop_box):
+    QA_DIR.mkdir(parents=True, exist_ok=True)
+    rgb_full = np.asarray(image, dtype=np.uint8)
+    x0, y0, x1, y1 = map(int, crop_box)
+    overlay = rgb_full[y0:y1, x0:x1].copy()
+    if overlay.size == 0:
+        raise RuntimeError("solar QA crop is empty")
+
+    max_side = max(overlay.shape[0], overlay.shape[1])
+    scale = min(1.0, 4096.0 / max_side)
+    if scale < 1.0:
+        overlay = cv2.resize(
+            overlay,
+            (
+                max(1, int(round(overlay.shape[1] * scale))),
+                max(1, int(round(overlay.shape[0] * scale))),
+            ),
+            interpolation=cv2.INTER_AREA,
+        )
+
+    building_ids = {int(item["building_way_id"]) for item in detections}
+    building_map = {int(item["way_id"]): item for item in buildings}
+    for way_id in building_ids:
+        item = building_map.get(way_id)
+        if item is None:
+            continue
+        pts = np.asarray(
+            [
+                (
+                    (local_to_pixel(px, py, meta)[0] - x0) * scale,
+                    (local_to_pixel(px, py, meta)[1] - y0) * scale,
+                )
+                for px, py in item["polygon"]
+            ],
+            dtype=np.int32,
+        )
+        if len(pts) >= 3:
+            cv2.polylines(overlay, [pts], True, (210, 210, 210), 1, cv2.LINE_AA)
+
+    sampled_indices = evenly_spaced_indices(len(detections), limit=64)
+    sampled_set = set(sampled_indices)
+    for index, item in enumerate(detections):
+        corners = detection_world_corners(item)
+        pts = np.asarray(
+            [
+                (
+                    (local_to_pixel(float(px), float(py), meta)[0] - x0) * scale,
+                    (local_to_pixel(float(px), float(py), meta)[1] - y0) * scale,
+                )
+                for px, py in corners
+            ],
+            dtype=np.int32,
+        )
+        score = float(item["score"])
+        if score >= 0.90:
+            color = (255, 55, 55)
+            thickness = 3
+        elif score >= 0.80:
+            color = (255, 165, 35)
+            thickness = 2
+        else:
+            color = (255, 225, 40)
+            thickness = 2
+        cv2.polylines(overlay, [pts], True, color, thickness, cv2.LINE_AA)
+        if index in sampled_set:
+            center_px = local_to_pixel(*map(float, item["center_local"]), meta)
+            label_xy = (
+                int(round((center_px[0] - x0) * scale)),
+                int(round((center_px[1] - y0) * scale)),
+            )
+            cv2.putText(
+                overlay,
+                str(index),
+                label_xy,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.48,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                overlay,
+                str(index),
+                label_xy,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.48,
+                (20, 20, 20),
+                1,
+                cv2.LINE_AA,
+            )
+
+    cv2.imwrite(str(QA_OVERLAY), cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+
+    tile_size = 180
+    columns = 8
+    rows = max(1, math.ceil(max(1, len(sampled_indices)) / columns))
+    sheet = np.full((rows * tile_size, columns * tile_size, 3), 235, dtype=np.uint8)
+    resolution = float(meta["resolution_m"])
+
+    for slot, index in enumerate(sampled_indices):
+        item = detections[index]
+        cx, cy = local_to_pixel(*map(float, item["center_local"]), meta)
+        candidate_px = max(float(item["width_m"]), float(item["height_m"])) / resolution
+        radius = int(round(max(28.0, min(120.0, candidate_px * 1.8 + 18.0))))
+        sx0 = max(0, int(round(cx)) - radius)
+        sy0 = max(0, int(round(cy)) - radius)
+        sx1 = min(image.width, int(round(cx)) + radius)
+        sy1 = min(image.height, int(round(cy)) + radius)
+        tile = rgb_full[sy0:sy1, sx0:sx1].copy()
+        if tile.size == 0:
+            continue
+
+        corners = detection_world_corners(item)
+        pts = np.asarray(
+            [
+                (
+                    local_to_pixel(float(px), float(py), meta)[0] - sx0,
+                    local_to_pixel(float(px), float(py), meta)[1] - sy0,
+                )
+                for px, py in corners
+            ],
+            dtype=np.int32,
+        )
+        cv2.polylines(tile, [pts], True, (255, 45, 45), 2, cv2.LINE_AA)
+        tile = cv2.resize(tile, (tile_size, tile_size), interpolation=cv2.INTER_AREA)
+        cv2.rectangle(tile, (0, 0), (tile_size - 1, 26), (10, 10, 10), -1)
+        label = f"#{index} s={float(item['score']):.2f} a={float(item['area_m2']):.1f}"
+        cv2.putText(
+            tile,
+            label,
+            (5, 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        row, col = divmod(slot, columns)
+        sheet[
+            row * tile_size : (row + 1) * tile_size,
+            col * tile_size : (col + 1) * tile_size,
+        ] = tile
+
+    cv2.imwrite(str(QA_CONTACT_SHEET), cv2.cvtColor(sheet, cv2.COLOR_RGB2BGR))
+    summary = qa_summary(detections, sampled_indices)
+    QA_SUMMARY.write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.parse_args()
@@ -420,6 +648,7 @@ def main():
     crop_box = bbox_to_pixels(review_bbox, meta, image.size)
 
     solar = detect_solar_cv(image, meta, buildings)
+    qa = render_solar_qa(image, meta, buildings, solar, crop_box)
 
     payload = {
         "version": "coimbra-semantic-objects-v1",
@@ -442,6 +671,7 @@ def main():
         "osm_solar": osm_solar,
         "parking": parking,
         "pitches": pitches,
+        "qa": qa,
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2) + "\n")
