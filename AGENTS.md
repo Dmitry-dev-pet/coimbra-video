@@ -94,3 +94,15 @@ street-furniture representation plus add `Urban_Curbs` and
 Street-level QA cameras are temporary render-only cameras and must not be saved
 into the output blend. Do not add external GLB asset dependencies to this pass.
 Promotion to a new governed production contract requires visual review first.
+
+
+## Photo patch bridge 011
+`feature/coimbra-011-photo-patch` is intentionally not a full-city production
+upgrade. It crops the accepted 010 scene to one approximately 220 x 220 m Polo II
+photo patch and creates a still-only Blender scene.
+
+The patch may remove geometry outside its crop, replace the route camera with a
+single still camera and use photo-specific lighting. It must not be presented as
+a replacement for the full Coimbra scene. The purpose is to create a small,
+editable hero-shot asset where substantially more manual/high-detail work is
+practical.
