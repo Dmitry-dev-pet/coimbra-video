@@ -16,13 +16,9 @@ OSM = ROOT / "data" / "processed" / "bridge_osm_oss_local.json"
 BBOX = ROOT / "bridge_output_023" / "review-bbox.json"
 OUT = ROOT / "data" / "processed" / "bridge_semantic_objects_2025.json"
 
-MODEL_ID = "IDEA-Research/grounding-dino-tiny"
-MODEL_REVISION = "c7309d120267d81bf3ed68383062e12a9102602d"
-TILE = 1024
-OVERLAP = 192
-BOX_THRESHOLD = 0.16
-TEXT_THRESHOLD = 0.14
-PROMPT = "solar panel. photovoltaic panel. solar array."
+SOLAR_DETECTOR = "OpenCV roof-component detector"
+SOLAR_MIN_AREA_M2 = 0.8
+SOLAR_MAX_AREA_M2 = 220.0
 
 
 def tile_origins(size: int, tile: int, overlap: int) -> list[int]:
@@ -238,130 +234,173 @@ def collect_osm_features(source, review_bbox):
     return buildings, parking, pitches, osm_solar
 
 
-def detect_solar(image, crop_box, meta, buildings):
-    import torch
-    from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
-
-    torch.set_num_threads(max(1, min(4, torch.get_num_threads())))
-    processor = AutoProcessor.from_pretrained(
-        MODEL_ID,
-        revision=MODEL_REVISION,
+def building_pixel_polygon(building, meta):
+    return np.asarray(
+        [local_to_pixel(x, y, meta) for x, y in building["polygon"]],
+        dtype=np.float32,
     )
-    model = AutoModelForZeroShotObjectDetection.from_pretrained(
-        MODEL_ID,
-        revision=MODEL_REVISION,
-    )
-    model.eval()
 
-    x_crop, y_crop, x_end, y_end = crop_box
-    crop = image.crop(crop_box).convert("RGB")
-    x_origins = tile_origins(crop.width, TILE, OVERLAP)
-    y_origins = tile_origins(crop.height, TILE, OVERLAP)
-    raw = []
 
-    tile_index = 0
-    total = len(x_origins) * len(y_origins)
-    for y0 in y_origins:
-        for x0 in x_origins:
-            tile_index += 1
-            tile = crop.crop((x0, y0, min(x0 + TILE, crop.width), min(y0 + TILE, crop.height)))
-            inputs = processor(images=tile, text=PROMPT, return_tensors="pt")
-            with torch.no_grad():
-                outputs = model(**inputs)
-            result = processor.post_process_grounded_object_detection(
-                outputs,
-                inputs.input_ids,
-                box_threshold=BOX_THRESHOLD,
-                text_threshold=TEXT_THRESHOLD,
-                target_sizes=[tile.size[::-1]],
-            )[0]
+def contour_axis(contour):
+    points = contour.reshape(-1, 2).astype(np.float32)
+    rect = cv2.minAreaRect(points)
+    box = cv2.boxPoints(rect)
+    edges = []
+    for i in range(4):
+        a = box[i]
+        b = box[(i + 1) % 4]
+        delta = b - a
+        length = float(np.linalg.norm(delta))
+        edges.append((length, delta))
+    edges.sort(key=lambda item: item[0], reverse=True)
+    long_px, delta = edges[0]
+    short_px = min(item[0] for item in edges)
+    world = np.asarray([float(delta[0]), float(-delta[1])], dtype=np.float32)
+    norm = float(np.linalg.norm(world))
+    if norm < 1e-8:
+        axis = [1.0, 0.0]
+    else:
+        axis = [float(world[0] / norm), float(world[1] / norm)]
+    return rect, axis, float(long_px), float(short_px)
 
-            scores = result["scores"].detach().cpu().numpy()
-            boxes = result["boxes"].detach().cpu().numpy()
-            labels = result.get("text_labels", result.get("labels", []))
 
-            found = 0
-            for index, (score, box) in enumerate(zip(scores, boxes)):
-                bx0, by0, bx1, by1 = map(float, box)
-                gx0 = x_crop + x0 + bx0
-                gy0 = y_crop + y0 + by0
-                gx1 = x_crop + x0 + bx1
-                gy1 = y_crop + y0 + by1
+def detect_solar_cv(image, meta, buildings):
+    import cv2
 
-                width_m = (gx1 - gx0) * float(meta["resolution_m"])
-                height_m = (gy1 - gy0) * float(meta["resolution_m"])
-                area_m2 = width_m * height_m
-                if not (0.7 <= min(width_m, height_m) <= 25.0):
-                    continue
-                if not (1.0 <= area_m2 <= 600.0):
-                    continue
+    rgb_full = np.asarray(image, dtype=np.uint8)
+    resolution = float(meta["resolution_m"])
+    detections = []
 
-                cx_px = 0.5 * (gx0 + gx1)
-                cy_px = 0.5 * (gy0 + gy1)
-                center = pixel_to_local(cx_px, cy_px, meta)
-                building = match_building(center, buildings)
-                if building is None:
-                    continue
-
-                # Solar arrays on aerial RGB are usually dark blue/gray. Use
-                # color only as a weak rejection filter, never as the detector.
-                patch = np.asarray(
-                    image.crop(
-                        (
-                            int(max(0, gx0)),
-                            int(max(0, gy0)),
-                            int(min(image.width, gx1)),
-                            int(min(image.height, gy1)),
-                        )
-                    ).convert("RGB"),
-                    dtype=np.float32,
-                )
-                if patch.size == 0:
-                    continue
-                mean_rgb = patch.reshape(-1, 3).mean(axis=0)
-                luminance = float(
-                    0.2126 * mean_rgb[0]
-                    + 0.7152 * mean_rgb[1]
-                    + 0.0722 * mean_rgb[2]
-                )
-                if luminance > 220.0 and float(score) < 0.28:
-                    continue
-
-                label = (
-                    labels[index]
-                    if hasattr(labels, "__len__") and len(labels) > index
-                    else "solar panel"
-                )
-                raw.append(
-                    {
-                        "score": float(score),
-                        "label": str(label),
-                        "box_px": [gx0, gy0, gx1, gy1],
-                        "center_local": [float(center[0]), float(center[1])],
-                        "width_m": float(width_m),
-                        "height_m": float(height_m),
-                        "area_m2": float(area_m2),
-                        "mean_rgb": [round(float(v), 1) for v in mean_rgb],
-                        "building_way_id": building["way_id"],
-                        "building_axis": building["axis"],
-                    }
-                )
-                found += 1
-            print(f"GroundingDINO tile {tile_index}/{total}: {found} accepted solar boxes")
-
-    raw.sort(key=lambda item: item["score"], reverse=True)
-    kept = []
-    for item in raw:
-        if any(iou(item["box_px"], old["box_px"]) > 0.38 for old in kept):
+    for building in buildings:
+        poly = building_pixel_polygon(building, meta)
+        if len(poly) < 3:
             continue
-        kept.append(item)
+        minx = max(0, int(math.floor(float(poly[:, 0].min()))) - 2)
+        miny = max(0, int(math.floor(float(poly[:, 1].min()))) - 2)
+        maxx = min(image.width, int(math.ceil(float(poly[:, 0].max()))) + 3)
+        maxy = min(image.height, int(math.ceil(float(poly[:, 1].max()))) + 3)
+        if maxx - minx < 5 or maxy - miny < 5:
+            continue
+
+        crop = rgb_full[miny:maxy, minx:maxx]
+        local_poly = np.rint(poly - np.asarray([minx, miny], dtype=np.float32)).astype(np.int32)
+        roof_mask = np.zeros(crop.shape[:2], dtype=np.uint8)
+        cv2.fillPoly(roof_mask, [local_poly], 255)
+
+        hsv = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)
+        h, s, v = cv2.split(hsv)
+
+        # PV arrays in DGT RGB imagery are typically dark blue, blue-gray or
+        # near-black rectangles. Keep both families, but only inside a known
+        # OSM building footprint.
+        blue = (
+            (h >= 82) & (h <= 145)
+            & (s >= 35)
+            & (v >= 22) & (v <= 205)
+        )
+        dark = (v >= 18) & (v <= 92) & (s >= 10)
+        mask = ((blue | dark).astype(np.uint8) * 255)
+        mask = cv2.bitwise_and(mask, roof_mask)
+
+        kernel = np.ones((3, 3), dtype=np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        for contour in contours:
+            area_px = float(cv2.contourArea(contour))
+            area_m2 = area_px * resolution * resolution
+            if not (SOLAR_MIN_AREA_M2 <= area_m2 <= SOLAR_MAX_AREA_M2):
+                continue
+
+            rect, axis, long_px, short_px = contour_axis(contour)
+            if short_px < 2.0 or long_px < 3.0:
+                continue
+            rect_area = max(1.0, long_px * short_px)
+            rectangularity = area_px / rect_area
+            aspect = long_px / max(1e-6, short_px)
+            if rectangularity < 0.48 or aspect > 14.0:
+                continue
+
+            cx_local_px, cy_local_px = map(float, rect[0])
+            gx = minx + cx_local_px
+            gy = miny + cy_local_px
+            center = pixel_to_local(gx, gy, meta)
+
+            component_mask = np.zeros(crop.shape[:2], dtype=np.uint8)
+            cv2.drawContours(component_mask, [contour], -1, 255, thickness=-1)
+            pixels = crop[component_mask.astype(bool)]
+            if pixels.size == 0:
+                continue
+            mean_rgb = pixels.reshape(-1, 3).mean(axis=0)
+            r, g, b = map(float, mean_rgb)
+            luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+            # Reject obvious roof shadows / red tile blobs. Black PV remains
+            # possible; blue channel need not dominate if luminance is low.
+            blue_support = b >= r * 0.92 and b >= g * 0.72
+            dark_support = luminance <= 82.0 and abs(r - g) <= 38.0
+            if not (blue_support or dark_support):
+                continue
+
+            # Huge components covering most of a roof are usually shadows or
+            # dark membranes, not panel arrays.
+            if area_m2 > float(building["area_m2"]) * 0.62:
+                continue
+
+            detections.append(
+                {
+                    "score": float(
+                        min(
+                            0.99,
+                            0.45
+                            + 0.30 * rectangularity
+                            + 0.18 * min(1.0, area_m2 / 18.0),
+                        )
+                    ),
+                    "label": "solar panel candidate",
+                    "center_local": [float(center[0]), float(center[1])],
+                    "width_m": float(long_px * resolution),
+                    "height_m": float(short_px * resolution),
+                    "area_m2": float(area_m2),
+                    "mean_rgb": [round(r, 1), round(g, 1), round(b, 1)],
+                    "building_way_id": building["way_id"],
+                    "building_axis": axis,
+                    "rectangularity": float(rectangularity),
+                    "source": "OpenCV+DGT",
+                }
+            )
+
+    detections.sort(key=lambda item: item["score"], reverse=True)
+
+    kept = []
+    for item in detections:
+        cx, cy = item["center_local"]
+        duplicate = False
+        for old in kept:
+            ox, oy = old["center_local"]
+            distance = math.hypot(cx - ox, cy - oy)
+            threshold = 0.4 * max(
+                item["width_m"],
+                item["height_m"],
+                old["width_m"],
+                old["height_m"],
+            )
+            if distance < max(1.0, threshold):
+                duplicate = True
+                break
+        if not duplicate:
+            kept.append(item)
     return kept
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--skip-solar", action="store_true")
-    args = parser.parse_args()
+    parser.parse_args()
 
     for required in (ORTHO, ORTHO_META, OSM, BBOX):
         if not required.is_file():
@@ -379,9 +418,7 @@ def main():
     )
     crop_box = bbox_to_pixels(review_bbox, meta, image.size)
 
-    solar = []
-    if not args.skip_solar:
-        solar = detect_solar(image, crop_box, meta, buildings)
+    solar = detect_solar_cv(image, meta, buildings)
 
     payload = {
         "version": "coimbra-semantic-objects-v1",
@@ -389,11 +426,9 @@ def main():
         "review_bbox_local": review_bbox,
         "ortho_crop_px": list(map(int, crop_box)),
         "solar_detector": {
-            "model": MODEL_ID,
-            "revision": MODEL_REVISION,
-            "prompt": PROMPT,
-            "box_threshold": BOX_THRESHOLD,
-            "text_threshold": TEXT_THRESHOLD,
+            "name": SOLAR_DETECTOR,
+            "source": "DGT Orthophotos 2025",
+            "constraint": "OSM building footprints",
         },
         "counts": {
             "buildings_in_crop": len(buildings),
