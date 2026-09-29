@@ -22,7 +22,7 @@ CLOSE_A = OUT / "hero-building-close-a.png"
 CLOSE_B = OUT / "hero-building-close-b.png"
 MANIFEST = OUT / "hero-buildings-manifest.json"
 
-HERO_COUNT = 5
+HERO_COUNT = 4
 PATCH_CENTER = (-168.37, -748.07)
 PATCH_HALF = 118.0
 
@@ -913,7 +913,7 @@ def main():
             CLOSE_B.relative_to(ROOT).as_posix(),
         ],
         "note": (
-            "012 changes only five selected hero buildings in the Polo II photo "
+            "012 changes only four selected hero buildings in the Polo II photo "
             "patch. The rest of the 011 patch remains intentionally simple."
         ),
     }
