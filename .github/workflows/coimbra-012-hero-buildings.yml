@@ -1,0 +1,131 @@
+name: Coimbra hero buildings 012
+
+on:
+  push:
+    branches:
+      - feature/coimbra-012-hero-buildings
+    paths:
+      - "blender/enhance_hero_buildings.py"
+      - "scripts/verify_hero_buildings.py"
+      - "docs/specs/SPEC-COIMBRA-HERO-BUILDINGS-1.md"
+      - ".github/workflows/coimbra-012-hero-buildings.yml"
+      - "scripts/fetch_osm_oss_bridge.py"
+      - "scripts/prepare_osm_oss_local.py"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  PHOTO_011_RUN_ID: "36545015151"
+  HIGHRES_008B_RUN_ID: "36491512430"
+
+jobs:
+  hero-buildings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host geodata dependencies
+        run: python -m pip install "requests>=2.32,<3" "pyproj>=3.7,<4"
+
+      - name: Fetch local OSM building semantics
+        run: |
+          python scripts/fetch_osm_oss_bridge.py
+          python scripts/prepare_osm_oss_local.py
+          test -s data/processed/bridge_osm_oss_local.json
+
+      - name: Download Polo II 011 photo patch
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-011-polo2-photo-patch
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.PHOTO_011_RUN_ID }}
+          path: bridge_output_011_download
+
+      - name: Normalize 011 patch blend
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_011
+          found="$(find bridge_output_011_download -type f -name 'coimbra-polo2-photo-patch.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_011/coimbra-polo2-photo-patch.blend
+          test -s bridge_output_011/coimbra-polo2-photo-patch.blend
+
+      - name: Download high-resolution terrain
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_008B_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize terrain
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_008b
+          found="$(find bridge_output_008b_download -type f -name 'bridge_terrain_highres_2m.npz' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_008b/bridge_terrain_highres_2m.npz
+          test -s bridge_output_008b/bridge_terrain_highres_2m.npz
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Build five hero buildings and render review images
+        run: |
+          set -euo pipefail
+          rm -rf bridge_output_012
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/enhance_hero_buildings.py
+          cat bridge_output_012/hero-buildings-manifest.json
+
+      - name: Verify roof and window invariants
+        run: |
+          python scripts/verify_hero_buildings.py \
+            bridge_output_012/hero-buildings-manifest.json
+          test -s bridge_output_012/hero-buildings.png
+          test -s bridge_output_012/hero-building-close-a.png
+          test -s bridge_output_012/hero-building-close-b.png
+
+      - name: Upload review photos only
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-012-hero-building-photos
+          path: |
+            bridge_output_012/hero-buildings.png
+            bridge_output_012/hero-building-close-a.png
+            bridge_output_012/hero-building-close-b.png
+            bridge_output_012/hero-buildings-manifest.json
+          if-no-files-found: error
