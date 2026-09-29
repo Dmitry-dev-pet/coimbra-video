@@ -57,6 +57,7 @@ def main() -> None:
         "explicit_roof_shape_wins",
         "flat_roof_never_tile",
         "unknown_uses_dgt_ortho_color",
+        "dgt_ortho_from_packed_scene",
         "google_not_bulk_scraped",
         "full_route_scene",
     ):
