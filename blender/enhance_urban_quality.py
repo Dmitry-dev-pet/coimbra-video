@@ -956,6 +956,14 @@ def render_qa_previews(scene, terrain, nodes, ways):
         math.radians(-32.0),
     )
 
+    camera_fill_data = bpy.data.lights.new("QA_Camera_Fill", type="AREA")
+    camera_fill_data.energy = 850.0
+    camera_fill_data.shape = "DISK"
+    camera_fill_data.size = 8.0
+    camera_fill_data.color = (1.0, 0.94, 0.84)
+    camera_fill = bpy.data.objects.new("QA_Camera_Fill", camera_fill_data)
+    bpy.context.collection.objects.link(camera_fill)
+
     scene.camera = camera
     scene.frame_set(181)
     scene.render.resolution_x = 960
@@ -999,7 +1007,16 @@ def render_qa_previews(scene, terrain, nodes, ways):
 
         camera.location = (camera_x, camera_y, camera_z + 2.65)
         camera.data.lens = float(view["lens"])
-        point_at(camera, (target_x, target_y, target_z + 1.55))
+        inspection_target = (target_x, target_y, target_z + 1.55)
+        point_at(camera, inspection_target)
+
+        camera_fill.location = (
+            camera_x - float(tangent.x) * 1.5,
+            camera_y - float(tangent.y) * 1.5,
+            camera_z + 6.5,
+        )
+        point_at(camera_fill, inspection_target)
+
         path = OUT / f"street-{view['name']}.png"
         scene.render.filepath = str(path)
         bpy.ops.render.render(write_still=True)
@@ -1019,6 +1036,7 @@ def render_qa_previews(scene, terrain, nodes, ways):
 
     bpy.data.objects.remove(camera, do_unlink=True)
     bpy.data.objects.remove(fill, do_unlink=True)
+    bpy.data.objects.remove(camera_fill, do_unlink=True)
     scene.camera = original_camera
     scene.frame_set(original_frame)
     (
