@@ -26,9 +26,9 @@ TILE = 1024
 OVERLAP = 128
 TREE_CLASS = 4
 WATER_CLASS = 5
-MIN_TREE_HAG_M = 2.2
-TREE_DEDUPE_M = 3.2
-MAX_TREES = 5000
+MIN_TREE_HAG_M = 1.8
+TREE_DEDUPE_M = 2.0
+MAX_TREES = 12000
 POOL_MIN_AREA_M2 = 8.0
 POOL_MAX_AREA_M2 = 900.0
 
@@ -200,7 +200,7 @@ def extract_trees(
                 candidate[row, col] = True
                 radius_map[row, col] = float(distance[iy, ix])
 
-    local_max = height >= (ndi.maximum_filter(height, size=5, mode="nearest") - 1e-5)
+    local_max = height >= (ndi.maximum_filter(height, size=3, mode="nearest") - 1e-5)
     coords = np.argwhere(candidate & local_max)
     items = []
     for row, col in coords:
