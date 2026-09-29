@@ -18,6 +18,8 @@ For each City_Buildings roof face inside 550 m of the production camera route:
 4. very large footprints default to flat;
 5. otherwise DGT Orthophotos 2025 roof color resolves the uncertain case.
 
+The DGT image is read from the orthophoto already packed into the accepted
+full-city Blender scene, so the audit has no live WMS/network dependency.
 Google Maps/Earth imagery may be used manually for spot-checking disputed
 buildings, but is not bulk-downloaded or used to build the dataset.
 
