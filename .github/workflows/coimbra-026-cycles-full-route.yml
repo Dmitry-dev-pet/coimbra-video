@@ -1,0 +1,260 @@
+name: Coimbra Cycles full route 026
+
+on:
+  push:
+    branches: [feature/coimbra-026-cycles-full-route]
+    paths:
+      - blender/render_cycles_full_route.py
+      - scripts/verify_cycles_full_route.py
+      - scripts/test_cycles_full_route.py
+      - .github/actions/setup-coimbra-blender/action.yml
+      - .github/workflows/coimbra-026-cycles-full-route.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: coimbra-026-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_025_COMMIT: d178382d10eef41ec00da3fe562fcc445438f8da
+  OEM_REF: 8b301688b870f0eb8a5b93337ca3bc90a28734c4
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test acceptance and guard the exact 025 source code
+        run: |
+          set -euo pipefail
+          python -m compileall -q blender scripts
+          python -m unittest discover -s scripts -p 'test_cycles_full_route.py' -v
+          git diff --exit-code "$SOURCE_025_COMMIT" HEAD -- \
+            blender/render_backend_comparison.py blender/render_cycles_route_baseline.py \
+            blender/build_semantic_objects.py blender/build_semantic_details.py \
+            scripts/detect_semantic_objects_ortho.py scripts/detect_semantic_details_ortho.py \
+            blender/export_semantic_object_bbox.py blender/enhance_hero_buildings.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-019-pitched-roofs-prepared
+          github-token: ${{ github.token }}
+          run-id: 36589306803
+          path: source_019
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          run-id: 36491512430
+          path: source_008b
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-009a-mosaiq-benchmark
+          github-token: ${{ github.token }}
+          run-id: 36495771020
+          path: source_009a
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-025-cycles-route-baseline
+          github-token: ${{ github.token }}
+          run-id: 36644592881
+          path: source_025
+      - name: Normalize pinned inputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          inputs = [
+              ('source_019', 'coimbra-full-route-pitched-roofs.blend', 'bridge_output_019'),
+              ('source_008b', 'bridge_height_above_ground_1m.npz', 'bridge_output_008b'),
+              ('source_008b', 'bridge_terrain_highres_2m.npz', 'bridge_output_008b'),
+              ('source_009a', 'bridge_osm_oss_local.json', 'data/processed'),
+              ('source_025', 'cycles-route-baseline.json', 'baseline_025'),
+          ]
+          for source, name, target in inputs:
+              matches = list(Path(source).rglob(name))
+              if len(matches) != 1:
+                  raise RuntimeError(f'Expected exactly one {source}/{name}; found {len(matches)}')
+              Path(target).mkdir(parents=True, exist_ok=True)
+              shutil.copy2(matches[0], Path(target) / name)
+          PY
+      - uses: ./.github/actions/setup-coimbra-blender
+      - name: Extract identical imagery and semantic crop
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 --python blender/extract_packed_ortho.py
+          blender --background --factory-startup --python-exit-code 1 --python blender/export_semantic_object_bbox.py
+      - uses: actions/checkout@v4
+        with:
+          repository: cliffbb/oem-lightweight
+          ref: ${{ env.OEM_REF }}
+          path: OEM-LightweightModel
+      - name: Install the accepted semantic inference dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.2.2' 'torchvision==0.17.2'
+          python -m pip install 'numpy==1.26.4' 'Pillow>=11,<13' 'opencv-python-headless>=4.10,<5' \
+            'scipy>=1.13,<2' 'scikit-image>=0.24,<1' 'easydict>=1.13,<2' 'gdown>=5.2,<6'
+      - name: Restore accepted OpenEarthMap weights and evidence
+        run: |
+          set -euo pipefail
+          mkdir -p OEM-LightweightModel/models/FasterSeg
+          gdown 'https://drive.google.com/uc?id=12oDzi-sDnD_Y4CBONei_g2SZBMZ6cx-2' -O OEM-LightweightModel/models/FasterSeg/arch_1.pt
+          gdown 'https://drive.google.com/uc?id=1BgCu1Rz2PvTPJzI_J97hNkr4HvlvI-pE' -O OEM-LightweightModel/models/FasterSeg/weights1.pt
+          python scripts/detect_semantic_details_ortho.py --oem-root OEM-LightweightModel \
+            --arch OEM-LightweightModel/models/FasterSeg/arch_1.pt \
+            --weights OEM-LightweightModel/models/FasterSeg/weights1.pt
+          python scripts/detect_semantic_objects_ortho.py
+      - name: Freeze one scene and compare it with 025
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/render_cycles_full_route.py -- prepare
+          test -s bridge_output_026/coimbra-cycles-full-route.blend
+          test -s bridge_output_026/prepare.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-026-prepared
+          path: |
+            bridge_output_026/coimbra-cycles-full-route.blend
+            bridge_output_026/prepare.json
+          if-no-files-found: error
+          compression-level: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-026-prepare-receipt
+          path: bridge_output_026/prepare.json
+          if-no-files-found: error
+
+  render:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      max-parallel: 12
+      matrix:
+        include:
+          - {shard: '01', start: 1, end: 30}
+          - {shard: '02', start: 31, end: 60}
+          - {shard: '03', start: 61, end: 90}
+          - {shard: '04', start: 91, end: 120}
+          - {shard: '05', start: 121, end: 150}
+          - {shard: '06', start: 151, end: 180}
+          - {shard: '07', start: 181, end: 210}
+          - {shard: '08', start: 211, end: 240}
+          - {shard: '09', start: 241, end: 270}
+          - {shard: '10', start: 271, end: 300}
+          - {shard: '11', start: 301, end: 330}
+          - {shard: '12', start: 331, end: 360}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-coimbra-blender
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-026-prepared
+          path: bridge_output_026
+      - name: Render thirty actual Cycles frames with invariant checks
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/render_cycles_full_route.py -- render \
+            --start ${{ matrix.start }} --end ${{ matrix.end }}
+          test "$(find bridge_output_026/frames -name 'frame_*.png' | wc -l)" -eq 30
+      - name: Encode shard with visible source attribution
+        env:
+          SHARD: ${{ matrix.shard }}
+          START: ${{ matrix.start }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'Terrain / Ortho © DGT · Open data / CC BY 4.0 | Map data © OpenStreetMap contributors · ODbL' > bridge_output_026/attribution.txt
+          ffmpeg -y -framerate 30 -start_number "$START" -i bridge_output_026/frames/frame_%04d.png \
+            -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:textfile=bridge_output_026/attribution.txt:fontcolor=white:fontsize=18:x=14:y=h-th-12:box=1:boxcolor=black@0.38:boxborderw=5" \
+            -frames:v 30 -c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium \
+            -g 30 -keyint_min 30 -sc_threshold 0 -movflags +faststart "bridge_output_026/shard-${SHARD}.mp4"
+          ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames,r_frame_rate \
+            -of json "bridge_output_026/shard-${SHARD}.mp4" > "bridge_output_026/shard-${SHARD}-probe.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          s=json.loads(Path(f"bridge_output_026/shard-{os.environ['SHARD']}-probe.json").read_text())['streams'][0]
+          if int(s['nb_read_frames']) != 30 or s['r_frame_rate'] != '30/1':
+              raise RuntimeError('Invalid encoded shard')
+          PY
+          rm -rf bridge_output_026/frames
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-026-video-${{ matrix.shard }}
+          path: |
+            bridge_output_026/shard-*.mp4
+            bridge_output_026/shard-*.json
+          if-no-files-found: error
+          compression-level: 0
+
+  finalize:
+    needs: [prepare, render]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-026-prepare-receipt
+          path: bridge_output_026
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coimbra-026-video-*
+          path: bridge_output_026/shards
+          merge-multiple: true
+      - name: Assemble in exact frame order and decode review frames
+        run: |
+          set -euo pipefail
+          for shard in 01 02 03 04 05 06 07 08 09 10 11 12; do
+            file="$GITHUB_WORKSPACE/bridge_output_026/shards/shard-${shard}.mp4"
+            test -s "$file"
+            printf "file '%s'\n" "$file"
+          done > bridge_output_026/concat.txt
+          ffmpeg -y -f concat -safe 0 -i bridge_output_026/concat.txt -c copy -movflags +faststart \
+            bridge_output_026/coimbra-cycles-full-route-12s.mp4
+          mkdir -p bridge_output_026/review
+          for pair in '0:001' '180:181' '359:360'; do
+            ffmpeg -y -i bridge_output_026/coimbra-cycles-full-route-12s.mp4 \
+              -vf "select=eq(n\,${pair%%:*})" -fps_mode vfr -frames:v 1 \
+              "bridge_output_026/review/frame-${pair##*:}.png"
+          done
+          ffprobe -v error -count_frames -select_streams v:0 \
+            -show_entries stream=codec_name,pix_fmt,width,height,r_frame_rate,nb_read_frames:format=duration \
+            -of json bridge_output_026/coimbra-cycles-full-route-12s.mp4 > bridge_output_026/ffprobe.json
+          printf '%s\n' 'Terrain / Ortho © DGT · Open data / CC BY 4.0 | Map data © OpenStreetMap contributors · ODbL' > bridge_output_026/attribution.txt
+      - name: Independent delivery acceptance
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s scripts -p 'test_cycles_full_route.py' -v
+          python scripts/verify_cycles_full_route.py bridge_output_026
+          cat bridge_output_026/verification.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-026-cycles-full-route
+          path: |
+            bridge_output_026/coimbra-cycles-full-route-12s.mp4
+            bridge_output_026/review/*.png
+            bridge_output_026/prepare.json
+            bridge_output_026/shards/shard-*.json
+            bridge_output_026/ffprobe.json
+            bridge_output_026/verification.json
+            bridge_output_026/attribution.txt
+          if-no-files-found: error
+          compression-level: 0
