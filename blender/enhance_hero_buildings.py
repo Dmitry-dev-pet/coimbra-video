@@ -607,6 +607,48 @@ def add_gabled_roof(vertices, faces, indices, footprint, top_z, roof_index, gabl
     return "gabled"
 
 
+def replace_flat_roof_materials():
+    obj = bpy.data.objects.get("City_Buildings")
+    if obj is None or obj.type != "MESH":
+        raise RuntimeError("City_Buildings missing from 011 patch")
+
+    membrane = material(
+        "Hero_Roof_Flat_Membrane",
+        (0.16, 0.17, 0.17, 1.0),
+        0.90,
+    )
+    slot = None
+    for index, existing in enumerate(obj.data.materials):
+        if existing == membrane:
+            slot = index
+            break
+    if slot is None:
+        obj.data.materials.append(membrane)
+        slot = len(obj.data.materials) - 1
+
+    changed = 0
+    source_slots = {}
+    for polygon in obj.data.polygons:
+        # Legacy generated roofs are horizontal and use the roof slots after the
+        # five wall materials. Reassign every such horizontal face in this small
+        # photo patch so a flat surface can never retain tile texture.
+        if float(polygon.normal.z) > 0.82 and int(polygon.material_index) >= 5:
+            old = int(polygon.material_index)
+            source_slots[str(old)] = source_slots.get(str(old), 0) + 1
+            polygon.material_index = slot
+            changed += 1
+    obj.data.update()
+    if changed <= 0:
+        raise RuntimeError("No legacy flat roof faces were reassigned")
+    return {
+        "object": obj.name,
+        "faces_changed": changed,
+        "old_roof_slots": source_slots,
+        "new_material": membrane.name,
+        "new_slot": slot,
+    }
+
+
 def build_hero_geometry(selected, scene):
     wall_fallback = material("Hero_Wall_Fallback", (0.68, 0.63, 0.54, 1.0), 0.78)
     flat_roof = material("Hero_Roof_Flat_Membrane", (0.16, 0.17, 0.17, 1.0), 0.90)
@@ -825,29 +867,24 @@ def closeup_camera(scene, item, source_camera, name, side_sign):
         (
             item["center"][0],
             item["center"][1],
-            item["ground"] + item["height"] * 0.55,
+            item["ground"] + item["height"] * 0.58,
         )
     )
-    from_target = source_camera.location - center
-    from_target.z *= 0.42
-    if from_target.length < 1e-5:
-        from_target = Vector((1.0, -1.0, 0.25))
-    from_target.normalize()
-    side = Vector((-from_target.y, from_target.x, 0.0))
-    location = center + from_target * 33.0 + side * (side_sign * 8.0)
-    location.z = center.z + max(5.0, item["height"] * 0.22)
 
+    # Use the exact hero-camera position and make the close-up optically, not by
+    # flying a new camera into the scene. If the building is visible in the hero
+    # shot, this guarantees the QA camera cannot end up inside nearby geometry.
     data = bpy.data.cameras.new(name)
     camera = bpy.data.objects.new(name, data)
     bpy.context.collection.objects.link(camera)
-    camera.location = location
-    data.lens = 52.0
+    camera.location = source_camera.location.copy()
+    data.lens = 88.0 if side_sign < 0 else 82.0
     data.sensor_width = 36.0
     data.clip_start = 0.08
-    data.clip_end = 500.0
+    data.clip_end = 800.0
     data.dof.use_dof = True
-    data.dof.focus_distance = (center - location).length
-    data.dof.aperture_fstop = 4.5
+    data.dof.focus_distance = (center - camera.location).length
+    data.dof.aperture_fstop = 5.0
     point_at(camera, center)
     return camera
 
@@ -866,6 +903,7 @@ def main():
     if source_camera is None:
         raise RuntimeError("011 photo camera missing")
 
+    flat_roof_reassignment = replace_flat_roof_materials()
     selected = select_hero_buildings(scene, source, terrain)
     removed_details = delete_existing_detail_faces(selected)
     hero_obj, buildings = build_hero_geometry(selected, scene)
@@ -896,6 +934,7 @@ def main():
         "version": "coimbra-hero-buildings-v1",
         "hero_count": len(buildings),
         "selection": buildings,
+        "flat_roof_reassignment": flat_roof_reassignment,
         "removed_old_detail_faces": removed_details,
         "geometry": {
             "object": hero_obj.name,
