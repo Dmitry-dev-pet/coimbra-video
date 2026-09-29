@@ -209,6 +209,12 @@ class OrthoSampler:
             raw = bytes(packed_entry.packed_file.data)
             if not raw:
                 raise RuntimeError("Embedded DGT orthophoto payload is empty")
+            print(json.dumps({
+                "packed_image_name": image.name,
+                "packed_image_filepath": image.filepath,
+                "packed_bytes": len(raw),
+                "packed_magic_hex": raw[:16].hex(),
+            }))
             extracted.write_bytes(raw)
 
             # Do not reload the original datablock: its packed/original-path
