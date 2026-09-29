@@ -1,0 +1,73 @@
+name: Coimbra highres geodata 008B
+
+on:
+  push:
+    branches: [feature/coimbra-008-highres-geodata]
+    paths:
+      - "scripts/fetch_dgt_highres_bridge.py"
+      - "scripts/prepare_dgt_highres_bridge.py"
+      - ".github/workflows/coimbra-008b-highres-geodata.yml"
+  pull_request:
+    paths:
+      - "scripts/fetch_dgt_highres_bridge.py"
+      - "scripts/prepare_dgt_highres_bridge.py"
+      - ".github/workflows/coimbra-008b-highres-geodata.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  highres-geodata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DGT_USER: ${{ secrets.DGT_USER }}
+      DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install geodata dependencies
+        run: |
+          python -m pip install \
+            "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" "rasterio>=1.4,<2"
+
+      - name: Compile high-resolution geodata pipeline
+        run: |
+          python -m py_compile \
+            scripts/fetch_dgt_highres_bridge.py \
+            scripts/prepare_dgt_highres_bridge.py
+
+      - name: Download DGT MDT-50cm and MDS-50cm
+        run: |
+          python scripts/fetch_dgt_highres_bridge.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("data/raw/dgt_highres/download-manifest.json")
+          d = json.loads(p.read_text())
+          print({k: len(v) for k, v in d["collections"].items()})
+          PY
+
+      - name: Prepare exact 50cm crops and derived grids
+        run: |
+          python scripts/prepare_dgt_highres_bridge.py
+          cat bridge_output_008b/highres-geodata-manifest.json
+
+      - name: Upload high-resolution geodata artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          compression-level: 6
+          path: |
+            bridge_output_008b/bridge_mdt_50cm.tif
+            bridge_output_008b/bridge_mds_50cm.tif
+            bridge_output_008b/bridge_terrain_highres_2m.npz
+            bridge_output_008b/bridge_height_above_ground_1m.npz
+            bridge_output_008b/highres-geodata-manifest.json
+            data/raw/dgt_highres/download-manifest.json
+          if-no-files-found: error

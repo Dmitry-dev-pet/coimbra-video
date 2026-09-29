@@ -70,3 +70,15 @@ before APatch session start: cars, solar panels, rooftop fixtures and HVAC.
 Slight oversizing is intentional because the target is a readable physical-model
 look, not an exact digital twin. After the details baseline is frozen, protect
 `Detail_*` together with `City_*`, `Facade_*`, and `Vegetation_*`.
+
+
+## High-resolution geodata bridge 008
+008A may replace the procedural car mesh before APatch session start using
+25 cm DGT orthophoto OBB detections. Preserve the detection JSON and QA overlay
+as evidence; do not claim the detector is exhaustive.
+
+008B may acquire DGT `MDT-50cm` and `MDS-50cm` only through the authenticated
+CDD flow. Preserve exact cropped 50 cm GeoTIFFs as source evidence and derive
+coarser practical render/height grids from them. Do not commit DGT credentials
+or raw authenticated URLs. The 50 cm source resolution and any Blender render
+resolution must remain explicitly distinguished in metadata.

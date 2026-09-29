@@ -214,3 +214,30 @@ placement.
 Each detail category is consolidated into one `Detail_*` mesh so the scene
 remains practical to inspect. Normal iteration still renders only frames
 1, 181 and 360.
+
+
+## High-resolution geodata 008
+
+008 is split into two independent lanes.
+
+### 008A — car reality
+
+The 2025 DGT RGB orthophoto is fetched at its native 25 cm ground sampling
+distance. A DOTAv1-pretrained oriented-bounding-box detector searches tiled
+aerial imagery for small/large vehicles, converts OBB centers/orientations to
+the local EPSG:3763 scene frame, samples an approximate vehicle color from the
+orthophoto, and replaces the purely procedural 007 car layer. The detector is
+a build-time QA/derivation tool; detections are stored as JSON and a downscaled
+OBB overlay is emitted for visual inspection.
+
+### 008B — 50 cm LiDAR derivatives
+
+The CDD-authenticated lane downloads both DGT `MDT-50cm` and `MDS-50cm`
+tiles intersecting the Coimbra bbox. It preserves exact cropped 50 cm GeoTIFFs
+and derives:
+- a 2 m terrain grid for practical Blender rendering;
+- a 1 m max-pooled `MDS - MDT` height-above-ground grid for later calibration
+  of trees/buildings and other above-ground structures.
+
+CDD download requires a registered DGT account and repository secrets
+`DGT_USER` / `DGT_PASSWORD`.
