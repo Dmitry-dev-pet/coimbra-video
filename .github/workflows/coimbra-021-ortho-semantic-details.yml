@@ -1,9 +1,9 @@
-name: Coimbra orthophoto semantic details 021
+name: Coimbra undergrowth details 022
 
 on:
   push:
     branches:
-      - feature/coimbra-021-ortho-semantic-details
+      - feature/coimbra-022-undergrowth-details
     paths:
       - "scripts/detect_semantic_details_ortho.py"
       - "blender/extract_packed_ortho.py"
@@ -154,7 +154,7 @@ jobs:
       - name: Upload only the review image
         uses: actions/upload-artifact@v4
         with:
-          name: coimbra-021-semantic-detail-image
+          name: coimbra-022-undergrowth-detail-image
           path: bridge_output_021/semantic-details.png
           if-no-files-found: error
           compression-level: 1
