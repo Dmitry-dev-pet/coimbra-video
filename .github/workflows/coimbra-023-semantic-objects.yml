@@ -7,6 +7,7 @@ on:
     paths:
       - "blender/export_semantic_object_bbox.py"
       - "scripts/detect_semantic_objects_ortho.py"
+      - "scripts/detect_semantic_details_ortho.py"
       - "blender/build_semantic_objects.py"
       - "scripts/verify_semantic_objects.py"
       - "docs/specs/SPEC-COIMBRA-SEMANTIC-OBJECTS-1.md"
@@ -141,7 +142,7 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install             --index-url https://download.pytorch.org/whl/cpu             "torch==2.2.2" "torchvision==0.17.2"
-          python -m pip install             "numpy==1.26.4"             "Pillow>=11,<13"             "opencv-python-headless>=4.10,<5"             "scipy>=1.13,<2"             "scikit-image>=0.24,<1"             "easydict>=1.13,<2"             "gdown>=5.2,<6"             "transformers==4.57.6"             "safetensors>=0.4,<1"             "huggingface-hub>=0.27,<1"
+          python -m pip install             "numpy==1.26.4"             "Pillow>=11,<13"             "opencv-python-headless>=4.10,<5"             "scipy>=1.13,<2"             "scikit-image>=0.24,<1"             "easydict>=1.13,<2"             "gdown>=5.2,<6"
 
       - name: Download pinned OpenEarthMap FasterSeg weights
         run: |
@@ -157,6 +158,7 @@ jobs:
           set -euo pipefail
           python scripts/detect_semantic_details_ortho.py             --oem-root OEM-LightweightModel             --arch OEM-LightweightModel/models/FasterSeg/arch_1.pt             --weights OEM-LightweightModel/models/FasterSeg/weights1.pt
           test -s data/processed/bridge_semantic_details_2025.json
+          test -s data/processed/bridge_oem_landcover_masks.npz
 
       - name: Detect solar and collect OSM semantic objects
         run: |

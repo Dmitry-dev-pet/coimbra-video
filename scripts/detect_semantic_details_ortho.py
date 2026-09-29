@@ -20,6 +20,7 @@ ORTHO_META = ROOT / "data" / "processed" / "bridge_ortho_2025.json"
 HAG = ROOT / "bridge_output_008b" / "bridge_height_above_ground_1m.npz"
 OUT = ROOT / "data" / "processed" / "bridge_semantic_details_2025.json"
 PREVIEW = ROOT / "data" / "processed" / "bridge_semantic_details_2025_preview.jpg"
+LANDCOVER_MASKS = ROOT / "data" / "processed" / "bridge_oem_landcover_masks.npz"
 
 MODEL_RESOLUTION_M = 0.50
 TILE = 1024
@@ -27,6 +28,7 @@ OVERLAP = 128
 RANGELAND_CLASS = 1
 TREE_CLASS = 4
 WATER_CLASS = 5
+BUILDING_CLASS = 7
 MIN_TREE_HAG_M = 1.8
 TREE_DEDUPE_M = 2.0
 MAX_TREES = 12000
@@ -96,12 +98,13 @@ def semantic_masks(
     config,
     model,
     device,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     rgb = np.asarray(image, dtype=np.uint8)
     height, width = rgb.shape[:2]
     rangeland_votes = np.zeros((height, width), dtype=np.uint8)
     tree_votes = np.zeros((height, width), dtype=np.uint8)
     water_votes = np.zeros((height, width), dtype=np.uint8)
+    building_votes = np.zeros((height, width), dtype=np.uint8)
     coverage = np.zeros((height, width), dtype=np.uint8)
 
     xs = tile_origins(width, TILE, OVERLAP)
@@ -126,17 +129,20 @@ def semantic_masks(
             rangeland_votes[sl] += (pred == RANGELAND_CLASS).astype(np.uint8)
             tree_votes[sl] += (pred == TREE_CLASS).astype(np.uint8)
             water_votes[sl] += (pred == WATER_CLASS).astype(np.uint8)
+            building_votes[sl] += (pred == BUILDING_CLASS).astype(np.uint8)
             print(
                 f"OEM tile {index}/{total}: "
                 f"rangeland={int(np.sum(pred == RANGELAND_CLASS))} "
                 f"tree={int(np.sum(pred == TREE_CLASS))} "
-                f"water={int(np.sum(pred == WATER_CLASS))}"
+                f"water={int(np.sum(pred == WATER_CLASS))} "
+                f"building={int(np.sum(pred == BUILDING_CLASS))}"
             )
 
     threshold = np.maximum(1, np.ceil(coverage * 0.5)).astype(np.uint8)
     rangeland = rangeland_votes >= threshold
     tree = tree_votes >= threshold
     water = water_votes >= threshold
+    building = building_votes >= threshold
 
     rangeland = morphology.remove_small_objects(rangeland, min_size=16)
     rangeland = morphology.remove_small_holes(rangeland, area_threshold=24)
@@ -144,7 +150,9 @@ def semantic_masks(
     tree = morphology.remove_small_holes(tree, area_threshold=32)
     water = morphology.remove_small_objects(water, min_size=12)
     water = morphology.remove_small_holes(water, area_threshold=20)
-    return rangeland, tree, water
+    building = morphology.remove_small_objects(building, min_size=24)
+    building = morphology.remove_small_holes(building, area_threshold=36)
+    return rangeland, tree, water, building
 
 
 def local_to_pixel(
@@ -814,12 +822,22 @@ def main():
         Path(args.arch).resolve(),
         Path(args.weights).resolve(),
     )
-    rangeland_mask, tree_mask, water_mask = semantic_masks(
+    rangeland_mask, tree_mask, water_mask, building_mask = semantic_masks(
         image,
         torch,
         config,
         model,
         device,
+    )
+
+    LANDCOVER_MASKS.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        LANDCOVER_MASKS,
+        building=building_mask.astype(np.uint8),
+        tree=tree_mask.astype(np.uint8),
+        rangeland=rangeland_mask.astype(np.uint8),
+        water=water_mask.astype(np.uint8),
+        resolution_m=np.asarray([MODEL_RESOLUTION_M], dtype=np.float32),
     )
 
     hag_data = np.load(HAG)
@@ -860,7 +878,7 @@ def main():
             "project": "cliffbb/oem-lightweight",
             "model": "FasterSeg",
             "dataset": "OpenEarthMap",
-            "classes_used": ["rangeland", "tree", "water"],
+            "classes_used": ["rangeland", "tree", "water", "buildings"],
         },
         "counts": {
             "trees": len(trees),
@@ -881,6 +899,7 @@ def main():
             "rangeland_mask_pixels": int(rangeland_mask.sum()),
             "tree_mask_pixels": int(tree_mask.sum()),
             "water_mask_pixels": int(water_mask.sum()),
+            "building_mask_pixels": int(building_mask.sum()),
         },
         "trees": trees,
         "canopy_masses": canopy_masses,
@@ -888,6 +907,7 @@ def main():
         "undergrowth": undergrowth,
         "undergrowth_regions": undergrowth_regions,
         "pools": pools,
+        "landcover_masks": LANDCOVER_MASKS.relative_to(ROOT).as_posix(),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2) + "\n")

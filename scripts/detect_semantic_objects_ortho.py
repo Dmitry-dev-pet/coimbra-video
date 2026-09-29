@@ -15,6 +15,7 @@ ORTHO = ROOT / "data" / "processed" / "bridge_ortho_2025.jpg"
 ORTHO_META = ROOT / "data" / "processed" / "bridge_ortho_2025.json"
 OSM = ROOT / "data" / "processed" / "bridge_osm_oss_local.json"
 BBOX = ROOT / "bridge_output_023" / "review-bbox.json"
+OEM_MASKS = ROOT / "data" / "processed" / "bridge_oem_landcover_masks.npz"
 OUT = ROOT / "data" / "processed" / "bridge_semantic_objects_2025.json"
 QA_DIR = ROOT / "bridge_output_023"
 QA_OVERLAY = QA_DIR / "solar-detections-qa.png"
@@ -22,8 +23,8 @@ QA_CONTACT_SHEET = QA_DIR / "solar-candidates-sheet.png"
 QA_SUMMARY = QA_DIR / "solar-qa-summary.json"
 
 SOLAR_DETECTOR = "OpenCV roof-component detector"
-SOLAR_MIN_AREA_M2 = 0.8
-SOLAR_MAX_AREA_M2 = 220.0
+SOLAR_MIN_AREA_M2 = 1.0
+SOLAR_MAX_AREA_M2 = 1200.0
 
 
 def tile_origins(size: int, tile: int, overlap: int) -> list[int]:
@@ -269,139 +270,250 @@ def contour_axis(contour):
     return rect, axis, float(long_px), float(short_px)
 
 
-def detect_solar_cv(image, meta, buildings):
-    import cv2
-
+def detect_solar_cv(image, meta, buildings, building_semantic):
     rgb_full = np.asarray(image, dtype=np.uint8)
     resolution = float(meta["resolution_m"])
     detections = []
+
+    semantic_full = (building_semantic.astype(np.uint8) * 255)
+    semantic_full = cv2.morphologyEx(
+        semantic_full,
+        cv2.MORPH_CLOSE,
+        np.ones((5, 5), dtype=np.uint8),
+    )
 
     for building in buildings:
         poly = building_pixel_polygon(building, meta)
         if len(poly) < 3:
             continue
-        minx = max(0, int(math.floor(float(poly[:, 0].min()))) - 2)
-        miny = max(0, int(math.floor(float(poly[:, 1].min()))) - 2)
-        maxx = min(image.width, int(math.ceil(float(poly[:, 0].max()))) + 3)
-        maxy = min(image.height, int(math.ceil(float(poly[:, 1].max()))) + 3)
+        minx = max(0, int(math.floor(float(poly[:, 0].min()))) - 8)
+        miny = max(0, int(math.floor(float(poly[:, 1].min()))) - 8)
+        maxx = min(image.width, int(math.ceil(float(poly[:, 0].max()))) + 9)
+        maxy = min(image.height, int(math.ceil(float(poly[:, 1].max()))) + 9)
         if maxx - minx < 5 or maxy - miny < 5:
             continue
 
         crop = rgb_full[miny:maxy, minx:maxx]
-        local_poly = np.rint(poly - np.asarray([minx, miny], dtype=np.float32)).astype(np.int32)
-        roof_mask = np.zeros(crop.shape[:2], dtype=np.uint8)
-        cv2.fillPoly(roof_mask, [local_poly], 255)
+        local_poly = np.rint(
+            poly - np.asarray([minx, miny], dtype=np.float32)
+        ).astype(np.int32)
+
+        osm_mask = np.zeros(crop.shape[:2], dtype=np.uint8)
+        cv2.fillPoly(osm_mask, [local_poly], 255)
+        osm_pixels = int(np.count_nonzero(osm_mask))
+        if osm_pixels < 8:
+            continue
+
+        semantic_crop = semantic_full[miny:maxy, minx:maxx]
+        semantic_overlap = cv2.bitwise_and(semantic_crop, osm_mask)
+        overlap_ratio = float(np.count_nonzero(semantic_overlap)) / float(osm_pixels)
+
+        # A small dilation tolerates sub-meter registration differences between
+        # OSM footprints and the orthophoto, while the OEM building class
+        # rejects stale footprints that now contain vegetation or bare ground.
+        expanded_osm = cv2.dilate(
+            osm_mask,
+            np.ones((9, 9), dtype=np.uint8),
+            iterations=1,
+        )
+        roof_mask = cv2.bitwise_and(semantic_crop, expanded_osm)
+        if np.count_nonzero(roof_mask) < 12 or overlap_ratio < 0.10:
+            continue
 
         hsv = cv2.cvtColor(crop, cv2.COLOR_RGB2HSV)
         h, s, v = cv2.split(hsv)
-
-        # PV arrays in DGT RGB imagery are typically dark blue, blue-gray or
-        # near-black rectangles. Keep both families, but only inside a known
-        # OSM building footprint.
         blue = (
-            (h >= 82) & (h <= 145)
-            & (s >= 35)
-            & (v >= 22) & (v <= 205)
+            (h >= 88) & (h <= 138)
+            & (s >= 24)
+            & (v >= 20) & (v <= 220)
         )
-        dark = (v >= 18) & (v <= 92) & (s >= 10)
-        mask = ((blue | dark).astype(np.uint8) * 255)
-        mask = cv2.bitwise_and(mask, roof_mask)
+        dark = (v >= 18) & (v <= 108) & (s >= 8)
+        raw_bool = (blue | dark) & (roof_mask.astype(bool))
+        raw = raw_bool.astype(np.uint8) * 255
 
-        kernel = np.ones((3, 3), dtype=np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-        contours, _ = cv2.findContours(
-            mask,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE,
+        fine = cv2.morphologyEx(
+            raw,
+            cv2.MORPH_OPEN,
+            np.ones((2, 2), dtype=np.uint8),
         )
-        for contour in contours:
-            area_px = float(cv2.contourArea(contour))
-            area_m2 = area_px * resolution * resolution
-            if not (SOLAR_MIN_AREA_M2 <= area_m2 <= SOLAR_MAX_AREA_M2):
-                continue
+        fine = cv2.morphologyEx(
+            fine,
+            cv2.MORPH_CLOSE,
+            np.ones((3, 3), dtype=np.uint8),
+        )
+        fine = cv2.bitwise_and(fine, roof_mask)
 
-            rect, axis, long_px, short_px = contour_axis(contour)
-            if short_px < 2.0 or long_px < 3.0:
-                continue
-            rect_area = max(1.0, long_px * short_px)
-            rectangularity = area_px / rect_area
-            aspect = long_px / max(1e-6, short_px)
-            if rectangularity < 0.48 or aspect > 14.0:
-                continue
+        # A second, coarser lane deliberately bridges the one- or two-pixel
+        # separators between panels so large arrays become one candidate.
+        grouped = cv2.morphologyEx(
+            raw,
+            cv2.MORPH_CLOSE,
+            np.ones((7, 7), dtype=np.uint8),
+        )
+        grouped = cv2.morphologyEx(
+            grouped,
+            cv2.MORPH_OPEN,
+            np.ones((3, 3), dtype=np.uint8),
+        )
+        grouped = cv2.bitwise_and(grouped, roof_mask)
 
-            cx_local_px, cy_local_px = map(float, rect[0])
-            gx = minx + cx_local_px
-            gy = miny + cy_local_px
-            center = pixel_to_local(gx, gy, meta)
+        gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 40, 100) > 0
 
-            component_mask = np.zeros(crop.shape[:2], dtype=np.uint8)
-            cv2.drawContours(component_mask, [contour], -1, 255, thickness=-1)
-            pixels = crop[component_mask.astype(bool)]
-            if pixels.size == 0:
-                continue
-            mean_rgb = pixels.reshape(-1, 3).mean(axis=0)
-            r, g, b = map(float, mean_rgb)
-            luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-            # Reject obvious roof shadows / red tile blobs. Black PV remains
-            # possible; blue channel need not dominate if luminance is low.
-            blue_support = b >= r * 0.92 and b >= g * 0.72
-            dark_support = luminance <= 82.0 and abs(r - g) <= 38.0
-            if not (blue_support or dark_support):
-                continue
-
-            # Huge components covering most of a roof are usually shadows or
-            # dark membranes, not panel arrays.
-            if area_m2 > float(building["area_m2"]) * 0.62:
-                continue
-
-            detections.append(
-                {
-                    "score": float(
-                        min(
-                            0.99,
-                            0.45
-                            + 0.30 * rectangularity
-                            + 0.18 * min(1.0, area_m2 / 18.0),
-                        )
-                    ),
-                    "label": "solar panel candidate",
-                    "center_local": [float(center[0]), float(center[1])],
-                    "width_m": float(long_px * resolution),
-                    "height_m": float(short_px * resolution),
-                    "area_m2": float(area_m2),
-                    "mean_rgb": [round(r, 1), round(g, 1), round(b, 1)],
-                    "building_way_id": building["way_id"],
-                    "building_axis": axis,
-                    "rectangularity": float(rectangularity),
-                    "source": "OpenCV+DGT",
-                }
+        def collect(mask, tier):
+            contours, _ = cv2.findContours(
+                mask,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE,
             )
+            for contour in contours:
+                area_px = float(cv2.contourArea(contour))
+                area_m2 = area_px * resolution * resolution
+                if tier == "fine":
+                    if not (SOLAR_MIN_AREA_M2 <= area_m2 <= 180.0):
+                        continue
+                else:
+                    if not (12.0 <= area_m2 <= SOLAR_MAX_AREA_M2):
+                        continue
 
-    detections.sort(key=lambda item: item["score"], reverse=True)
+                rect, axis, long_px, short_px = contour_axis(contour)
+                if short_px < 2.0 or long_px < 3.0:
+                    continue
+                rect_area = max(1.0, long_px * short_px)
+                rectangularity = area_px / rect_area
+                aspect = long_px / max(1e-6, short_px)
+                if tier == "fine":
+                    if rectangularity < 0.58 or aspect > 10.0:
+                        continue
+                else:
+                    if rectangularity < 0.62 or aspect > 12.0:
+                        continue
+
+                component = np.zeros(crop.shape[:2], dtype=np.uint8)
+                cv2.drawContours(component, [contour], -1, 255, thickness=-1)
+                component_bool = component.astype(bool)
+                component_pixels = int(np.count_nonzero(component_bool))
+                if component_pixels == 0:
+                    continue
+
+                raw_density = float(np.count_nonzero(raw_bool & component_bool)) / component_pixels
+                blue_density = float(np.count_nonzero(blue & component_bool)) / component_pixels
+                dark_density = float(np.count_nonzero(dark & component_bool)) / component_pixels
+                edge_density = float(np.count_nonzero(edges & component_bool)) / component_pixels
+                semantic_density = float(
+                    np.count_nonzero((semantic_crop > 0) & component_bool)
+                ) / component_pixels
+
+                building_fraction = area_m2 / max(1.0, float(building["area_m2"]))
+                if semantic_density < 0.82 or building_fraction > 0.82:
+                    continue
+
+                if tier == "fine":
+                    strong_blue = (
+                        blue_density >= 0.28
+                        and edge_density >= 0.10
+                        and raw_density >= 0.42
+                    )
+                    structured_dark = (
+                        blue_density >= 0.14
+                        and dark_density >= 0.55
+                        and edge_density >= 0.20
+                        and rectangularity >= 0.72
+                        and raw_density >= 0.52
+                        and area_m2 <= 55.0
+                    )
+                    if not (strong_blue or structured_dark):
+                        continue
+                else:
+                    if not (
+                        blue_density >= 0.22
+                        and edge_density >= 0.17
+                        and raw_density >= 0.30
+                        and area_m2 >= 18.0
+                    ):
+                        continue
+
+                cx_local_px, cy_local_px = map(float, rect[0])
+                gx = minx + cx_local_px
+                gy = miny + cy_local_px
+                center = pixel_to_local(gx, gy, meta)
+
+                pixels = crop[component_bool]
+                if pixels.size == 0:
+                    continue
+                mean_rgb = pixels.reshape(-1, 3).mean(axis=0)
+                r, g, b = map(float, mean_rgb)
+
+                texture_score = min(1.0, edge_density / 0.30)
+                blue_score = min(1.0, blue_density / 0.55)
+                raw_score = min(1.0, raw_density / 0.75)
+                score = min(
+                    0.99,
+                    0.32
+                    + 0.20 * rectangularity
+                    + 0.20 * texture_score
+                    + 0.18 * blue_score
+                    + 0.07 * raw_score
+                    + (0.03 if tier == "grouped" else 0.0),
+                )
+
+                detections.append(
+                    {
+                        "score": float(score),
+                        "label": "solar array candidate",
+                        "center_local": [float(center[0]), float(center[1])],
+                        "width_m": float(long_px * resolution),
+                        "height_m": float(short_px * resolution),
+                        "area_m2": float(area_m2),
+                        "mean_rgb": [round(r, 1), round(g, 1), round(b, 1)],
+                        "building_way_id": building["way_id"],
+                        "building_axis": axis,
+                        "rectangularity": float(rectangularity),
+                        "blue_fraction": float(blue_density),
+                        "dark_fraction": float(dark_density),
+                        "edge_density": float(edge_density),
+                        "raw_density": float(raw_density),
+                        "semantic_building_overlap": float(semantic_density),
+                        "osm_oem_overlap": float(overlap_ratio),
+                        "tier": tier,
+                        "source": "OpenCV+DGT+OpenEarthMap",
+                    }
+                )
+
+        collect(fine, "fine")
+        collect(grouped, "grouped")
+
+    # Prefer grouped arrays, then the strongest candidate. Fine candidates
+    # inside a larger accepted array are suppressed deterministically.
+    detections.sort(
+        key=lambda item: (
+            item.get("tier") == "grouped",
+            float(item["score"]),
+            float(item["area_m2"]),
+        ),
+        reverse=True,
+    )
 
     kept = []
     for item in detections:
         cx, cy = item["center_local"]
         duplicate = False
         for old in kept:
+            if int(item["building_way_id"]) != int(old["building_way_id"]):
+                continue
             ox, oy = old["center_local"]
             distance = math.hypot(cx - ox, cy - oy)
-            threshold = 0.4 * max(
-                item["width_m"],
-                item["height_m"],
-                old["width_m"],
-                old["height_m"],
-            )
-            if distance < max(1.0, threshold):
+            old_major = max(float(old["width_m"]), float(old["height_m"]))
+            new_major = max(float(item["width_m"]), float(item["height_m"]))
+            threshold = 0.52 * max(old_major, new_major)
+            if distance < max(1.2, threshold):
                 duplicate = True
                 break
         if not duplicate:
             kept.append(item)
-    return kept
 
+    kept.sort(key=lambda item: float(item["score"]), reverse=True)
+    return kept
 
 
 def detection_world_corners(item):
@@ -631,7 +743,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.parse_args()
 
-    for required in (ORTHO, ORTHO_META, OSM, BBOX):
+    for required in (ORTHO, ORTHO_META, OSM, BBOX, OEM_MASKS):
         if not required.is_file():
             raise SystemExit(f"Missing input: {required}")
 
@@ -647,7 +759,20 @@ def main():
     )
     crop_box = bbox_to_pixels(review_bbox, meta, image.size)
 
-    solar = detect_solar_cv(image, meta, buildings)
+    with np.load(OEM_MASKS) as landcover:
+        building_model = landcover["building"].astype(np.uint8)
+    building_semantic = cv2.resize(
+        building_model,
+        image.size,
+        interpolation=cv2.INTER_NEAREST,
+    ).astype(bool)
+
+    solar = detect_solar_cv(
+        image,
+        meta,
+        buildings,
+        building_semantic,
+    )
     qa = render_solar_qa(image, meta, buildings, solar, crop_box)
 
     payload = {
@@ -658,7 +783,8 @@ def main():
         "solar_detector": {
             "name": SOLAR_DETECTOR,
             "source": "DGT Orthophotos 2025",
-            "constraint": "OSM building footprints",
+            "constraint": "OSM footprints gated by OpenEarthMap building segmentation",
+            "landcover_model": "OpenEarthMap FasterSeg",
         },
         "counts": {
             "buildings_in_crop": len(buildings),
