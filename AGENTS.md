@@ -148,3 +148,16 @@ footprints and near OSM highways. Existing trees remain untouched.
 
 The review lane uploads images and a manifest only; do not publish a Blender
 artifact from 014.
+
+
+## Final look pass 015
+`feature/coimbra-015-final-look` is a photo-only finishing pass stacked on 014.
+It must not change scene geometry, materials, lighting, or full-city production
+state.
+
+015 renders the accepted lower 55 mm composition at 3200 x 2000, then produces
+1600 x 1000 delivery images via deterministic 2x LANCZOS downsampling and three
+restrained post-render grades: neutral, warm, and soft cinematic.
+
+No Blender file or oversampled master should be published as a user-facing
+artifact; upload only the three final review images plus manifests.
