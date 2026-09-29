@@ -354,6 +354,14 @@ def main():
             float(center_world.x), float(center_world.y), grid
         )
         if record is None:
+            # Safety-first fallback: an unmatched horizontal slab in the route
+            # corridor may never retain a tile texture. Without a building
+            # footprint we cannot construct a trustworthy slope, so use neutral
+            # flat roofing instead.
+            flat_slot = audit.ensure_material_slot(city, flat_gray)
+            if face.material_index != flat_slot:
+                face.material_index = flat_slot
+                stats["unmatched_tile_removed"] += 1
             stats["unmatched"] += 1
             continue
 
