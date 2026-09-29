@@ -190,7 +190,8 @@ def crop_scene() -> dict:
     stats = {}
     for obj in list(bpy.context.scene.objects):
         if obj.type == "MESH":
-            stats[obj.name] = crop_mesh_object(obj)
+            name = obj.name
+            stats[name] = crop_mesh_object(obj)
         elif obj.type in {"CAMERA", "LIGHT", "EMPTY", "CURVE", "FONT"}:
             # The patch gets its own camera and lighting. Remove old camera/light
             # objects and any non-mesh decoration that cannot be spatially cropped
