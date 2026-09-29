@@ -24,6 +24,10 @@ def main() -> None:
     if len(selection) != 4:
         fail("selection length mismatch")
 
+    reassignment = manifest.get("flat_roof_reassignment") or {}
+    if int(reassignment.get("faces_changed", 0)) <= 0:
+        fail("legacy flat roof tile faces were not reassigned")
+
     violations = (
         (manifest.get("roof_rule") or {}).get("flat_tile_violations") or []
     )
@@ -69,6 +73,7 @@ def main() -> None:
         "sloped_roofs": sloped_count,
         "windows": total_windows,
         "faces": geometry.get("faces"),
+        "legacy_flat_roof_faces_fixed": reassignment.get("faces_changed"),
     }, indent=2))
 
 
