@@ -827,6 +827,30 @@ def point_at(camera, target):
     ).to_track_quat("-Z", "Y").to_euler()
 
 
+def production_camera_signature(scene) -> str:
+    camera = bpy.data.objects.get("Camera")
+    if camera is None or camera.type != "CAMERA":
+        raise RuntimeError("production Camera missing")
+    original_frame = scene.frame_current
+    checkpoints = []
+    for frame in (1, 61, 121, 181, 241, 301, 360):
+        scene.frame_set(frame)
+        checkpoints.append(
+            {
+                "frame": frame,
+                "location": [round(float(v), 6) for v in camera.location],
+                "rotation": [round(float(v), 7) for v in camera.rotation_euler],
+                "lens": round(float(camera.data.lens), 6),
+                "dof": bool(camera.data.dof.use_dof),
+                "focus_distance": round(float(camera.data.dof.focus_distance), 6),
+                "fstop": round(float(camera.data.dof.aperture_fstop), 6),
+            }
+        )
+    scene.frame_set(original_frame)
+    payload = json.dumps(checkpoints, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
+
+
 def render_production_previews(scene):
     original_camera = scene.camera
     original_resolution = (
@@ -917,6 +941,21 @@ def render_qa_previews(scene, terrain, nodes, ways):
     camera.data.dof.use_dof = False
     camera.data.clip_start = 0.18
     camera.data.clip_end = 3500.0
+
+    # Street QA is an inspection render, not a production-lighting preview.
+    # Add a temporary neutral sun so shadowed street furniture remains readable.
+    fill_data = bpy.data.lights.new("QA_Street_Fill", type="SUN")
+    fill_data.energy = 1.35
+    fill_data.angle = math.radians(12.0)
+    fill_data.color = (0.93, 0.96, 1.0)
+    fill = bpy.data.objects.new("QA_Street_Fill", fill_data)
+    bpy.context.collection.objects.link(fill)
+    fill.rotation_euler = (
+        math.radians(42.0),
+        math.radians(-18.0),
+        math.radians(-32.0),
+    )
+
     scene.camera = camera
     scene.frame_set(181)
     scene.render.resolution_x = 960
@@ -979,6 +1018,7 @@ def render_qa_previews(scene, terrain, nodes, ways):
         )
 
     bpy.data.objects.remove(camera, do_unlink=True)
+    bpy.data.objects.remove(fill, do_unlink=True)
     scene.camera = original_camera
     scene.frame_set(original_frame)
     (
@@ -996,6 +1036,7 @@ def main():
 
     OUT.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.open_mainfile(filepath=str(BASE))
+    camera_hash_before = production_camera_signature(bpy.context.scene)
 
     data = json.loads(OSM_LOCAL.read_text())
     nodes = data["nodes"]
@@ -1078,6 +1119,13 @@ def main():
     scene["city_urban_quality_marking_dashes"] = int(marking_stats["dashes"])
     scene["city_urban_quality_fixture_count"] = int(sum(fixture_counts.values()))
 
+    camera_hash_after = production_camera_signature(scene)
+    if camera_hash_after != camera_hash_before:
+        raise RuntimeError(
+            "production camera changed during 010 preparation: "
+            f"{camera_hash_before} != {camera_hash_after}"
+        )
+
     bpy.ops.file.pack_all()
     bpy.ops.wm.save_as_mainfile(filepath=str(OUT_BLEND))
 
@@ -1094,11 +1142,13 @@ def main():
         "road_markings": marking_stats,
         "production_previews": production_previews,
         "street_previews": street_previews,
-        "protected_production_camera_unchanged": True,
+        "protected_production_camera_unchanged": camera_hash_after == camera_hash_before,
+        "production_camera_hash_before": camera_hash_before,
+        "production_camera_hash_after": camera_hash_after,
         "notes": [
             "009D sidewalks, parking strips and crosswalks are preserved.",
             "Urban_Fixtures is rebuilt at the same exact OSM node anchors.",
-            "Street QA cameras are temporary render-only cameras and are not saved in the output blend.",
+            "Street QA cameras and neutral QA fill light are temporary render-only objects and are not saved in the output blend.",
             "No external GLB asset pack is required.",
         ],
     }
