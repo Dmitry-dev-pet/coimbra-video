@@ -6,6 +6,7 @@ on:
       - feature/coimbra-021-ortho-semantic-details
     paths:
       - "scripts/detect_semantic_details_ortho.py"
+      - "blender/extract_packed_ortho.py"
       - "blender/build_semantic_details.py"
       - "scripts/verify_semantic_details.py"
       - "docs/specs/SPEC-COIMBRA-ORTHO-SEMANTIC-DETAILS-1.md"
@@ -31,40 +32,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Download accepted 019 corrected-roof scene
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
+          name: coimbra-019-pitched-roofs-prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.ROOF_019_RUN_ID }}
+          path: bridge_output_019_download
 
-      - name: Checkout pinned OpenEarthMap lightweight model
-        uses: actions/checkout@v4
-        with:
-          repository: cliffbb/oem-lightweight
-          ref: ${{ env.OEM_REF }}
-          path: OEM-LightweightModel
-
-      - name: Install CPU semantic-inference dependencies
+      - name: Normalize 019 source scene
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install             --index-url https://download.pytorch.org/whl/cpu             "torch==2.2.2" "torchvision==0.17.2"
-          python -m pip install             "numpy==1.26.4"             "requests>=2.32,<3"             "pyproj>=3.7,<4"             "Pillow>=11,<13"             "opencv-python-headless>=4.10,<5"             "scipy>=1.13,<2"             "scikit-image>=0.24,<1"             "easydict>=1.13,<2"             "gdown>=5.2,<6"
-
-      - name: Download pinned OpenEarthMap FasterSeg weights
-        run: |
-          set -euo pipefail
-          mkdir -p OEM-LightweightModel/models/FasterSeg
-          gdown "https://drive.google.com/uc?id=12oDzi-sDnD_Y4CBONei_g2SZBMZ6cx-2"             -O OEM-LightweightModel/models/FasterSeg/arch_1.pt
-          gdown "https://drive.google.com/uc?id=1BgCu1Rz2PvTPJzI_J97hNkr4HvlvI-pE"             -O OEM-LightweightModel/models/FasterSeg/weights1.pt
-          test -s OEM-LightweightModel/models/FasterSeg/arch_1.pt
-          test -s OEM-LightweightModel/models/FasterSeg/weights1.pt
-          ls -lh OEM-LightweightModel/models/FasterSeg
-
-      - name: Fetch DGT 2025 orthophoto
-        run: |
-          set -euo pipefail
-          python scripts/fetch_dgt_ortho_bridge.py
-          test -s data/processed/bridge_ortho_2025.jpg
-          test -s data/processed/bridge_ortho_2025.json
+          mkdir -p bridge_output_019
+          found="$(find bridge_output_019_download -type f -name 'coimbra-full-route-pitched-roofs.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_019/coimbra-full-route-pitched-roofs.blend
+          test -s bridge_output_019/coimbra-full-route-pitched-roofs.blend
 
       - name: Download DGT high-resolution terrain and HAG
         uses: actions/download-artifact@v4
@@ -88,30 +72,6 @@ jobs:
           test -s bridge_output_008b/bridge_height_above_ground_1m.npz
           test -s bridge_output_008b/bridge_terrain_highres_2m.npz
 
-      - name: Segment trees and water with OpenEarthMap FasterSeg
-        run: |
-          set -euo pipefail
-          python scripts/detect_semantic_details_ortho.py             --oem-root OEM-LightweightModel             --arch OEM-LightweightModel/models/FasterSeg/arch_1.pt             --weights OEM-LightweightModel/models/FasterSeg/weights1.pt
-          cat data/processed/bridge_semantic_details_2025.json |             python -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d["counts"], indent=2))'
-
-      - name: Download accepted 019 corrected-roof scene
-        uses: actions/download-artifact@v4
-        with:
-          name: coimbra-019-pitched-roofs-prepared
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ env.ROOF_019_RUN_ID }}
-          path: bridge_output_019_download
-
-      - name: Normalize 019 source scene
-        run: |
-          set -euo pipefail
-          mkdir -p bridge_output_019
-          found="$(find bridge_output_019_download -type f -name 'coimbra-full-route-pitched-roofs.blend' -print -quit)"
-          test -n "$found"
-          cp "$found" bridge_output_019/coimbra-full-route-pitched-roofs.blend
-          test -s bridge_output_019/coimbra-full-route-pitched-roofs.blend
-
       - uses: actions/cache@v4
         with:
           path: /home/runner/.cache/blender-5.2.2
@@ -133,6 +93,51 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Extract the already packed DGT orthophoto
+        run: |
+          set -euo pipefail
+          blender --background --factory-startup --python-exit-code 1             --python blender/extract_packed_ortho.py
+          test -s data/processed/bridge_ortho_2025.jpg
+          test -s data/processed/bridge_ortho_2025.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Checkout pinned OpenEarthMap lightweight model
+        uses: actions/checkout@v4
+        with:
+          repository: cliffbb/oem-lightweight
+          ref: ${{ env.OEM_REF }}
+          path: OEM-LightweightModel
+
+      - name: Install CPU semantic-inference dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install             --index-url https://download.pytorch.org/whl/cpu             "torch==2.2.2" "torchvision==0.17.2"
+          python -m pip install             "numpy==1.26.4"             "Pillow>=11,<13"             "opencv-python-headless>=4.10,<5"             "scipy>=1.13,<2"             "scikit-image>=0.24,<1"             "easydict>=1.13,<2"             "gdown>=5.2,<6"
+
+      - name: Download pinned OpenEarthMap FasterSeg weights
+        run: |
+          set -euo pipefail
+          mkdir -p OEM-LightweightModel/models/FasterSeg
+          gdown "https://drive.google.com/uc?id=12oDzi-sDnD_Y4CBONei_g2SZBMZ6cx-2"             -O OEM-LightweightModel/models/FasterSeg/arch_1.pt
+          gdown "https://drive.google.com/uc?id=1BgCu1Rz2PvTPJzI_J97hNkr4HvlvI-pE"             -O OEM-LightweightModel/models/FasterSeg/weights1.pt
+          test -s OEM-LightweightModel/models/FasterSeg/arch_1.pt
+          test -s OEM-LightweightModel/models/FasterSeg/weights1.pt
+
+      - name: Segment trees and water with OpenEarthMap FasterSeg
+        run: |
+          set -euo pipefail
+          python scripts/detect_semantic_details_ortho.py             --oem-root OEM-LightweightModel             --arch OEM-LightweightModel/models/FasterSeg/arch_1.pt             --weights OEM-LightweightModel/models/FasterSeg/weights1.pt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("data/processed/bridge_semantic_details_2025.json").read_text())
+          print(json.dumps(data["counts"], indent=2))
+          PY
 
       - name: Build semantic tree and pool detail image
         run: |
