@@ -134,3 +134,17 @@ flat hero roofs at guaranteed interior footprint points.
 
 The review lane uploads images and a manifest only; do not publish a Blender
 artifact from 013.
+
+
+## Environment realism pass 014
+`feature/coimbra-014-environment-realism` is a photo-only environment refinement
+stacked on 013. It must remain inside the existing Polo II photo patch and must
+not modify the full-city production scene or the 013 hero-building geometry.
+
+014 may replace only the photo-patch sidewalk/curb material response, add low
+ground vegetation derived from OSM green-area semantics, and soften the existing
+photo lighting. New low vegetation must be rejected inside OSM building
+footprints and near OSM highways. Existing trees remain untouched.
+
+The review lane uploads images and a manifest only; do not publish a Blender
+artifact from 014.
