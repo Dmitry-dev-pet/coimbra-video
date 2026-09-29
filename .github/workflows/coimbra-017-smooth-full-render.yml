@@ -1,0 +1,310 @@
+name: Coimbra smooth full route 017
+
+on:
+  push:
+    branches:
+      - feature/coimbra-017-smooth-full-render
+    paths:
+      - "blender/render_subframe_shard.py"
+      - "scripts/verify_smooth_full_render.py"
+      - "docs/specs/SPEC-COIMBRA-SMOOTH-FULL-RENDER-1.md"
+      - ".github/workflows/coimbra-017-smooth-full-render.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  SOURCE_RUN_ID: "36556659386"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download accepted 016B prepared scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-016b-full-render-prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          path: source_016b
+
+      - name: Normalize source and verify geometry stack
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_017
+          blend="$(find source_016b -type f -name 'coimbra-full-render-new-geometry.blend' -print -quit)"
+          manifest="$(find source_016b -type f -name 'full-render-new-geometry-manifest.json' -print -quit)"
+          test -n "$blend"
+          test -n "$manifest"
+          cp "$blend" bridge_output_017/coimbra-smooth-source.blend
+          cp "$manifest" bridge_output_017/source-016b-manifest.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("bridge_output_017/source-016b-manifest.json").read_text())
+          assert m["version"] == "coimbra-full-render-new-geometry-v1"
+          assert m["production_camera_unchanged"] is True
+          assert len(m["polo2_patch"]["hero_ids"]) == 4
+          assert m["polo2_patch"]["groundcover"]["green_ways"] > 0
+          print("016B source verified")
+          PY
+
+      - name: Record temporal sampling contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          step=359/1439
+          result={
+            "version":"coimbra-smooth-full-render-v1",
+            "source_run_id":36556659386,
+            "source_frames":360,
+            "output_frames":1440,
+            "fps":30,
+            "duration_seconds":48.0,
+            "first_source_frame":1.0,
+            "last_source_frame":360.0,
+            "source_frame_step":step,
+            "sampling":"native Blender fractional-frame evaluation",
+            "repeated_frames":False,
+            "optical_flow":False,
+          }
+          Path("bridge_output_017/smooth-render-prepare-manifest.json").write_text(
+              json.dumps(result,indent=2)+"\n"
+          )
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Upload smooth source
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-017-smooth-prepared
+          path: |
+            bridge_output_017/coimbra-smooth-source.blend
+            bridge_output_017/source-016b-manifest.json
+            bridge_output_017/smooth-render-prepare-manifest.json
+          if-no-files-found: error
+          compression-level: 1
+
+  render:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: "01", start: 1, end: 120 }
+          - { shard: "02", start: 121, end: 240 }
+          - { shard: "03", start: 241, end: 360 }
+          - { shard: "04", start: 361, end: 480 }
+          - { shard: "05", start: 481, end: 600 }
+          - { shard: "06", start: 601, end: 720 }
+          - { shard: "07", start: 721, end: 840 }
+          - { shard: "08", start: 841, end: 960 }
+          - { shard: "09", start: 961, end: 1080 }
+          - { shard: "10", start: 1081, end: 1200 }
+          - { shard: "11", start: 1201, end: 1320 }
+          - { shard: "12", start: 1321, end: 1440 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install render dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0 \
+            ffmpeg fonts-dejavu-core
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-017-smooth-prepared
+          path: bridge_output_017
+
+      - name: Render 120 true subframes
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_017/frames
+          blender bridge_output_017/coimbra-smooth-source.blend --background \
+            --python blender/render_subframe_shard.py -- \
+            ${{ matrix.start }} ${{ matrix.end }} \
+            "$GITHUB_WORKSPACE/bridge_output_017/frames"
+          count="$(find bridge_output_017/frames -name 'frame_*.png' | wc -l)"
+          test "$count" -eq 120
+
+      - name: Encode shard and discard PNGs
+        run: |
+          set -euo pipefail
+          ffmpeg -y -framerate 30 -start_number ${{ matrix.start }} \
+            -i bridge_output_017/frames/frame_%04d.png \
+            -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='Terrain / Ortho © DGT · Open data / CC BY 4.0   |   Map data © OpenStreetMap contributors · ODbL':fontcolor=white:fontsize=15:x=14:y=h-th-12:box=1:boxcolor=black@0.38:boxborderw=5" \
+            -c:v libx264 -pix_fmt yuv420p -crf 18 -preset medium \
+            -g 120 -keyint_min 120 -sc_threshold 0 -movflags +faststart \
+            bridge_output_017/shard-${{ matrix.shard }}.mp4
+          ffprobe -v error -select_streams v:0 \
+            -show_entries stream=nb_frames,r_frame_rate -of json \
+            bridge_output_017/shard-${{ matrix.shard }}.mp4 \
+            > bridge_output_017/shard-${{ matrix.shard }}-ffprobe.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          shard=os.environ["SHARD"]
+          p=Path(f"bridge_output_017/shard-{shard}-ffprobe.json")
+          j=json.loads(p.read_text())
+          assert int(j["streams"][0]["nb_frames"]) == 120
+          assert j["streams"][0]["r_frame_rate"] == "30/1"
+          PY
+        env:
+          SHARD: ${{ matrix.shard }}
+
+      - name: Remove temporary PNGs
+        run: rm -rf bridge_output_017/frames
+
+      - name: Upload encoded shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-017-video-shard-${{ matrix.shard }}
+          path: |
+            bridge_output_017/shard-${{ matrix.shard }}.mp4
+            bridge_output_017/shard-${{ matrix.shard }}-ffprobe.json
+            bridge_output_017/shard-${{ matrix.start }}-${{ matrix.end }}.json
+          if-no-files-found: error
+          compression-level: 0
+
+  finalize:
+    needs: [prepare, render]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install finalization tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-017-smooth-prepared
+          path: bridge_output_017
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coimbra-017-video-shard-*
+          path: bridge_output_017/shards
+          merge-multiple: true
+
+      - name: Concatenate twelve 4-second shards
+        run: |
+          set -euo pipefail
+          {
+            for shard in 01 02 03 04 05 06 07 08 09 10 11 12; do
+              file="$GITHUB_WORKSPACE/bridge_output_017/shards/shard-${shard}.mp4"
+              test -s "$file"
+              printf "file '%s'\n" "$file"
+            done
+          } > bridge_output_017/concat.txt
+
+          ffmpeg -y -f concat -safe 0 \
+            -i bridge_output_017/concat.txt \
+            -c copy \
+            bridge_output_017/coimbra-full-route-smooth-48s.mp4
+
+      - name: Extract route review stills
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_017/review
+          for pair in "0:001" "359:360" "719:720" "1079:1080" "1439:1440"; do
+            n="${pair%%:*}"
+            label="${pair##*:}"
+            ffmpeg -y -i bridge_output_017/coimbra-full-route-smooth-48s.mp4 \
+              -vf "select=eq(n\,${n})" -vsync 0 -frames:v 1 \
+              "bridge_output_017/review/frame-${label}.png"
+          done
+
+      - name: Record final metadata
+        run: |
+          set -euo pipefail
+          ffprobe -v error -select_streams v:0 -show_entries \
+            stream=codec_name,width,height,r_frame_rate,nb_frames:format=duration \
+            -of json bridge_output_017/coimbra-full-route-smooth-48s.mp4 \
+            > bridge_output_017/final-ffprobe.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("bridge_output_017")
+          probe=json.loads((root/"final-ffprobe.json").read_text())
+          stream=probe["streams"][0]
+          num,den=map(int,stream["r_frame_rate"].split("/"))
+          result={
+            "version":"coimbra-smooth-full-render-final-v1",
+            "video":"bridge_output_017/coimbra-full-route-smooth-48s.mp4",
+            "frame_count":int(stream["nb_frames"]),
+            "resolution":[int(stream["width"]),int(stream["height"])],
+            "fps":round(num/den),
+            "duration_seconds":float(probe["format"]["duration"]),
+            "codec":stream["codec_name"],
+            "interpolation":"Blender subframe render",
+            "repeated_frames":False,
+            "optical_flow":False,
+            "review_frames":[1,360,720,1080,1440],
+          }
+          (root/"smooth-render-final-manifest.json").write_text(
+              json.dumps(result,indent=2)+"\n"
+          )
+          print(json.dumps(result,indent=2))
+          PY
+
+      - name: Verify 1440-frame smooth render
+        run: |
+          python scripts/verify_smooth_full_render.py \
+            bridge_output_017/smooth-render-prepare-manifest.json \
+            bridge_output_017/smooth-render-final-manifest.json
+
+      - name: Upload smooth full route
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-017-smooth-full-route
+          path: |
+            bridge_output_017/coimbra-full-route-smooth-48s.mp4
+            bridge_output_017/review/frame-001.png
+            bridge_output_017/review/frame-360.png
+            bridge_output_017/review/frame-720.png
+            bridge_output_017/review/frame-1080.png
+            bridge_output_017/review/frame-1440.png
+            bridge_output_017/smooth-render-prepare-manifest.json
+            bridge_output_017/smooth-render-final-manifest.json
+          if-no-files-found: error
+          compression-level: 0
