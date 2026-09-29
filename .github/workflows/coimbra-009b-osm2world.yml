@@ -1,0 +1,98 @@
+name: Coimbra OSS OSM2World benchmark 009B
+
+on:
+  pull_request:
+    paths:
+      - "config/open_source_stack.json"
+      - "docs/OPEN_SOURCE_STACK.md"
+      - "scripts/fetch_osm_oss_bridge.py"
+      - "blender/render_osm2world_reference.py"
+      - ".github/workflows/coimbra-009b-osm2world.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OSM2WORLD_REF: "8ec26a9ea426444a4f7882cf0cfcab432c876ae5"
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+
+jobs:
+  osm2world-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout OSM2World
+        uses: actions/checkout@v4
+        with:
+          repository: tordanik/OSM2World
+          ref: ${{ env.OSM2WORLD_REF }}
+          path: _osm2world
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch Coimbra OSM
+        run: |
+          python -m pip install "requests>=2.32,<3"
+          python scripts/fetch_osm_oss_bridge.py
+          test -s data/osm/coimbra-oss-rich.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build pinned OSM2World
+        working-directory: _osm2world
+        run: mvn -q -DskipTests -Dmaven.javadoc.skip=true -pl desktop -am package
+
+      - name: Convert same Coimbra OSM to GLB
+        run: |
+          mkdir -p bridge_output_009b
+          java -jar _osm2world/desktop/target/osm2world-desktop-0.5.0-SNAPSHOT.jar             convert             --input data/osm/coimbra-oss-rich.json             --output bridge_output_009b/osm2world-coimbra.glb             --lod 2
+          test -s bridge_output_009b/osm2world-coimbra.glb
+          ls -lh bridge_output_009b/osm2world-coimbra.glb
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Render OSM2World reference
+        run: |
+          blender --background --factory-startup --python-exit-code 1             --python blender/render_osm2world_reference.py
+          cat bridge_output_009b/osm2world-reference-manifest.json
+
+      - name: Upload OSM2World benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-009b-osm2world-benchmark
+          path: |
+            bridge_output_009b/osm2world-coimbra.glb
+            bridge_output_009b/osm2world-reference.blend
+            bridge_output_009b/osm2world-reference.png
+            bridge_output_009b/osm2world-reference-manifest.json
+          if-no-files-found: error
