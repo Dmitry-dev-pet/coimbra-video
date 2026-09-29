@@ -24,7 +24,7 @@ QA_SUMMARY = QA_DIR / "solar-qa-summary.json"
 
 SOLAR_DETECTOR = "OpenCV roof-component detector"
 SOLAR_MIN_AREA_M2 = 1.0
-SOLAR_MAX_AREA_M2 = 1200.0
+SOLAR_MAX_AREA_M2 = 2000.0
 
 
 def tile_origins(size: int, tile: int, overlap: int) -> list[int]:
@@ -405,7 +405,18 @@ def detect_solar_cv(image, meta, buildings, building_semantic):
                 ) / component_pixels
 
                 building_fraction = area_m2 / max(1.0, float(building["area_m2"]))
-                if semantic_density < 0.82 or building_fraction > 0.82:
+                large_textured = (
+                    tier == "grouped"
+                    and area_m2 >= 180.0
+                    and building_fraction <= 0.96
+                    and rectangularity >= 0.75
+                    and blue_density >= 0.50
+                    and edge_density >= 0.20
+                    and raw_density >= 0.55
+                )
+                if semantic_density < 0.82:
+                    continue
+                if building_fraction > 0.82 and not large_textured:
                     continue
 
                 if tier == "fine":
@@ -425,12 +436,13 @@ def detect_solar_cv(image, meta, buildings, building_semantic):
                     if not (strong_blue or structured_dark):
                         continue
                 else:
-                    if not (
+                    grouped_standard = (
                         blue_density >= 0.22
                         and edge_density >= 0.17
                         and raw_density >= 0.30
                         and area_m2 >= 18.0
-                    ):
+                    )
+                    if not (grouped_standard or large_textured):
                         continue
 
                 cx_local_px, cy_local_px = map(float, rect[0])
@@ -456,6 +468,17 @@ def detect_solar_cv(image, meta, buildings, building_semantic):
                     + 0.07 * raw_score
                     + (0.03 if tier == "grouped" else 0.0),
                 )
+                production_ready = bool(
+                    large_textured
+                    or (
+                        blue_density >= 0.48
+                        and edge_density >= 0.22
+                        and raw_density >= 0.55
+                        and rectangularity >= 0.72
+                        and area_m2 >= 2.0
+                        and building_fraction <= 0.55
+                    )
+                )
 
                 detections.append(
                     {
@@ -476,6 +499,8 @@ def detect_solar_cv(image, meta, buildings, building_semantic):
                         "semantic_building_overlap": float(semantic_density),
                         "osm_oem_overlap": float(overlap_ratio),
                         "tier": tier,
+                        "large_textured": bool(large_textured),
+                        "production_ready": production_ready,
                         "source": "OpenCV+DGT+OpenEarthMap",
                     }
                 )
@@ -574,6 +599,8 @@ def qa_summary(detections, sampled_indices):
     return {
         "version": "coimbra-solar-qa-v1",
         "detections": len(detections),
+        "production_ready": sum(bool(item.get("production_ready")) for item in detections),
+        "large_textured": sum(bool(item.get("large_textured")) for item in detections),
         "unique_buildings": len({int(item["building_way_id"]) for item in detections}),
         "score": stats(scores),
         "area_m2": stats(areas),
@@ -644,7 +671,10 @@ def render_solar_qa(image, meta, buildings, detections, crop_box):
             dtype=np.int32,
         )
         score = float(item["score"])
-        if score >= 0.90:
+        if item.get("production_ready"):
+            color = (40, 255, 80)
+            thickness = 3
+        elif score >= 0.90:
             color = (255, 55, 55)
             thickness = 3
         elif score >= 0.80:
@@ -716,7 +746,8 @@ def render_solar_qa(image, meta, buildings, detections, crop_box):
         cv2.polylines(tile, [pts], True, (255, 45, 45), 2, cv2.LINE_AA)
         tile = cv2.resize(tile, (tile_size, tile_size), interpolation=cv2.INTER_AREA)
         cv2.rectangle(tile, (0, 0), (tile_size - 1, 26), (10, 10, 10), -1)
-        label = f"#{index} s={float(item['score']):.2f} a={float(item['area_m2']):.1f}"
+        status = "P" if item.get("production_ready") else "Q"
+        label = f"{status} #{index} s={float(item['score']):.2f} a={float(item['area_m2']):.1f}"
         cv2.putText(
             tile,
             label,

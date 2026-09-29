@@ -92,6 +92,7 @@ def build_solar(scene, detections, osm_solar):
     vertices, faces, indices = [], [], []
     accepted = []
     rejected = {
+        "low_confidence": 0,
         "no_hit": 0,
         "non_building_hit": 0,
         "non_roof_normal": 0,
@@ -124,6 +125,10 @@ def build_solar(scene, detections, osm_solar):
         )
 
     for item in candidates:
+        if item.get("source") != "OSM" and not item.get("production_ready", False):
+            rejected["low_confidence"] += 1
+            continue
+
         cx, cy = map(float, item["center_local"])
         z, hit_name, normal_z = raycast_height(scene, cx, cy)
         if z is None:
@@ -151,8 +156,12 @@ def build_solar(scene, detections, osm_solar):
 
         major = max(float(item["width_m"]), float(item["height_m"]))
         minor = min(float(item["width_m"]), float(item["height_m"]))
-        major = max(1.2, min(12.0, major))
-        minor = max(0.85, min(7.0, minor))
+        if item.get("large_textured"):
+            major = max(1.2, min(55.0, major))
+            minor = max(0.85, min(36.0, minor))
+        else:
+            major = max(1.2, min(12.0, major))
+            minor = max(0.85, min(7.0, minor))
 
         center = Vector((cx, cy, z + 0.11))
         oriented_box(
@@ -186,6 +195,8 @@ def build_solar(scene, detections, osm_solar):
                 "center": [cx, cy, z + 0.12],
                 "score": float(item.get("score", 1.0)),
                 "source": item.get("source", "OpenCV+DGT+OpenEarthMap"),
+                "production_ready": bool(item.get("production_ready", item.get("source") == "OSM")),
+                "large_textured": bool(item.get("large_textured", False)),
                 "hit": hit_name,
                 "hit_normal_z": normal_z,
             }

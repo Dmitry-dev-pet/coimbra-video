@@ -204,5 +204,6 @@ jobs:
             bridge_output_023/solar-detections-qa.png
             bridge_output_023/solar-candidates-sheet.png
             bridge_output_023/solar-qa-summary.json
+            data/processed/bridge_semantic_objects_2025.json
           if-no-files-found: error
           compression-level: 1
