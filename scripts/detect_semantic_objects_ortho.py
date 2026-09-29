@@ -78,7 +78,7 @@ def polygon_centroid(points):
         )
     factor = 1.0 / (3.0 * signed)
     cx = sum(
-        (points[i][0] + points[(i + 1) % len(points)])
+        (points[i][0] + points[(i + 1) % len(points)][0])
         * (
             points[i][0] * points[(i + 1) % len(points)][1]
             - points[(i + 1) % len(points)][0] * points[i][1]
