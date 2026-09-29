@@ -17,11 +17,11 @@ def main() -> None:
     manifest = json.loads(Path(sys.argv[1]).read_text())
     if manifest.get("version") != "coimbra-hero-buildings-v1":
         fail("wrong version")
-    if int(manifest.get("hero_count", 0)) != 5:
-        fail("expected exactly five hero buildings")
+    if int(manifest.get("hero_count", 0)) != 4:
+        fail("expected exactly four hero buildings")
 
     selection = manifest.get("selection") or []
-    if len(selection) != 5:
+    if len(selection) != 4:
         fail("selection length mismatch")
 
     violations = (
