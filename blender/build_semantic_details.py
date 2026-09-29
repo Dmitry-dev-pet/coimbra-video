@@ -154,6 +154,87 @@ def build_semantic_trees(items, terrain):
     return obj, accepted
 
 
+def canopy_materials():
+    return [
+        vegetation.tree_material("Semantic_Forest_Mass_A", (0.028, 0.12, 0.028, 1.0), 0.94),
+        vegetation.tree_material("Semantic_Forest_Mass_B", (0.055, 0.18, 0.038, 1.0), 0.94),
+        vegetation.tree_material("Semantic_Scrub_A", (0.10, 0.20, 0.055, 1.0), 0.95),
+        vegetation.tree_material("Semantic_Scrub_B", (0.16, 0.27, 0.075, 1.0), 0.95),
+    ]
+
+
+def build_canopy_masses(items, terrain):
+    vertices = []
+    faces = []
+    indices = []
+    accepted = []
+
+    for index, item in enumerate(items):
+        x = float(item["x"])
+        y = float(item["y"])
+        z = terrain.sample(x, y)
+        if z is None:
+            continue
+
+        token = f"mass:{x:.2f}:{y:.2f}"
+        u0 = hero.stable_unit(token, 0)
+        u1 = hero.stable_unit(token, 1)
+        kind = str(item.get("kind") or "scrub")
+        base_height = float(item["height"])
+        radius = float(item["radius"])
+
+        if kind == "forest":
+            height = base_height * (0.82 + u0 * 0.34)
+            slot = 0 if u1 < 0.55 else 1
+            sides = 7
+        else:
+            height = base_height * (0.78 + u0 * 0.28)
+            slot = 2 if u1 < 0.58 else 3
+            sides = 6
+
+        center = Vector((x, y, z))
+        vegetation.add_crown(
+            vertices,
+            faces,
+            indices,
+            center=center,
+            base_z=z + 0.05,
+            height=max(0.9, height),
+            radius=max(0.75, radius),
+            sides=sides,
+            material_index=slot,
+            rotation=hero.stable_unit(token, 2) * math.tau,
+            variant=0,
+        )
+
+        accepted.append(
+            {
+                "x": x,
+                "y": y,
+                "z": z,
+                "kind": kind,
+                "height": height,
+                "radius": radius,
+            }
+        )
+
+    mesh = bpy.data.meshes.new("Semantic_Canopy_Masses_Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new("Semantic_Canopy_Masses", mesh)
+    bpy.context.collection.objects.link(obj)
+
+    for mat in canopy_materials():
+        mesh.materials.append(mat)
+    for polygon, slot in zip(mesh.polygons, indices):
+        polygon.material_index = slot
+        polygon.use_smooth = True
+
+    obj["source"] = "OpenEarthMap tree-mask canopy regions + DGT terrain"
+    obj["mass_point_count"] = len(accepted)
+    return obj, accepted
+
+
 def pool_materials():
     water = hero.material("Semantic_Pool_Water", (0.025, 0.24, 0.43, 1.0), 0.18)
     water.use_nodes = True
@@ -361,10 +442,13 @@ def main():
 
     removed = remove_old_tree_layer()
     tree_obj, trees = build_semantic_trees(data.get("trees") or [], terrain)
+    mass_obj, masses = build_canopy_masses(data.get("canopy_masses") or [], terrain)
     pool_obj, pools = build_pools(data.get("pools") or [], terrain)
 
     if len(trees) < 250:
         raise RuntimeError(f"Semantic tree replacement too sparse: {len(trees)}")
+    if len(masses) < 1000:
+        raise RuntimeError(f"Semantic canopy mass layer too sparse: {len(masses)}")
     if len(pools) < 1:
         raise RuntimeError("No swimming-pool candidates survived semantic filtering")
 
@@ -399,12 +483,15 @@ def main():
         "image": IMAGE.relative_to(ROOT).as_posix(),
         "detected_trees": len(data.get("trees") or []),
         "placed_trees": len(trees),
+        "detected_canopy_mass_points": len(data.get("canopy_masses") or []),
+        "placed_canopy_mass_points": len(masses),
         "detected_pools": len(data.get("pools") or []),
         "placed_pools": len(pools),
         "removed_old_tree_objects": removed,
         "review": review,
         "camera_mode": camera_mode,
         "tree_faces": len(tree_obj.data.polygons),
+        "canopy_mass_faces": len(mass_obj.data.polygons),
         "pool_faces": len(pool_obj.data.polygons),
     }
     INTERNAL.write_text(json.dumps(internal, indent=2) + "\n")
