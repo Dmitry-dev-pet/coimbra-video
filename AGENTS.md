@@ -82,3 +82,15 @@ CDD flow. Preserve exact cropped 50 cm GeoTIFFs as source evidence and derive
 coarser practical render/height grids from them. Do not commit DGT credentials
 or raw authenticated URLs. The 50 cm source resolution and any Blender render
 resolution must remain explicitly distinguished in metadata.
+
+
+## Urban quality bridge 010
+`feature/coimbra-010-urban-quality` is a visual QA lane stacked on the accepted
+009 open-source stack. It starts from the governed 009D scene, preserves the
+production camera/path and all non-`Urban_*` layers, and may rebuild only the
+street-furniture representation plus add `Urban_Curbs` and
+`Urban_RoadMarkings` before any future APatch session.
+
+Street-level QA cameras are temporary render-only cameras and must not be saved
+into the output blend. Do not add external GLB asset dependencies to this pass.
+Promotion to a new governed production contract requires visual review first.

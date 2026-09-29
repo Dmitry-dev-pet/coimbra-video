@@ -1,0 +1,154 @@
+name: Coimbra urban quality 010
+
+on:
+  push:
+    branches:
+      - feature/coimbra-010-urban-quality
+    paths:
+      - "blender/enhance_urban_quality.py"
+      - "scripts/verify_urban_quality_manifest.py"
+      - "docs/specs/SPEC-COIMBRA-URBAN-QUALITY-1.md"
+      - ".github/workflows/coimbra-010-urban-quality.yml"
+      - "scripts/fetch_osm_oss_bridge.py"
+      - "scripts/prepare_osm_oss_local.py"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  MOSAIQ_REF: "f73d030aecd3289007472a887d78aae2e74b6ea0"
+  URBAN_009D_RUN_ID: "36495771036"
+  HIGHRES_008B_RUN_ID: "36491512430"
+
+jobs:
+  urban-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout pinned MOSAIQ semantics
+        uses: actions/checkout@v4
+        with:
+          repository: TUMFTM/MOSAIQ-OpenStreetMap-to-Blender-Add-On
+          ref: ${{ env.MOSAIQ_REF }}
+          path: _mosaiq/mosaiq_osm_vr
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host geodata dependencies
+        run: |
+          python -m pip install "requests>=2.32,<3" "pyproj>=3.7,<4"
+
+      - name: Fetch rich Coimbra OSM semantics
+        run: |
+          python scripts/fetch_osm_oss_bridge.py
+          python scripts/prepare_osm_oss_local.py
+          test -s data/processed/bridge_osm_oss_local.json
+
+      - name: Download governed 009D urban scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-009d-urban-details
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.URBAN_009D_RUN_ID }}
+          path: bridge_output_009d_download
+
+      - name: Normalize 009D base scene
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_009d
+          found="$(find bridge_output_009d_download -type f -name 'coimbra-urban-details-visual-dev.blend' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_009d/coimbra-urban-details-visual-dev.blend
+          test -s bridge_output_009d/coimbra-urban-details-visual-dev.blend
+          ls -lh bridge_output_009d/coimbra-urban-details-visual-dev.blend
+
+      - name: Download 008B high-resolution terrain
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-008b-highres-geodata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.HIGHRES_008B_RUN_ID }}
+          path: bridge_output_008b_download
+
+      - name: Normalize high-resolution terrain
+        run: |
+          set -euo pipefail
+          mkdir -p bridge_output_008b
+          found="$(find bridge_output_008b_download -type f -name 'bridge_terrain_highres_2m.npz' -print -quit)"
+          test -n "$found"
+          cp "$found" bridge_output_008b/bridge_terrain_highres_2m.npz
+          test -s bridge_output_008b/bridge_terrain_highres_2m.npz
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Build urban quality scene and QA renders
+        run: |
+          set -euo pipefail
+          rm -rf bridge_output_010
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/enhance_urban_quality.py
+          cat bridge_output_010/urban-quality-manifest.json
+
+      - name: Verify visual QA manifest
+        run: |
+          set -euo pipefail
+          python scripts/verify_urban_quality_manifest.py \
+            bridge_output_010/urban-quality-manifest.json
+          test -s bridge_output_010/coimbra-urban-quality.blend
+          for image in \
+            bridge_output_010/production-001.png \
+            bridge_output_010/production-181.png \
+            bridge_output_010/production-360.png \
+            bridge_output_010/street-sanches-brasil.png \
+            bridge_output_010/street-polo-ii.png \
+            bridge_output_010/street-portela.png
+          do
+            test -s "$image"
+          done
+
+      - name: Upload Coimbra 010 visual QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-010-urban-quality
+          path: |
+            bridge_output_010/coimbra-urban-quality.blend
+            bridge_output_010/production-001.png
+            bridge_output_010/production-181.png
+            bridge_output_010/production-360.png
+            bridge_output_010/street-sanches-brasil.png
+            bridge_output_010/street-polo-ii.png
+            bridge_output_010/street-portela.png
+            bridge_output_010/urban-quality-manifest.json
+          if-no-files-found: error
