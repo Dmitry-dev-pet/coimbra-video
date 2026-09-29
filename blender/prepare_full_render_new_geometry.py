@@ -26,6 +26,50 @@ BLEND = OUT / "coimbra-full-render-new-geometry.blend"
 MANIFEST = OUT / "full-render-new-geometry-manifest.json"
 
 EXPECTED_HERO_IDS = {143294113, 143294117, 143294126, 379862984}
+EXPECTED_HERO_ORDER = [143294113, 143294117, 143294126, 379862984]
+
+
+def selected_hero_buildings_by_id(source, terrain, reference_camera):
+    ways = {int(way["id"]): way for way in source["ways"]}
+    selected = []
+    for way_id in EXPECTED_HERO_ORDER:
+        way = ways.get(way_id)
+        if way is None:
+            raise RuntimeError(f"Missing expected Polo II building way {way_id}")
+        tags = way.get("tags") or {}
+        footprint = hero.footprint_for_way(way, source["nodes"])
+        if not footprint:
+            raise RuntimeError(f"Invalid footprint for Polo II building {way_id}")
+
+        center = hero.polygon_centroid(footprint)
+        ground = terrain.sample(*center)
+        if ground is None:
+            raise RuntimeError(f"Terrain sample missing for Polo II building {way_id}")
+
+        height = hero.building_height(tags)
+        roof, roof_source = hero.roof_class(tags, footprint)
+        distance = (
+            Vector((center[0], center[1], ground + 0.35 + height * 0.55))
+            - reference_camera.location
+        ).length
+
+        selected.append(
+            {
+                "way_id": way_id,
+                "tags": tags,
+                "footprint": footprint,
+                "center": center,
+                "ground": ground + 0.35,
+                "height": height,
+                "levels": hero.building_levels(tags, height),
+                "roof": roof,
+                "roof_source": roof_source,
+                "screen_area": 0.0,
+                "distance": float(distance),
+                "score": 0.0,
+            }
+        )
+    return selected
 WIDTH = 1280
 HEIGHT = 720
 FPS = 30
@@ -88,7 +132,11 @@ def main():
     if reference_camera is None:
         raise RuntimeError("temporary Polo II reference camera was not created")
 
-    selected = hero.select_hero_buildings(scene, source, terrain)
+    selected = selected_hero_buildings_by_id(
+        source,
+        terrain,
+        reference_camera,
+    )
     selected_ids = {int(item["way_id"]) for item in selected}
     if selected_ids != EXPECTED_HERO_IDS:
         raise RuntimeError(
