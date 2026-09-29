@@ -106,3 +106,17 @@ single still camera and use photo-specific lighting. It must not be presented as
 a replacement for the full Coimbra scene. The purpose is to create a small,
 editable hero-shot asset where substantially more manual/high-detail work is
 practical.
+
+
+## Hero building pass 012
+`feature/coimbra-012-hero-buildings` is a photo-only refinement stacked on
+the 011 Polo II patch. It may replace facade/roof representation only for the
+five buildings with the largest visible contribution in the 011 hero camera.
+
+Flat roofs must never receive the packed tile materials. Sloped roofs may use
+the existing packed Coimbra tile material. Old facade-window and rooftop-detail
+faces inside the selected footprints may be removed before the higher-detail
+local overlay is built.
+
+012 uploads review images and a manifest only; do not publish a Blender artifact
+from this stage.
