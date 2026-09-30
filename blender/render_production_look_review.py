@@ -160,23 +160,24 @@ def apply_look(scene) -> dict:
     bg = world.node_tree.nodes.get("Background")
     require(bg is not None, "World Background node missing")
     bg.inputs["Color"].default_value = (0.075, 0.095, 0.13, 1.0)
-    bg.inputs["Strength"].default_value = 0.55
+    bg.inputs["Strength"].default_value = 0.75
     changes["world"] = {
         "background": [0.075, 0.095, 0.13, 1.0],
-        "strength": 0.55,
+        "strength": 0.75,
     }
 
     for obj in scene.objects:
         if obj.type == "LIGHT" and obj.data.type == "SUN":
             changes["lights"].append({
                 "name": obj.name,
-                "action": "disabled-legacy-sun",
+                "action": "retained-as-neutral-fill",
                 "old_energy": float(obj.data.energy),
+                "new_energy": min(0.60, float(obj.data.energy) * 0.30),
             })
-            obj.data.energy = 0.0
+            obj.data.energy = min(0.60, float(obj.data.energy) * 0.30)
 
     sun_data = bpy.data.lights.new("Coimbra030_Sun", "SUN")
-    sun_data.energy = 2.0
+    sun_data.energy = 1.8
     sun_data.angle = math.radians(8.0)
     sun_data.color = (1.0, 0.82, 0.64)
     sun = bpy.data.objects.new("Coimbra030_Sun", sun_data)
@@ -190,13 +191,13 @@ def apply_look(scene) -> dict:
         "name": sun.name,
         "action": "added",
         "type": "SUN",
-        "energy": 2.0,
+        "energy": 1.8,
         "angle_deg": 8.0,
         "color": [1.0, 0.82, 0.64],
     })
 
     fill_data = bpy.data.lights.new("Coimbra030_Fill", "AREA")
-    fill_data.energy = 900.0
+    fill_data.energy = 1100.0
     fill_data.shape = "DISK"
     fill_data.size = 85.0
     fill_data.color = (0.58, 0.72, 1.0)
@@ -213,7 +214,7 @@ def apply_look(scene) -> dict:
         "name": fill.name,
         "action": "added",
         "type": "AREA",
-        "energy": 900.0,
+        "energy": 1100.0,
         "size": 85.0,
         "color": [0.58, 0.72, 1.0],
         "anchored_from_frame": 181,
@@ -230,7 +231,7 @@ def apply_look(scene) -> dict:
             break
         except (TypeError, ValueError):
             continue
-    view.exposure = 0.10
+    view.exposure = 0.28
     changes["view"] = {
         "view_transform": str(view.view_transform),
         "look": str(view.look),
@@ -284,6 +285,7 @@ def main() -> None:
 
     manifest = {
         "version": "coimbra-030-production-look-review-v1",
+        "candidate_revision": "v2-shadow-recovery",
         "source_026_run": EXPECTED_026_RUN,
         "source_blend_sha256": EXPECTED_BLEND_SHA256,
         "source_protected_sha256": EXPECTED_PROTECTED_SHA256,
