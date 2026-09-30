@@ -205,3 +205,16 @@ lights, camera animation, timing and 1600×1000 framing.
 all 360 frame hashes/timings, twelve logical shard receipts, final H.264 metadata
 and decoded review frames 1, 181 and 360. Passing 028 creates a verified Metal
 delivery lane; it does not delete or rewrite the 026 CPU baseline.
+
+
+## Rendering strategy benchmark 029
+
+`feature/coimbra-029-render-benchmark` benchmarks only the accepted frozen 026
+scene on frames 181–210. It may compare M4 CPU, Metal×1, Metal+CPU and two
+concurrent Metal Blender processes, but it must not alter production scene state,
+camera, resolution or Cycles quality settings.
+
+The GitHub Actions comparison must use immutable accepted 026 evidence
+(run `36646652931`, job `109671765388`) rather than silently changing the
+hosted-runner workload. Benchmark results are measurements only and do not promote
+a renderer or execution policy automatically.
