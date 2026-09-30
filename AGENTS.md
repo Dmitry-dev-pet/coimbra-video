@@ -192,3 +192,16 @@ execution device changed to GPU / Metal.
 027 is evidence collection, not renderer promotion. Passing checkpoint timing and
 image-difference guards does not authorize replacing the accepted 026 CPU full-route
 delivery. A full-route Metal render requires a separate follow-up acceptance lane.
+
+
+## Mac Metal full-route lane 028
+
+`feature/coimbra-028-metal-full-route` extends the verified 027 backend proof to
+the complete native 360-frame route. It must use the exact accepted 026 packed
+scene from run `36646652931` and preserve the accepted scene, materials, world,
+lights, camera animation, timing and 1600×1000 framing.
+
+028 changes only the Cycles execution device from CPU to GPU / METAL. It records
+all 360 frame hashes/timings, twelve logical shard receipts, final H.264 metadata
+and decoded review frames 1, 181 and 360. Passing 028 creates a verified Metal
+delivery lane; it does not delete or rewrite the 026 CPU baseline.
