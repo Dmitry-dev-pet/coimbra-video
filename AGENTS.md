@@ -176,3 +176,19 @@ geometry, materials, semantic evidence or solar-promotion rules.
 Upload paired stills, one comparison sheet, exact render/camera metadata and
 basic image metrics. Promotion of Cycles to a full-route renderer happens only
 after multi-frame visual review.
+
+
+## Mac Metal checkpoint lane 027
+
+`feature/coimbra-027-mac-metal-checkpoints` is a render-only A/B lane over the
+accepted 026 packed scene. It must not rebuild or modify geometry, materials,
+world/light state, semantic evidence, or the production camera.
+
+Use exactly the accepted 026 prepared artifact from run `36646652931` and verify
+its packed-scene/protected-state hashes before rendering. Render checkpoints
+1, 181 and 360 with the accepted 026 CPU settings and then with only the Cycles
+execution device changed to GPU / Metal.
+
+027 is evidence collection, not renderer promotion. Passing checkpoint timing and
+image-difference guards does not authorize replacing the accepted 026 CPU full-route
+delivery. A full-route Metal render requires a separate follow-up acceptance lane.
