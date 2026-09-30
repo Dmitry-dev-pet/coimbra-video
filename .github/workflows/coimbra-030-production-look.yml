@@ -1,0 +1,118 @@
+name: Coimbra 030 production-look review
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - blender/render_production_look_review.py
+      - scripts/verify_production_look_review.py
+      - scripts/test_production_look_review.py
+      - docs/specs/SPEC-COIMBRA-PRODUCTION-LOOK-1.md
+      - .github/workflows/coimbra-030-production-look.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  SOURCE_026_RUN_ID: "36646652931"
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test review verifier
+        run: |
+          python -m pip install --disable-pip-version-check Pillow
+          python -m compileall -q blender/render_production_look_review.py scripts/verify_production_look_review.py scripts/test_production_look_review.py
+          python -m unittest discover -s scripts -p 'test_production_look_review.py' -v
+
+      - name: Download accepted 026 frozen scene
+        uses: actions/download-artifact@v4
+        with:
+          name: coimbra-026-prepared
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_026_RUN_ID }}
+          path: source_026_download
+
+      - name: Normalize and verify accepted 026 inputs
+        run: |
+          set -euo pipefail
+          mkdir -p source_026
+          blend="$(find source_026_download -type f -name 'coimbra-cycles-full-route.blend' -print -quit)"
+          prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+          test -n "$blend"
+          test -n "$prepare"
+          cp "$blend" source_026/coimbra-cycles-full-route.blend
+          cp "$prepare" source_026/prepare.json
+          test "$(sha256sum source_026/coimbra-cycles-full-route.blend | awk '{print $1}')" = "5eed3da289693015ed6b491eb26f992f0c579a1625540f1f4acc13155860a590"
+
+      - uses: ./.github/actions/setup-coimbra-blender
+
+      - name: Render paired baseline and 030 candidate
+        run: |
+          blender --background --factory-startup --python-exit-code 1 \
+            --python blender/render_production_look_review.py -- \
+            --blend source_026/coimbra-cycles-full-route.blend \
+            --prepare source_026/prepare.json \
+            --out bridge_output_030
+
+      - name: Verify review evidence
+        run: |
+          python scripts/verify_production_look_review.py bridge_output_030
+
+      - name: Build comparison sheet
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont
+
+          root = Path("bridge_output_030")
+          frames = [1, 181, 360]
+          thumb_w = 640
+          title_h = 42
+          row_gap = 8
+          image_h = round(1000 * thumb_w / 1600)
+          sheet = Image.new("RGB", (thumb_w * 3, 2 * (title_h + image_h) + row_gap), (238, 238, 238))
+          draw = ImageDraw.Draw(sheet)
+          font = ImageFont.load_default(size=18)
+
+          for col, frame in enumerate(frames):
+              for row, label in enumerate(("baseline", "candidate")):
+                  path = root / f"frame-{frame:03d}-{label}.png"
+                  image = Image.open(path).convert("RGB").resize((thumb_w, image_h), Image.Resampling.LANCZOS)
+                  x = col * thumb_w
+                  y = row * (title_h + image_h + row_gap)
+                  draw.text((x + 10, y + 10), f"Frame {frame} — {label}", fill=(15, 15, 15), font=font)
+                  sheet.paste(image, (x, y + title_h))
+
+          sheet.save(root / "production-look-comparison-sheet.jpg", quality=92)
+          PY
+
+      - name: Upload 030 visual review
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-030-production-look-review
+          path: |
+            bridge_output_030/frame-001-baseline.png
+            bridge_output_030/frame-001-candidate.png
+            bridge_output_030/frame-181-baseline.png
+            bridge_output_030/frame-181-candidate.png
+            bridge_output_030/frame-360-baseline.png
+            bridge_output_030/frame-360-candidate.png
+            bridge_output_030/production-look-comparison-sheet.jpg
+            bridge_output_030/production-look-review.json
+            bridge_output_030/production-look-verification.json
+            bridge_output_030/coimbra-production-look.blend
+          if-no-files-found: error
+          compression-level: 1
