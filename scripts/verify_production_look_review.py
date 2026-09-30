@@ -67,8 +67,7 @@ def verify(root: Path) -> dict:
         "metrics": metrics,
         "candidate_blend_sha256": manifest["candidate_blend"]["sha256"],
     }
-    (root / "production-look-verification.json").write_text(json.dumps(result, indent=2) + "
-")
+    (root / "production-look-verification.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
 
 
