@@ -1,0 +1,29 @@
+name: Coimbra 027 Metal checkpoint contract
+
+on:
+  pull_request:
+    paths:
+      - blender/render_cycles_metal_checkpoints.py
+      - scripts/compare_cycles_metal_images.py
+      - scripts/verify_cycles_metal_checkpoints.py
+      - scripts/test_cycles_metal_checkpoints.py
+      - docs/specs/SPEC-COIMBRA-METAL-CHECKPOINTS-1.md
+      - .github/workflows/coimbra-027-metal-checkpoints.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile 027 scripts
+        run: |
+          python -m compileall -q             blender/render_cycles_metal_checkpoints.py             scripts/compare_cycles_metal_images.py             scripts/verify_cycles_metal_checkpoints.py             scripts/test_cycles_metal_checkpoints.py
+      - name: Run Blender-free acceptance tests
+        run: python -m unittest discover -s scripts -p 'test_cycles_metal_checkpoints.py' -v
