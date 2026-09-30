@@ -218,3 +218,17 @@ The GitHub Actions comparison must use immutable accepted 026 evidence
 (run `36646652931`, job `109671765388`) rather than silently changing the
 hosted-runner workload. Benchmark results are measurements only and do not promote
 a renderer or execution policy automatically.
+
+
+## Production look review lane 030
+
+`feature/coimbra-030-production-look` is a review-gated visual-development lane
+over the exact accepted 026 packed scene. It may change only the explicitly listed
+030 semantic material values, world background, light objects/data and color
+management. Mesh structure, non-light object transforms, material assignments,
+semantic evidence and the complete production camera animation remain frozen.
+
+030 renders paired baseline/candidate Cycles frames 1, 181 and 360 and publishes a
+candidate packed scene only for inspection. Pixel-difference metrics are safety
+guardrails, not a visual-quality score. Do not promote the candidate or launch a
+full 360-frame candidate movie until the paired stills have been visually reviewed.
