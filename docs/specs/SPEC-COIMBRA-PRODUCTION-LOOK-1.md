@@ -43,17 +43,19 @@ Required source evidence:
 
 ## Candidate look
 
-The first candidate deliberately reuses the lighting direction already proven in the
-Polo II photo-patch work:
+The active v2 candidate keeps the lighting direction already proven in the Polo II
+photo-patch work, but corrects the first review's crushed shadows:
 
-- cool blue ambient world;
-- warm, soft 8-degree sun;
-- broad cool fill;
+- brighter cool blue ambient world;
+- warm, soft 8-degree sun at slightly reduced energy;
+- the inherited neutral sun retained at low energy as shadow fill;
+- broader cool fill;
 - slightly muted semantic vegetation;
 - neutral-dark parking;
-- AgX contrast with a restrained exposure lift.
+- AgX contrast with a moderate exposure lift.
 
-This is a review candidate, not a claim that the look is accepted.
+The first 030 review was technically valid but visually too dark in frames 181 and
+360. v2 is still a review candidate, not a claim that the look is accepted.
 
 ## Review output
 
