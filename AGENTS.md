@@ -232,3 +232,16 @@ semantic evidence and the complete production camera animation remain frozen.
 candidate packed scene only for inspection. Pixel-difference metrics are safety
 guardrails, not a visual-quality score. Do not promote the candidate or launch a
 full 360-frame candidate movie until the paired stills have been visually reviewed.
+
+
+## Production look full-route lane 031
+
+`feature/coimbra-031-production-look-metal-full-route` promotes the human-reviewed
+030 v2 look into a complete 360-frame Cycles Metal delivery. It must use the exact
+030 artifact from run `36720891074`, including candidate blend SHA-256
+`5fe8ca9e8605c6ea1908d8a814f9ad5209248c606b34ebbbb3dd47607edff881`.
+
+031 may change only the Cycles execution device from CPU to GPU / METAL. The accepted
+030 materials, world, lights, color management, non-light structure and complete
+production camera path remain frozen. The final H.264 delivery must contain visible
+DGT/OpenStreetMap attribution and pass independent 360-frame verification.
