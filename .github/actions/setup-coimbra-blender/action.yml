@@ -1,0 +1,26 @@
+name: Pinned Coimbra Blender runtime
+description: Install the same Blender 5.2.2 runtime used by the accepted 025 baseline.
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      with:
+        path: /home/runner/.cache/blender-5.2.2
+        key: blender-linux-x64-5.2.2
+    - shell: bash
+      run: |
+        set -euo pipefail
+        cache=/home/runner/.cache/blender-5.2.2
+        mkdir -p "$cache"
+        if [ ! -x "$cache/blender" ]; then
+          archive=blender-5.2.2-linux-x64.tar.xz
+          curl --fail --location --retry 4 --output "/tmp/$archive" \
+            "https://download.blender.org/release/Blender5.2/$archive"
+          tar -xJf "/tmp/$archive" -C "$cache" --strip-components=1
+        fi
+        echo "$cache" >> "$GITHUB_PATH"
+        "$cache/blender" --version
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0 \
+          ffmpeg fonts-dejavu-core
