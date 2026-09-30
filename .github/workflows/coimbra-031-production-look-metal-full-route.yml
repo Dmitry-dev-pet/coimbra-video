@@ -1,0 +1,31 @@
+name: Coimbra 031 production-look Metal full-route contract
+
+on:
+  pull_request:
+    paths:
+      - blender/render_production_look_metal_full_route.py
+      - scripts/verify_production_look_metal_full_route.py
+      - scripts/test_production_look_metal_full_route.py
+      - docs/specs/SPEC-COIMBRA-PRODUCTION-LOOK-METAL-FULL-ROUTE-1.md
+      - .github/workflows/coimbra-031-production-look-metal-full-route.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile 031 scripts
+        run: |
+          python -m compileall -q \
+            blender/render_production_look_metal_full_route.py \
+            scripts/verify_production_look_metal_full_route.py \
+            scripts/test_production_look_metal_full_route.py
+      - name: Run Blender-free 031 acceptance tests
+        run: python -m unittest discover -s scripts -p 'test_production_look_metal_full_route.py' -v
