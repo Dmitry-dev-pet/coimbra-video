@@ -19,6 +19,7 @@ Read [AGENTS.md](AGENTS.md) before changing the project. Live branches, PRs, run
 | 021–023 | Semantic vegetation, undergrowth and verified objects | Evidence-gated scene details; QA candidates are not all promoted into geometry |
 | 024–025 | EEVEE/Cycles comparison and checkpoint validation | Same scene/camera, paired frames 1, 181 and 360, 1600×1000 |
 | 027 | Mac CPU/Metal checkpoint A/B | Frozen 026 scene; frames 1, 181 and 360; timing + pixel-difference evidence only |
+| 028 | Mac Metal full-route acceptance | Frozen 026 scene; native 360 frames / 12 s / 1600×1000; Metal-only delivery with full receipts |
 | 026 | Full native-route Cycles acceptance | 360 actual frames, 12 s, 30 fps, 1600×1000; render-only extension tracked in [PR #22](https://github.com/Dmitry-dev-pet/coimbra-video/pull/22) |
 
 **020 and 026 are different deliveries.** The 48-second EEVEE version is preserved; the 12-second Cycles acceptance pass does not overwrite or silently retime it. Renderer promotion does not imply that all asset/geometry realism issues are solved.
