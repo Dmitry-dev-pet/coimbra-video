@@ -303,8 +303,7 @@ def main() -> None:
         },
         "promotion": "review-required",
     }
-    (args.out / "production-look-review.json").write_text(json.dumps(manifest, indent=2) + "
-")
+    (args.out / "production-look-review.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps({
         "version": manifest["version"],
         "review_frames": REVIEW_FRAMES,
