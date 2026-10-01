@@ -24,7 +24,7 @@ async function loadIndex() {
 
 async function main() {
   const renderer = new THREE.WebGPURenderer({
-    antialias: true,
+    antialias: false,
     powerPreference: "high-performance",
   });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
