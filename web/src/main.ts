@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { PerfMeter, downloadReceipt } from "./benchmark";
+import { PerfMeter, collectWebGpuAdapterInfo, downloadReceipt } from "./benchmark";
 import { CameraController } from "./controller";
 import { TileStream } from "./tiles";
 import type { CityIndex } from "./types";
@@ -94,16 +94,41 @@ async function main() {
     }
   });
 
-  Object.assign(window, {
-    coimbra034: {
-      index,
-      renderer,
-      scene,
-      camera,
-      stream,
-      benchmark: () => meter.receipt(controller.mode()),
-    },
-  });
+  const api = {
+    index,
+    renderer,
+    scene,
+    camera,
+    stream,
+    benchmark: () => meter.receipt(controller.mode()),
+    resetBenchmark: () => meter.reset(),
+  };
+  Object.assign(window, { coimbra034: api });
+
+  const params = new URLSearchParams(location.search);
+  if (params.has("autobenchmark")) {
+    setTimeout(() => {
+      meter.reset();
+      setTimeout(async () => {
+        const payload = {
+          schema_version: 1,
+          lane: "coimbra-034-webgpu-feasibility",
+          automation: "mac-access-headless-preflight",
+          route_contract: index.route.source_contract,
+          route_anchors: index.route.anchors.length,
+          adapter: await collectWebGpuAdapterInfo(),
+          benchmark: meter.receipt(controller.mode()),
+        };
+        const endpoint = new URL("__coimbra034_benchmark", document.baseURI);
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error("Benchmark receipt POST failed: " + response.status);
+      }, 60_000);
+    }, 5_000);
+  }
 }
 
 main().catch((error) => {
