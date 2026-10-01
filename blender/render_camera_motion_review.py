@@ -410,7 +410,7 @@ def main() -> None:
         "source_030_revision": lane031.EXPECTED_030_REVISION,
         "source_030_blend_sha256": lane031.EXPECTED_BLEND_SHA256,
         "source_030_structure_sha256": lane031.EXPECTED_STRUCTURE_SHA256,
-        "source_026_run": prepare.get("source_025_run") or 36646652931,
+        "source_026_run": 36646652931,
         "source_code_commit": os.environ.get("COIMBRA_SOURCE_SHA", "local"),
         "anchor_source_frames": ANCHOR_SOURCE_FRAMES,
         "anchors": anchors,
