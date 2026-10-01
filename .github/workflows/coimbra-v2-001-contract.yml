@@ -1,0 +1,32 @@
+name: Coimbra V2-001 hero-frame contract
+
+on:
+  pull_request:
+    paths:
+      - config/coimbra_v2_001.json
+      - scripts/prepare_v2_001_dgt.py
+      - scripts/fetch_sketchfab_v2_001.py
+      - scripts/test_v2_001_contract.py
+      - blender/inspect_v2_001_photogrammetry.py
+      - scripts/register_v2_001_photogrammetry.py
+      - blender/render_v2_001_hero.py
+      - docs/specs/SPEC-COIMBRA-V2-001-HERO-FRAME-1.md
+      - .github/workflows/coimbra-v2-001-*.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile V2-001 scripts
+        run: |
+          python -m compileall -q             scripts/prepare_v2_001_dgt.py             scripts/fetch_sketchfab_v2_001.py             scripts/test_v2_001_contract.py             blender/inspect_v2_001_photogrammetry.py             scripts/register_v2_001_photogrammetry.py             blender/render_v2_001_hero.py
+      - name: Test V2-001 contract
+        run: python -m unittest scripts.test_v2_001_contract -v
