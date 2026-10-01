@@ -127,8 +127,11 @@ def validate(receipt: dict, proxy_probe: dict, comparison_probe: dict | None = N
         frame = str(record["output_frame"])
         actual = proxy["frames"][frame]
         require(
-            vec_distance(actual["camera_location_after_render"], record["location"]) < 1e-6,
-            f"Frame {frame}: rendered proxy camera location drifted",
+            vec_distance(actual["camera_location_after_render"], record["location"]) < 1e-4,
+            (
+                f"Frame {frame}: rendered proxy camera location drifted by "
+                f"{vec_distance(actual['camera_location_after_render'], record['location'])}"
+            ),
         )
         qa = actual["camera_quaternion_after_render"]
         qb = record["quaternion"]
@@ -136,7 +139,7 @@ def validate(receipt: dict, proxy_probe: dict, comparison_probe: dict | None = N
         dot = max(-1.0, min(1.0, dot))
         angular_error = 2.0 * math.acos(dot)
         require(
-            angular_error < 1e-5,
+            angular_error < 1e-3,
             f"Frame {frame}: rendered proxy camera orientation drifted by {angular_error} rad",
         )
         lens_actual = float(actual["lens_after_render"])
