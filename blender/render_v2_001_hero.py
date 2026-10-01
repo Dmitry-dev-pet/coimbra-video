@@ -178,7 +178,7 @@ def apply_photogrammetry_surface_mask(
 
         geometry = tree.nodes.new("ShaderNodeNewGeometry")
         normal_split = tree.nodes.new("ShaderNodeSeparateXYZ")
-        tree.links.new(geometry.outputs["Normal"], normal_split.inputs["Vector"])
+        tree.links.new(geometry.outputs["True Normal"], normal_split.inputs["Vector"])
 
         normal_abs = tree.nodes.new("ShaderNodeMath")
         normal_abs.operation = "ABSOLUTE"
@@ -366,7 +366,7 @@ def main() -> None:
         "render_seconds": elapsed,
         "resolution": cfg["hero"]["resolution"],
         "lens_mm": review_lens_mm,
-        "visual_revision": "slope-masked-photogrammetry-v4",
+        "visual_revision": "true-normal-slope-mask-v5",
         "review_variants": variant_receipts,
         "selected_variant": selected_variant["name"],
         "camera_z_lift_m": camera_z_lift_m,
