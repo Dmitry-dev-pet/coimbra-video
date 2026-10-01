@@ -67,7 +67,7 @@ jobs:
     steps:
       - name: Publish sanitized receipt
         run: |
-          body="Coimbra V2-001 source prep: DGT=`$DGT_RESULT`, photogrammetry=`$PHOTO_RESULT`."
+          body="Coimbra V2-001 source prep: DGT=$DGT_RESULT, photogrammetry=$PHOTO_RESULT."
           if [ "$DGT_RESULT" = "success" ] && [ "$PHOTO_RESULT" = "success" ]; then
             body="$body Both fixed source artifacts are ready for registration."
             gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
