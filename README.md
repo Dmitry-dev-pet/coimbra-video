@@ -9,6 +9,12 @@ The project has **two complementary paths**, not one primary path and an abandon
 
 Read [AGENTS.md](AGENTS.md) before changing the project. Live branches, PRs, runs and artifacts are authoritative for execution status; a documented workflow is not proof that a render completed.
 
+## Current production baseline
+
+**Coimbra 032 is the canonical production baseline.** It is the accepted 60 fps / 24 s / 1600×1000 production-look delivery and remains the reference for any future full-route work.
+
+Lanes 033, 035, 036 and V2/LiDAR/photogrammetry experiments are review or research lanes unless a separate, explicit human decision promotes them. No research lane may replace 032 merely because its workflow passes technical verification. A candidate must first demonstrate a materially better visual result against 032 in a direct review.
+
 ## Blender: find the right lane
 
 | Lane | Purpose | Output / boundary |
