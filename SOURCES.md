@@ -63,3 +63,25 @@ The orthophoto source is DGT Orthophotos 2025, catalogued as CC BY 4.0. The fina
 ## DGT MDT-2m terrain crop
 
 `COIMBRA-BRIDGE-003` uses DGT `MDT-2m` as the bare-earth terrain source. Nine source tiles intersect the route bbox. The pinned derived asset is downsampled from 2 m to 6 m for CI rendering; the original source remains DGT open data. The MDT is used instead of MDS because MDS includes buildings and vegetation surfaces, which would double-count those features when OSM buildings are extruded separately.
+
+
+## Coimbra V2-001 photogrammetry
+
+Sketchfab model: `Coimbra` by VirtualPhoto3D (@johnagotinho).
+
+Model UID:
+`4175f64513a44546b65a119af5aacdff`
+
+Model page:
+https://sketchfab.com/3d-models/coimbra-4175f64513a44546b65a119af5aacdff
+
+Published metadata describes DJI Mini 2 photogrammetry, approximately 7.5M
+triangles / 3.8M vertices, under Creative Commons Attribution.
+
+Sketchfab's Download API requires an authenticated user before it returns the
+short-lived archive URL. V2-001 therefore consumes `SKETCHFAB_TOKEN` only inside
+the guarded source-preparation workflow. The token and signed archive URL are never
+written to manifests, issue comments, logs intentionally, or repository history.
+
+Suggested rendered-output attribution:
+`Coimbra photogrammetry by VirtualPhoto3D (@johnagotinho), Sketchfab, CC Attribution`.
