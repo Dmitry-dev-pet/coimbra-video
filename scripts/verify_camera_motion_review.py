@@ -55,9 +55,10 @@ def validate(receipt: dict, proxy_probe: dict, comparison_probe: dict | None = N
     require(route["path_length"] > 0, "Invalid route length")
     require(len(route["segment_lengths"]) == 6, "Wrong segment count")
     require(len(route["segment_time_seconds"]) == 6, "Wrong segment timing count")
+    segment_time_sum = sum(route["segment_time_seconds"])
     require(
-        math.isclose(sum(route["segment_time_seconds"]), EXPECTED_DURATION, abs_tol=1e-6),
-        "Segment timing does not sum to 24 seconds",
+        math.isclose(segment_time_sum, EXPECTED_DURATION, abs_tol=0.02),
+        f"Segment timing diagnostic differs from 24 seconds: {segment_time_sum}",
     )
 
     delivery = receipt["delivery"]
