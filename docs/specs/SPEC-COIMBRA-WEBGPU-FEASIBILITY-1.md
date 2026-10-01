@@ -86,6 +86,18 @@ For the first M4 16 GB feasibility run use:
 Record viewport, device pixel ratio, browser/user-agent, sample count, mean,
 p50, p95, maximum frame time and the number of frames above 50 ms.
 
+### Automated Mac preflight
+
+The query flag `?autobenchmark=1` is reserved for the reviewed mac-access
+operation. After the app has started, it waits five seconds, clears collected frame
+samples, measures the scripted route for exactly 60 seconds, records the WebGPU
+adapter metadata exposed by the browser and POSTs the receipt back to the fixed
+localhost harness.
+
+The Mac automation is a headless hardware preflight, not a substitute for a final
+interactive visible-window review. It may establish that the real M4/WebGPU path
+starts, streams the city and meets the frame-time target under the automated harness.
+
 The promotion target is:
 
 - p50 frame time at or below 16.7 ms;
