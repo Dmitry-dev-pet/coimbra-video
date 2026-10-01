@@ -6,7 +6,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import rasterio
 from pyproj import Transformer
 
 
@@ -19,9 +18,8 @@ DGT_ROOT = ROOT / "bridge_output_v2_001" / "dgt"
 ORTHO = DGT_ROOT / "ortho" / "coimbra-v2-001-ortho-2025.jpg"
 ORTHO_META = DGT_ROOT / "ortho" / "coimbra-v2-001-ortho-2025.json"
 PREPARED = DGT_ROOT / "prepared"
-MDT = PREPARED / "coimbra-v2-001-mdt-50cm.tif"
-MDS = PREPARED / "coimbra-v2-001-mds-50cm.tif"
 TERRAIN = PREPARED / "coimbra-v2-001-terrain-2m.npz"
+HAG = PREPARED / "coimbra-v2-001-height-above-ground-1m.npz"
 OUT = ROOT / "bridge_output_v2_001" / "registration"
 REGISTRATION = OUT / "registration.json"
 MATCHES = OUT / "registration-matches.jpg"
@@ -67,19 +65,65 @@ def dgt_local_xy(
     return absolute - center_abs
 
 
-def sample_raster(path: Path, x: float, y: float) -> float:
-    with rasterio.open(path) as src:
-        value = next(src.sample([(x, y)]))[0]
-        if src.nodata is not None and math.isclose(float(value), float(src.nodata)):
-            raise RuntimeError(f"No raster value at {x},{y} in {path.name}")
-        return float(value)
+def grid_indices(
+    xs: np.ndarray,
+    ys: np.ndarray,
+    x: np.ndarray,
+    y: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if len(xs) < 2 or len(ys) < 2:
+        raise RuntimeError("DGT grid is too small")
+    dx = float(xs[1] - xs[0])
+    dy = float(ys[1] - ys[0])
+    if dx == 0.0 or dy == 0.0:
+        raise RuntimeError("DGT grid has zero coordinate step")
+
+    cols = np.rint((x - float(xs[0])) / dx).astype(np.int64)
+    rows = np.rint((y - float(ys[0])) / dy).astype(np.int64)
+    valid = (
+        (rows >= 0)
+        & (rows < len(ys))
+        & (cols >= 0)
+        & (cols < len(xs))
+    )
+    return rows, cols, valid
+
+
+def sample_grid(
+    values: np.ndarray,
+    xs: np.ndarray,
+    ys: np.ndarray,
+    x: float,
+    y: float,
+) -> float:
+    rows, cols, valid = grid_indices(
+        xs,
+        ys,
+        np.asarray([x], dtype=np.float64),
+        np.asarray([y], dtype=np.float64),
+    )
+    if not bool(valid[0]):
+        raise RuntimeError(f"Point {x:.3f},{y:.3f} lies outside DGT grid")
+    return float(values[int(rows[0]), int(cols[0])])
+
+
+def surface_at(
+    terrain: dict[str, np.ndarray],
+    hag: dict[str, np.ndarray],
+    x: float,
+    y: float,
+) -> float:
+    ground = sample_grid(terrain["z"], terrain["xs"], terrain["ys"], x, y)
+    above = sample_grid(hag["height"], hag["xs"], hag["ys"], x, y)
+    return ground + max(0.0, above)
 
 
 def estimate_vertical_offset(
     vertices: np.ndarray,
     affine: np.ndarray,
     scale: float,
-    center_abs: np.ndarray,
+    terrain: dict[str, np.ndarray],
+    hag: dict[str, np.ndarray],
     terrain_z0: float,
 ) -> tuple[float, dict]:
     local_xy = np.column_stack(
@@ -92,42 +136,48 @@ def estimate_vertical_offset(
             + affine[1, 2],
         ]
     )
-    absolute_xy = local_xy + center_abs
 
-    with rasterio.open(MDS) as src:
-        surface = src.read(1).astype(np.float64)
-        transform = src.transform
-        nodata = src.nodata
-        cols = np.floor((absolute_xy[:, 0] - transform.c) / transform.a).astype(int)
-        rows = np.floor((absolute_xy[:, 1] - transform.f) / transform.e).astype(int)
-        valid = (
-            (rows >= 0)
-            & (rows < src.height)
-            & (cols >= 0)
-            & (cols < src.width)
+    hrows, hcols, valid = grid_indices(
+        hag["xs"], hag["ys"], local_xy[:, 0], local_xy[:, 1]
+    )
+    hrows = hrows[valid]
+    hcols = hcols[valid]
+    model_z = vertices[valid, 2] * scale
+
+    if model_z.size < 500:
+        raise RuntimeError(
+            f"Too few photogrammetry vertices overlap DGT HAG: {model_z.size}"
         )
-        rows = rows[valid]
-        cols = cols[valid]
-        model_z = vertices[valid, 2] * scale
 
-        linear = rows.astype(np.int64) * src.width + cols.astype(np.int64)
-        order = np.argsort(linear)
-        linear = linear[order]
-        model_z = model_z[order]
-        unique, first = np.unique(linear, return_index=True)
-        model_surface = np.maximum.reduceat(model_z, first)
-        unique_rows = unique // src.width
-        unique_cols = unique % src.width
-        dgt_surface = surface[unique_rows, unique_cols]
+    width = len(hag["xs"])
+    linear = hrows * width + hcols
+    order = np.argsort(linear)
+    linear = linear[order]
+    model_z = model_z[order]
+    unique, first = np.unique(linear, return_index=True)
+    model_surface = np.maximum.reduceat(model_z, first)
 
-        finite = np.isfinite(dgt_surface)
-        if nodata is not None:
-            finite &= ~np.isclose(dgt_surface, float(nodata))
-        residuals = dgt_surface[finite] - model_surface[finite]
+    unique_rows = unique // width
+    unique_cols = unique % width
+    cell_x = hag["xs"][unique_cols].astype(np.float64)
+    cell_y = hag["ys"][unique_rows].astype(np.float64)
+    hag_surface = hag["height"][unique_rows, unique_cols].astype(np.float64)
+
+    trows, tcols, terrain_valid = grid_indices(
+        terrain["xs"], terrain["ys"], cell_x, cell_y
+    )
+    dgt_surface = np.full(model_surface.shape, np.nan, dtype=np.float64)
+    dgt_surface[terrain_valid] = (
+        terrain["z"][trows[terrain_valid], tcols[terrain_valid]].astype(np.float64)
+        + np.maximum(0.0, hag_surface[terrain_valid])
+    )
+
+    finite = np.isfinite(dgt_surface) & np.isfinite(model_surface)
+    residuals = dgt_surface[finite] - model_surface[finite]
 
     if residuals.size < 250:
         raise RuntimeError(
-            f"Too few MDS overlap cells for vertical registration: {residuals.size}"
+            f"Too few DGT surface overlap cells for vertical registration: {residuals.size}"
         )
 
     median = float(np.median(residuals))
@@ -135,7 +185,7 @@ def estimate_vertical_offset(
     threshold = max(2.0, 4.0 * mad)
     clipped = residuals[np.abs(residuals - median) <= threshold]
     if clipped.size < 200:
-        raise RuntimeError("Vertical registration rejected too many MDS samples")
+        raise RuntimeError("Vertical registration rejected too many DGT samples")
 
     absolute_offset = float(np.median(clipped))
     return absolute_offset - terrain_z0, {
@@ -144,22 +194,51 @@ def estimate_vertical_offset(
         "median_absolute_z_offset_m": absolute_offset,
         "mad_m": mad,
         "clip_threshold_m": threshold,
+        "surface_source": "DGT terrain 2m + max-pooled LiDAR HAG 1m",
     }
 
 
+def load_npz(path: Path, keys: tuple[str, ...]) -> dict[str, np.ndarray]:
+    data = np.load(path)
+    result = {}
+    for key in keys:
+        if key not in data:
+            raise RuntimeError(f"{path.name} missing {key}")
+        result[key] = data[key]
+    return result
+
+
 def main() -> None:
-    for path in (CONFIG, INSPECTION, TOPDOWN, VERTICES, ORTHO, ORTHO_META, MDT, MDS, TERRAIN):
+    for path in (
+        CONFIG,
+        INSPECTION,
+        TOPDOWN,
+        VERTICES,
+        ORTHO,
+        ORTHO_META,
+        TERRAIN,
+        HAG,
+    ):
         if not path.is_file():
             raise SystemExit(f"Missing V2-001 registration input: {path}")
 
     cfg = json.loads(CONFIG.read_text())
     inspection = json.loads(INSPECTION.read_text())
     ortho_meta = json.loads(ORTHO_META.read_text())
-    terrain = np.load(TERRAIN)
+
+    terrain_file = np.load(TERRAIN)
     center_abs = np.array(
-        [float(terrain["center_x"]), float(terrain["center_y"])], dtype=np.float64
+        [float(terrain_file["center_x"]), float(terrain_file["center_y"])],
+        dtype=np.float64,
     )
-    terrain_z0 = float(terrain["z0"])
+    terrain_z0 = float(terrain_file["z0"])
+    terrain = {
+        "z": terrain_file["z"].astype(np.float64),
+        "xs": terrain_file["xs"].astype(np.float64),
+        "ys": terrain_file["ys"].astype(np.float64),
+    }
+    hag = load_npz(HAG, ("height", "xs", "ys"))
+    hag = {key: value.astype(np.float64) for key, value in hag.items()}
 
     photo_full = cv2.imread(str(TOPDOWN), cv2.IMREAD_COLOR)
     dgt_full = cv2.imread(str(ORTHO), cv2.IMREAD_COLOR)
@@ -220,7 +299,7 @@ def main() -> None:
 
     vertices = np.load(VERTICES)["xyz"].astype(np.float64)
     z_offset_local, z_evidence = estimate_vertical_offset(
-        vertices, affine, scale, center_abs, terrain_z0
+        vertices, affine, scale, terrain, hag, terrain_z0
     )
     z_offset_local += float(cfg["hero"]["photogrammetry_z_bias_m"])
 
@@ -230,20 +309,24 @@ def main() -> None:
     camera_abs = transformer.transform(camera_cfg["lon"], camera_cfg["lat"])
     target_abs = transformer.transform(target_cfg["lon"], target_cfg["lat"])
 
-    camera_ground = sample_raster(MDT, *camera_abs)
-    target_surface = sample_raster(MDS, *target_abs)
+    camera_x = float(camera_abs[0] - center_abs[0])
+    camera_y = float(camera_abs[1] - center_abs[1])
+    target_x = float(target_abs[0] - center_abs[0])
+    target_y = float(target_abs[1] - center_abs[1])
+
+    camera_ground = sample_grid(
+        terrain["z"], terrain["xs"], terrain["ys"], camera_x, camera_y
+    )
+    target_surface = surface_at(terrain, hag, target_x, target_y)
+
     camera_local = [
-        float(camera_abs[0] - center_abs[0]),
-        float(camera_abs[1] - center_abs[1]),
-        float(
-            camera_ground
-            + cfg["hero"]["camera_height_agl_m"]
-            - terrain_z0
-        ),
+        camera_x,
+        camera_y,
+        float(camera_ground + cfg["hero"]["camera_height_agl_m"] - terrain_z0),
     ]
     target_local = [
-        float(target_abs[0] - center_abs[0]),
-        float(target_abs[1] - center_abs[1]),
+        target_x,
+        target_y,
         float(
             target_surface
             + cfg["hero"]["target_height_above_surface_m"]
@@ -266,7 +349,10 @@ def main() -> None:
 
     payload = {
         "version": "coimbra-v2-001-registration-v1",
-        "method": "SIFT + RANSAC 2D similarity; DGT MDS vertical median",
+        "method": (
+            "SIFT + RANSAC 2D similarity; "
+            "DGT terrain 2m + LiDAR HAG 1m vertical median"
+        ),
         "feature_matches": len(good),
         "inliers": inlier_count,
         "inlier_ratio": inlier_ratio,
