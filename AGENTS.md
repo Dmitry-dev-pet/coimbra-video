@@ -7,6 +7,14 @@ GitHub main is the source of truth for this repository.
 - Earth Studio + post-process remains the realistic imagery path.
 - `COIMBRA-BRIDGE-001` is the contract-governed Blender integration path.
 
+### Production authority
+
+- **Coimbra 032 is the canonical Blender production baseline.**
+- Treat 033, 035, 036, V2 photogrammetry, raw-LiDAR, Poisson and other visual experiments as non-production research unless the user explicitly promotes a reviewed result.
+- Technical success, higher geometric fidelity, more source data or a newer lane number does not constitute promotion.
+- Before any future promotion, compare the candidate directly with 032 and require an explicit human judgment that the candidate is materially better for the intended shot.
+- Do not mutate, overwrite, retime or silently supersede the accepted 032 artifact while researching alternatives.
+
 ## APatch Blender constraints
 
 For `contracts/COIMBRA-BRIDGE-001.json`:
