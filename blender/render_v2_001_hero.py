@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import json
 import math
 from pathlib import Path
@@ -203,7 +204,7 @@ def main() -> None:
     terrain_obj["v2_role"] = "DGT context"
 
     root, meshes = import_photogrammetry(model, registration)
-    edge_fade_m = 50.0
+    edge_fade_m = 100.0
     apply_photogrammetry_edge_fade(root, meshes, inspection, edge_fade_m)
 
     camera_data = bpy.data.cameras.new("V2_001_Hero_Camera")
@@ -212,22 +213,20 @@ def main() -> None:
     base_camera = registration["hero_camera_local"]
     base_target = registration["hero_target_local"]
     camera_z_lift_m = 70.0
-    target_z_offset_m = -25.0
-    review_lens_mm = 70.0
     camera.location = (
         float(base_camera[0]),
         float(base_camera[1]),
         float(base_camera[2]) + camera_z_lift_m,
     )
-    camera_data.lens = review_lens_mm
     camera_data.sensor_width = 36.0
     camera_data.dof.use_dof = False
-    review_target = (
-        float(base_target[0]),
-        float(base_target[1]),
-        float(base_target[2]) + target_z_offset_m,
-    )
-    look_at(camera, review_target)
+
+    review_variants = [
+        {"name": "a-85mm", "lens_mm": 85.0, "target_z_offset_m": -80.0},
+        {"name": "b-105mm", "lens_mm": 105.0, "target_z_offset_m": -110.0},
+        {"name": "c-125mm", "lens_mm": 125.0, "target_z_offset_m": -130.0},
+    ]
+    selected_variant = review_variants[1]
 
     scene = bpy.context.scene
     scene.camera = camera
@@ -269,9 +268,37 @@ def main() -> None:
     )
 
     OUT.mkdir(parents=True, exist_ok=True)
-    started = time.perf_counter()
-    bpy.ops.render.render(write_still=True)
-    elapsed = time.perf_counter() - started
+    variant_receipts = []
+    for variant in review_variants:
+        camera_data.lens = float(variant["lens_mm"])
+        review_target = (
+            float(base_target[0]),
+            float(base_target[1]),
+            float(base_target[2]) + float(variant["target_z_offset_m"]),
+        )
+        look_at(camera, review_target)
+        variant_path = OUT / f"coimbra-v2-001-hero-{variant['name']}.png"
+        scene.render.filepath = str(variant_path)
+        started = time.perf_counter()
+        bpy.ops.render.render(write_still=True)
+        variant_elapsed = time.perf_counter() - started
+        variant_receipts.append(
+            {
+                **variant,
+                "image": variant_path.relative_to(ROOT).as_posix(),
+                "image_sha256": digest(variant_path),
+                "render_seconds": variant_elapsed,
+            }
+        )
+
+    selected_receipt = next(
+        item for item in variant_receipts if item["name"] == selected_variant["name"]
+    )
+    selected_path = ROOT / selected_receipt["image"]
+    shutil.copyfile(selected_path, IMAGE)
+    elapsed = float(selected_receipt["render_seconds"])
+    review_lens_mm = float(selected_receipt["lens_mm"])
+    target_z_offset_m = float(selected_receipt["target_z_offset_m"])
 
     ATTRIBUTION.write_text(
         "Photogrammetry: Coimbra by VirtualPhoto3D (@johnagotinho), Sketchfab, "
@@ -288,7 +315,9 @@ def main() -> None:
         "render_seconds": elapsed,
         "resolution": cfg["hero"]["resolution"],
         "lens_mm": review_lens_mm,
-        "visual_revision": "composition-edge-fade-v2",
+        "visual_revision": "composition-triple-review-v3",
+        "review_variants": variant_receipts,
+        "selected_variant": selected_variant["name"],
         "camera_z_lift_m": camera_z_lift_m,
         "target_z_offset_m": target_z_offset_m,
         "photogrammetry_edge_fade_m": edge_fade_m,
