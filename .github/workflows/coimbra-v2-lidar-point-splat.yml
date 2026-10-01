@@ -1,0 +1,85 @@
+name: Coimbra V2 direct RGB LiDAR point-splat
+
+on:
+  push:
+    paths:
+      - "scripts/render_v2_lidar_point_splat.py"
+      - ".github/workflows/coimbra-v2-lidar-point-splat.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  DGT_USER: ${{ secrets.DGT_USER }}
+  DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
+  V2_SOURCE_RUN_ID: "36926607350"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install point-splat dependencies
+        run: |
+          python -m pip install --quiet \
+            "requests>=2.32,<3" \
+            "numpy>=2,<3" \
+            "laspy[lazrs]>=2.5,<3" \
+            "pillow>=11,<12" \
+            "pyproj>=3.7,<4" \
+            "scipy>=1.14,<2"
+
+      - name: Download fixed Coimbra V2 DGT source
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: ${{ env.V2_SOURCE_RUN_ID }}
+          name: coimbra-v2-001-dgt
+          github-token: ${{ github.token }}
+          path: bridge_output_v2_001/dgt
+
+      - name: Verify DGT inputs
+        run: |
+          test -s bridge_output_v2_001/dgt/prepared/coimbra-v2-001-terrain-2m.npz
+          test -s bridge_output_v2_001/dgt/prepared/coimbra-v2-001-height-above-ground-1m.npz
+
+      - name: Render direct raw LiDAR RGB review
+        run: python scripts/render_v2_lidar_point_splat.py
+
+      - name: Verify receipt
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("bridge_output_v2_lidar_points")
+          m = json.loads((root / "manifest.json").read_text())
+          assert m["version"] == "coimbra-v2-lidar-point-splat-v1"
+          assert m["point_format"].startswith("<PointFormat(8")
+          assert all(x in m["dimensions"] for x in ("red", "green", "blue"))
+          assert m["total_points"] > 10_000_000
+          assert len(m["variants"]) == 3
+          for variant in m["variants"]:
+              p = Path(variant["image"])
+              assert p.is_file() and p.stat().st_size > 10_000
+              assert variant["projected_points"] > 100_000
+          print(json.dumps(m, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-v2-direct-rgb-lidar-review
+          path: |
+            bridge_output_v2_lidar_points/*.png
+            bridge_output_v2_lidar_points/manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
