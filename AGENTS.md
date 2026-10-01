@@ -300,3 +300,27 @@ Use only output checkpoints `121, 421, 721, 1021, 1321`. The review must
 restore accepted scene state after every temporary change and must not save a
 modified production blend. Passing 035 verification does not authorize a full
 render; human visual review is required first.
+
+
+## Coimbra V2-001 visual-first hero frame
+
+`feature/coimbra-v2-001-hero-frame` is an independent visual-quality lane. It must
+not mutate or silently promote the accepted 032–036 production scene.
+
+V2-001 owns the historic-core bbox in `config/coimbra_v2_001.json`. It combines
+fixed VirtualPhoto3D Coimbra photogrammetry with a separate DGT 2025
+orthophoto/MDT/MDS crop. OSM extrusion is not the primary visible building source
+for this lane.
+
+Photogrammetry placement must be evidence-driven: render a top-down texture view,
+register it against DGT orthophotography using the reviewed SIFT/RANSAC similarity
+pipeline, and estimate vertical translation against DGT MDS. Do not replace this
+with manual Blender placement merely because it looks plausible.
+
+The first accepted deliverable is one neutral 1600×1000 still. Motion blur, DOF,
+cinematic grading and full-route rendering are explicitly forbidden until human
+review confirms that the underlying city representation is materially better.
+
+Large Sketchfab source files remain transient workflow/runner artifacts. Never commit
+Sketchfab access tokens, signed download URLs, DGT credentials, or the downloaded
+photogrammetry archive to Git history.
