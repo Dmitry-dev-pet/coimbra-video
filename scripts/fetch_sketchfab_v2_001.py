@@ -39,18 +39,31 @@ def main() -> None:
         )
 
     api = source["download_api"].format(uid=uid)
-    response = requests.get(
-        api,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "coimbra-video/v2-001",
-            "Accept": "application/json",
-        },
-        timeout=60,
-    )
-    if response.status_code != 200:
+    response = None
+    auth_mode = None
+    # Sketchfab accepts OAuth access tokens with Bearer auth and Data API tokens
+    # with Token auth. Try both without ever printing the credential.
+    for mode in ("Bearer", "Token"):
+        candidate = requests.get(
+            api,
+            headers={
+                "Authorization": f"{mode} {token}",
+                "User-Agent": "coimbra-video/v2-001",
+                "Accept": "application/json",
+            },
+            timeout=60,
+        )
+        if candidate.status_code == 200:
+            response = candidate
+            auth_mode = mode.lower()
+            break
+        if candidate.status_code not in (401, 403):
+            raise RuntimeError(
+                f"Sketchfab Download API failed with HTTP {candidate.status_code}"
+            )
+    if response is None:
         raise RuntimeError(
-            f"Sketchfab Download API failed with HTTP {response.status_code}"
+            "Sketchfab rejected SKETCHFAB_TOKEN as both OAuth Bearer and API Token"
         )
     payload = response.json()
 
@@ -108,6 +121,7 @@ def main() -> None:
         "model_url": source["model_url"],
         "license": source["license"],
         "format": selected_name,
+        "auth_mode": auth_mode,
         "archive_bytes": ARCHIVE.stat().st_size,
         "archive_sha256": digest(ARCHIVE),
         "extracted_archive": extracted,
