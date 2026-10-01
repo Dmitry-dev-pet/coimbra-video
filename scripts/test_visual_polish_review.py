@@ -1,3 +1,4 @@
+from copy import deepcopy
 import unittest
 
 from verify_visual_polish_review import validate
@@ -75,7 +76,7 @@ class VisualPolishReviewTests(unittest.TestCase):
                 "settings": settings[name],
                 "total_seconds": 5.0,
                 "images": {
-                    str(frame): image(frame, salt, checkpoints[str(frame)]["camera"])
+                    str(frame): image(frame, salt, deepcopy(checkpoints[str(frame)]["camera"]))
                     for frame in CHECKPOINTS
                 },
             }
