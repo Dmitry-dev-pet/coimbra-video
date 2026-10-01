@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Coimbra 034: WebGPU feasibility prototype using DGT terrain, OpenStreetMap geometry and the governed Coimbra camera route."
+    />
+    <title>Coimbra 034 · WebGPU feasibility</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b1117;
+        color: #eef3f6;
+      }
+      * { box-sizing: border-box; }
+      html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+      canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      #hud {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        width: min(360px, calc(100vw - 28px));
+        padding: 12px 14px;
+        border: 1px solid rgba(255,255,255,.13);
+        border-radius: 12px;
+        background: rgba(8, 14, 20, .78);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 12px 40px rgba(0,0,0,.25);
+        font-size: 13px;
+        line-height: 1.45;
+        pointer-events: auto;
+      }
+      #hud strong { font-size: 14px; }
+      #stats { margin-top: 8px; font-variant-numeric: tabular-nums; white-space: pre-line; }
+      #help { margin-top: 8px; color: #b6c3cc; }
+      button {
+        margin-top: 10px;
+        padding: 7px 10px;
+        border: 1px solid rgba(255,255,255,.16);
+        border-radius: 8px;
+        color: inherit;
+        background: rgba(255,255,255,.08);
+        cursor: pointer;
+      }
+      button:hover { background: rgba(255,255,255,.13); }
+      #credit {
+        position: fixed;
+        right: 12px;
+        bottom: 10px;
+        padding: 5px 8px;
+        border-radius: 6px;
+        background: rgba(8, 14, 20, .72);
+        color: #d4dde3;
+        font-size: 11px;
+      }
+      #error {
+        display: none;
+        position: fixed;
+        inset: 0;
+        place-items: center;
+        padding: 30px;
+        text-align: center;
+        background: #0b1117;
+        color: #ffcbc5;
+      }
+      body.failed #error { display: grid; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <aside id="hud">
+      <strong>Coimbra 034 · WebGPU feasibility</strong>
+      <div id="stats">Starting renderer…</div>
+      <div id="help">
+        Drag to look · WASD to fly · Q/E down/up · Shift faster · P scripted route
+      </div>
+      <button id="export-benchmark" type="button">Export benchmark receipt</button>
+    </aside>
+    <div id="credit">DGT terrain · © OpenStreetMap contributors · ODbL</div>
+    <div id="error"><div id="error-text"></div></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
