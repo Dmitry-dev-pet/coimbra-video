@@ -285,8 +285,18 @@ baseline for the side-by-side review. Passing the independent verifier does not
 authorize a full Cycles render; human review is required first.
 
 
-## WebGPU feasibility lane 034
+## Visual polish review lane 035
 
-`feature/coimbra-034-webgpu-feasibility` is a parallel browser-renderer experiment. It may read the pinned DGT 6 m terrain, public OSM data through the existing fetch/prepare path, and the governed `COIMBRA-BRIDGE-003-SLOW` camera anchors. It must not mutate, replace or republish the accepted Blender scene, camera keyframes, materials, lights or production render contracts.
+`feature/coimbra-035-visual-polish-review` is a review-only derivative of the
+accepted Coimbra 032 delivery. Camera animation, fractional-frame timing, route
+speed, framing and production geometry are frozen.
 
-Generated 250 m web tiles are build artifacts, not a new geodata source of truth. Ordinary 034 CI must not acquire authenticated DGT sources or credentials. Passing CI proves reproducibility only; browser performance requires a separate exported benchmark receipt on the target device before any promotion.
+The only permitted review variants are the four fixed variants in
+`docs/specs/SPEC-COIMBRA-VISUAL-POLISH-1.md`: baseline, isolated
+180-degree-equivalent motion blur, isolated subtle atmosphere/light rebalance,
+and isolated 64-sample quality.
+
+Use only output checkpoints `121, 421, 721, 1021, 1321`. The review must
+restore accepted scene state after every temporary change and must not save a
+modified production blend. Passing 035 verification does not authorize a full
+render; human visual review is required first.
