@@ -1,0 +1,192 @@
+name: Coimbra V2 raw LiDAR facade probe
+
+on:
+  push:
+    paths:
+      - ".github/workflows/coimbra-v2-laz-facade-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DGT_USER: ${{ secrets.DGT_USER }}
+  DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install probe dependencies
+        run: |
+          python -m pip install --quiet \
+            "requests>=2.32,<3" \
+            "numpy>=2,<3" \
+            "laspy[lazrs]>=2.5,<3"
+
+      - name: Download one Coimbra historic-core LiDAR tile and measure vertical evidence
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          import laspy
+          import numpy as np
+
+          sys.path.insert(0, "scripts")
+          from fetch_dgt_highres_bridge import STAC_SEARCH, authenticate
+
+          TARGET = (-8.42596, 40.20744)
+          EPS = 0.00015
+          bbox = [
+              TARGET[0] - EPS,
+              TARGET[1] - EPS,
+              TARGET[0] + EPS,
+              TARGET[1] + EPS,
+          ]
+
+          user = os.getenv("DGT_USER", "").strip()
+          password = os.getenv("DGT_PASSWORD", "")
+          if not user or not password:
+              raise SystemExit("DGT_USER and DGT_PASSWORD are required")
+
+          session = authenticate(user, password)
+          response = session.post(
+              STAC_SEARCH,
+              json={"bbox": bbox, "limit": 10, "collections": ["LAZ"]},
+              timeout=90,
+          )
+          response.raise_for_status()
+          features = response.json().get("features", [])
+          if not features:
+              raise RuntimeError(f"No DGT LAZ tile intersects {bbox}")
+
+          feature = features[0]
+          asset_href = None
+          for asset in feature.get("assets", {}).values():
+              href = asset.get("href")
+              ctype = (asset.get("type") or "").lower()
+              clean = href.lower().split("?")[0] if href else ""
+              if href and ("laszip" in ctype or clean.endswith(".laz") or clean.endswith(".las")):
+                  asset_href = href
+                  break
+          if not asset_href:
+              raise RuntimeError("No LAS/LAZ asset in selected DGT feature")
+
+          out = Path("bridge_output_v2_laz_probe")
+          out.mkdir(parents=True, exist_ok=True)
+          suffix = ".laz" if asset_href.lower().split("?")[0].endswith(".laz") else ".las"
+          point_path = out / f"{feature.get('id','historic-core')}{suffix}"
+
+          with session.get(asset_href, stream=True, timeout=300) as download:
+              download.raise_for_status()
+              with point_path.open("wb") as handle:
+                  for chunk in download.iter_content(1024 * 1024):
+                      if chunk:
+                          handle.write(chunk)
+
+          class_counts = {}
+          xs = []
+          ys = []
+          zs = []
+          total_points = 0
+          with laspy.open(point_path) as reader:
+              header = reader.header
+              for points in reader.chunk_iterator(1_000_000):
+                  total_points += len(points)
+                  cls = np.asarray(points.classification, dtype=np.uint8)
+                  values, counts = np.unique(cls, return_counts=True)
+                  for value, count in zip(values, counts):
+                      key = str(int(value))
+                      class_counts[key] = class_counts.get(key, 0) + int(count)
+
+                  mask = cls == 6
+                  if np.any(mask):
+                      xs.append(np.asarray(points.x[mask], dtype=np.float64))
+                      ys.append(np.asarray(points.y[mask], dtype=np.float64))
+                      zs.append(np.asarray(points.z[mask], dtype=np.float64))
+
+              point_format = str(header.point_format)
+              version = str(header.version)
+              mins = [float(v) for v in header.mins]
+              maxs = [float(v) for v in header.maxs]
+
+          if not xs:
+              raise RuntimeError("Selected LiDAR tile contains no class-6 building points")
+
+          x = np.concatenate(xs)
+          y = np.concatenate(ys)
+          z = np.concatenate(zs)
+          building_points = int(x.size)
+
+          def vertical_bins(cell):
+              x0 = float(x.min())
+              y0 = float(y.min())
+              ix = np.floor((x - x0) / cell).astype(np.int64)
+              iy = np.floor((y - y0) / cell).astype(np.int64)
+              nx = int(ix.max()) + 1
+              key = iy * nx + ix
+              order = np.argsort(key, kind="mergesort")
+              key_s = key[order]
+              z_s = z[order]
+              unique, first, counts = np.unique(
+                  key_s, return_index=True, return_counts=True
+              )
+              zmin = np.minimum.reduceat(z_s, first)
+              zmax = np.maximum.reduceat(z_s, first)
+              spans = zmax - zmin
+              return {
+                  "cell_m": cell,
+                  "occupied_bins": int(unique.size),
+                  "multi_point_bins": int(np.count_nonzero(counts >= 2)),
+                  "span_gt_1m_bins": int(np.count_nonzero(spans > 1.0)),
+                  "span_gt_3m_bins": int(np.count_nonzero(spans > 3.0)),
+                  "span_gt_6m_bins": int(np.count_nonzero(spans > 6.0)),
+                  "span_gt_10m_bins": int(np.count_nonzero(spans > 10.0)),
+                  "max_vertical_span_m": float(spans.max(initial=0.0)),
+                  "p99_vertical_span_m": float(np.quantile(spans, 0.99)),
+                  "building_points_in_gt3m_bins": int(counts[spans > 3.0].sum()),
+                  "building_points_in_gt6m_bins": int(counts[spans > 6.0].sum()),
+              }
+
+          report = {
+              "source": "DGT classified LiDAR raw point cloud",
+              "target_wgs84": TARGET,
+              "feature_id": feature.get("id"),
+              "download_bytes": point_path.stat().st_size,
+              "las_version": version,
+              "point_format": point_format,
+              "bounds": {"min": mins, "max": maxs},
+              "total_points": total_points,
+              "class_counts": class_counts,
+              "building_class_6_points": building_points,
+              "building_fraction": building_points / total_points,
+              "vertical_evidence": [vertical_bins(0.25), vertical_bins(0.50)],
+              "interpretation_note": (
+                  "Large Z spans within narrow XY bins among class-6 building points "
+                  "are direct evidence of non-roof/vertical building structure. "
+                  "This is a probe, not a complete facade reconstruction metric."
+              ),
+          }
+
+          report_path = out / "facade-probe.json"
+          report_path.write_text(json.dumps(report, indent=2) + "\n")
+          print(json.dumps(report, indent=2))
+          point_path.unlink()
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-v2-laz-facade-probe
+          path: bridge_output_v2_laz_probe/facade-probe.json
+          if-no-files-found: error
+          retention-days: 30
