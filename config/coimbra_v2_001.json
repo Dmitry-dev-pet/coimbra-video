@@ -1,0 +1,67 @@
+{
+  "id": "coimbra-v2-001-hero-frame",
+  "crs": "EPSG:3763",
+  "bbox_wgs84": [
+    -8.4435,
+    40.198,
+    -8.416,
+    40.2145
+  ],
+  "center_wgs84": [
+    -8.42975,
+    40.20625
+  ],
+  "photogrammetry": {
+    "provider": "Sketchfab",
+    "creator": "VirtualPhoto3D",
+    "creator_handle": "johnagotinho",
+    "model_name": "Coimbra",
+    "model_uid": "4175f64513a44546b65a119af5aacdff",
+    "model_url": "https://sketchfab.com/3d-models/coimbra-4175f64513a44546b65a119af5aacdff",
+    "capture_method": "DJI Mini 2 photogrammetry",
+    "license": "CC Attribution",
+    "download_api": "https://api.sketchfab.com/v3/models/{uid}/download"
+  },
+  "dgt": {
+    "orthophoto": "DGT Orthophotos 2025 RGB, 25 cm/px",
+    "orthophoto_license": "CC BY 4.0",
+    "terrain_collections": [
+      "MDT-50cm",
+      "MDS-50cm"
+    ],
+    "render_terrain_resolution_m": 2.0,
+    "height_above_ground_resolution_m": 1.0
+  },
+  "hero": {
+    "camera_anchor": {
+      "name": "Mosteiro de Santa Clara-a-Nova",
+      "lon": -8.437911,
+      "lat": 40.202842,
+      "reference_elevation_m": 72.0,
+      "source": "https://imovel.patrimoniocultural.gov.pt/detalhes.php?code=70695"
+    },
+    "target": {
+      "name": "Paço das Escolas",
+      "lon": -8.42596,
+      "lat": 40.20744,
+      "reference_elevation_m": 105.0,
+      "source": "https://mapcarta.com/35844826"
+    },
+    "camera_height_agl_m": 105.0,
+    "target_height_above_surface_m": 10.0,
+    "lens_mm": 55.0,
+    "resolution": [
+      1600,
+      1000
+    ],
+    "cycles_samples": 16,
+    "photogrammetry_z_bias_m": 0.25
+  },
+  "acceptance": {
+    "full_video_allowed": false,
+    "first_delivery": "one neutral hero still plus registration evidence",
+    "motion_blur": false,
+    "depth_of_field": false,
+    "cinematic_grade": false
+  }
+}
