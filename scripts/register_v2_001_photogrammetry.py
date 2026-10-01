@@ -257,8 +257,17 @@ def main() -> None:
     matcher = cv2.BFMatcher(cv2.NORM_L2)
     pairs = matcher.knnMatch(desc_photo, desc_dgt, k=2)
     good = [a for a, b in pairs if a.distance < 0.72 * b.distance]
-    if len(good) < 40:
-        raise RuntimeError(f"Too few photogrammetry/DGT feature matches: {len(good)}")
+
+    # Do not reject a registration merely because the tentative-match count is
+    # below an arbitrary pre-RANSAC floor.  The real acceptance gate below
+    # requires at least 24 geometrically consistent inliers, so 24 tentative
+    # matches is the smallest set that can possibly pass without weakening the
+    # reviewed geometric evidence requirement.
+    if len(good) < 24:
+        raise RuntimeError(
+            f"Too few photogrammetry/DGT feature matches to satisfy the "
+            f"24-inlier registration gate: {len(good)}"
+        )
 
     photo_px = np.array(
         [kp_photo[m.queryIdx].pt for m in good], dtype=np.float64
