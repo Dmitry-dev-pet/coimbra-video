@@ -12,7 +12,7 @@ import sys
 import time
 
 import bpy
-from mathutils import Vector
+from mathutils import Quaternion, Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "blender"))
@@ -318,8 +318,8 @@ def motion_metrics(records: list[dict]) -> dict:
 def render_proxy(scene, records: list[dict], out: Path) -> dict:
     frames = out / "frames"
     frames.mkdir(parents=True, exist_ok=True)
-    camera = scene.camera
-    require(camera is not None, "production camera missing")
+    source_camera = scene.camera
+    require(source_camera is not None, "production camera missing")
 
     engine = None
     for candidate in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"):
@@ -339,32 +339,65 @@ def render_proxy(scene, records: list[dict], out: Path) -> dict:
     scene.render.fps = OUTPUT_FPS
     scene.render.fps_base = 1.0
 
+    # Never drive the accepted animated camera directly. Blender re-evaluates animation
+    # data when a still render starts, which can overwrite manually assigned transforms.
+    # Use a temporary, unanimated camera object/data pair for the review proxy instead.
+    proxy_camera = source_camera.copy()
+    proxy_data = source_camera.data.copy()
+    proxy_camera.data = proxy_data
+    proxy_camera.name = "Coimbra033_ProxyCamera"
+    proxy_data.name = "Coimbra033_ProxyCameraData"
+    proxy_camera.animation_data_clear()
+    proxy_data.animation_data_clear()
+    for constraint in list(proxy_camera.constraints):
+        proxy_camera.constraints.remove(constraint)
+    proxy_camera.parent = None
+    proxy_camera.scale = (1.0, 1.0, 1.0)
+    proxy_camera.rotation_mode = "QUATERNION"
+    scene.collection.objects.link(proxy_camera)
+    scene.camera = proxy_camera
+
     hashes: dict[str, dict] = {}
     started_total = time.perf_counter()
     scene.frame_set(1)
 
-    for record in records:
-        frame = int(record["output_frame"])
-        camera.location = Vector(record["location"])
-        camera.rotation_euler = (
-            Vector(record["target"]) - camera.location
-        ).to_track_quat("-Z", "Y").to_euler()
-        camera.data.lens = float(record["lens"])
-        camera.data.dof.focus_distance = float(record["focus_distance"])
-        bpy.context.view_layer.update()
+    try:
+        for record in records:
+            frame = int(record["output_frame"])
+            proxy_camera.location = Vector(record["location"])
+            proxy_camera.rotation_quaternion = Quaternion(record["quaternion"])
+            proxy_camera.data.lens = float(record["lens"])
+            proxy_camera.data.dof.focus_distance = float(record["focus_distance"])
+            bpy.context.view_layer.update()
 
-        path = frames / f"frame_{frame:04d}.png"
-        scene.render.filepath = str(path)
-        started = time.perf_counter()
-        bpy.ops.render.render(write_still=True)
-        elapsed = time.perf_counter() - started
-        require(path.is_file() and path.stat().st_size > 0, f"missing proxy frame {frame}")
-        hashes[str(frame)] = {
-            "sha256": full.digest_file(path),
-            "bytes": path.stat().st_size,
-            "seconds": elapsed,
-        }
-        print(f"033 smooth-camera proxy frame {frame}: {elapsed:.3f}s")
+            path = frames / f"frame_{frame:04d}.png"
+            scene.render.filepath = str(path)
+            started = time.perf_counter()
+            bpy.ops.render.render(write_still=True)
+            elapsed = time.perf_counter() - started
+            require(path.is_file() and path.stat().st_size > 0, f"missing proxy frame {frame}")
+
+            actual_q = proxy_camera.matrix_world.to_quaternion().normalized()
+            hashes[str(frame)] = {
+                "sha256": full.digest_file(path),
+                "bytes": path.stat().st_size,
+                "seconds": elapsed,
+                "camera_location_after_render": [float(v) for v in proxy_camera.location],
+                "camera_quaternion_after_render": [
+                    float(actual_q.w),
+                    float(actual_q.x),
+                    float(actual_q.y),
+                    float(actual_q.z),
+                ],
+                "lens_after_render": float(proxy_camera.data.lens),
+                "focus_distance_after_render": float(proxy_camera.data.dof.focus_distance),
+            }
+            print(f"033 smooth-camera proxy frame {frame}: {elapsed:.3f}s")
+    finally:
+        scene.camera = source_camera
+        bpy.data.objects.remove(proxy_camera, do_unlink=True)
+        if proxy_data.users == 0:
+            bpy.data.cameras.remove(proxy_data)
 
     return {
         "engine": engine,
@@ -372,6 +405,7 @@ def render_proxy(scene, records: list[dict], out: Path) -> dict:
         "fps": OUTPUT_FPS,
         "frame_count": OUTPUT_FRAMES,
         "total_seconds": time.perf_counter() - started_total,
+        "temporary_camera": True,
         "frames": hashes,
     }
 
@@ -405,7 +439,7 @@ def main() -> None:
     require(full.camera_records(scene) == before_cameras, "033 proxy changed native camera animation")
 
     receipt = {
-        "version": "coimbra-033-smooth-camera-motion-review-v1",
+        "version": "coimbra-033-smooth-camera-motion-review-v2",
         "source_030_run": lane031.EXPECTED_030_RUN,
         "source_030_revision": lane031.EXPECTED_030_REVISION,
         "source_030_blend_sha256": lane031.EXPECTED_BLEND_SHA256,
