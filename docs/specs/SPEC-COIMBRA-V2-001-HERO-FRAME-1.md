@@ -1,5 +1,7 @@
 # Coimbra V2-001 — Photogrammetry hero frame
 
+> **Status: research-only / not promoted.** Coimbra 032 remains the canonical production baseline. V2-001 may continue only as an isolated comparison experiment and must not be treated as the new main Coimbra path unless a human review explicitly finds a V2 result materially better than 032.
+
 ## Goal
 
 Prove a materially more realistic Coimbra representation before any new full-route
