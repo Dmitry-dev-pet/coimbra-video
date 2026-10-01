@@ -23,6 +23,7 @@ Read [AGENTS.md](AGENTS.md) before changing the project. Live branches, PRs, run
 | 029 | Render strategy benchmark | Frames 181–210: M4 CPU, Metal×1, Metal+CPU, Metal×2 processes vs accepted GitHub Actions CPU evidence |
 | 030 | Production-look A/B review | Accepted 026 scene; paired frames 1, 181 and 360; lighting/palette/color-management candidate; human review required before full-route promotion |
 | 031 | Production-look Metal full route | Accepted 030 v2 packed scene; 360 native frames / 12 s / 1600×1000; Metal delivery with attribution and independent verification |
+| 032 | 60 fps half-speed production look | Same accepted 030 v2 scene and route; 1,440 true Blender subframes / 60 fps / 24 s / 1600×1000; no repeated frames or optical flow |
 | 026 | Full native-route Cycles acceptance | 360 actual frames, 12 s, 30 fps, 1600×1000; render-only extension tracked in [PR #22](https://github.com/Dmitry-dev-pet/coimbra-video/pull/22) |
 
 **020 and 026 are different deliveries.** The 48-second EEVEE version is preserved; the 12-second Cycles acceptance pass does not overwrite or silently retime it. Renderer promotion does not imply that all asset/geometry realism issues are solved.
@@ -33,6 +34,7 @@ Useful entry points:
 - [025 Cycles checkpoint specification](docs/specs/SPEC-COIMBRA-CYCLES-BASELINE-1.md) and [workflow](.github/workflows/coimbra-025-cycles-production-baseline.yml).
 - [030 production-look review specification](docs/specs/SPEC-COIMBRA-PRODUCTION-LOOK-1.md) and [workflow](.github/workflows/coimbra-030-production-look.yml).
 - [031 production-look Metal full-route specification](docs/specs/SPEC-COIMBRA-PRODUCTION-LOOK-METAL-FULL-ROUTE-1.md) and [workflow](.github/workflows/coimbra-031-production-look-metal-full-route.yml).
+- [032 60 fps half-speed production-look specification](docs/specs/SPEC-COIMBRA-SLOW60-PRODUCTION-LOOK-1.md) and [workflow](.github/workflows/coimbra-032-slow60-production-look.yml).
 - [011–025 integration design and evidence rules](docs/INTEGRATION-011-025.md), implemented through [PR #23](https://github.com/Dmitry-dev-pet/coimbra-video/pull/23).
 - [Actions runs and downloadable artifacts](https://github.com/Dmitry-dev-pet/coimbra-video/actions).
 
