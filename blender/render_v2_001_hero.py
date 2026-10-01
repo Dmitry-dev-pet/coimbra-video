@@ -90,7 +90,14 @@ def import_photogrammetry(model: Path, registration: dict):
     return root, meshes
 
 
-def apply_photogrammetry_edge_fade(root, meshes, inspection: dict, fade_m: float) -> None:
+def apply_photogrammetry_surface_mask(
+    root,
+    meshes,
+    inspection: dict,
+    fade_m: float,
+    slope_fade_start: float = 0.18,
+    slope_fade_end: float = 0.62,
+) -> None:
     bounds = inspection["bounds"]
     min_x, min_y = float(bounds["min"][0]), float(bounds["min"][1])
     max_x, max_y = float(bounds["max"][0]), float(bounds["max"][1])
@@ -169,9 +176,44 @@ def apply_photogrammetry_edge_fade(root, meshes, inspection: dict, fade_m: float
         clamp_high.inputs[1].default_value = 1.0
         tree.links.new(clamp_low.outputs[0], clamp_high.inputs[0])
 
+        geometry = tree.nodes.new("ShaderNodeNewGeometry")
+        normal_split = tree.nodes.new("ShaderNodeSeparateXYZ")
+        tree.links.new(geometry.outputs["Normal"], normal_split.inputs["Vector"])
+
+        normal_abs = tree.nodes.new("ShaderNodeMath")
+        normal_abs.operation = "ABSOLUTE"
+        tree.links.new(normal_split.outputs["Z"], normal_abs.inputs[0])
+
+        slope_sub = tree.nodes.new("ShaderNodeMath")
+        slope_sub.operation = "SUBTRACT"
+        slope_sub.inputs[1].default_value = float(slope_fade_start)
+        tree.links.new(normal_abs.outputs[0], slope_sub.inputs[0])
+
+        slope_div = tree.nodes.new("ShaderNodeMath")
+        slope_div.operation = "DIVIDE"
+        slope_div.inputs[1].default_value = float(
+            max(1e-6, slope_fade_end - slope_fade_start)
+        )
+        tree.links.new(slope_sub.outputs[0], slope_div.inputs[0])
+
+        slope_low = tree.nodes.new("ShaderNodeMath")
+        slope_low.operation = "MAXIMUM"
+        slope_low.inputs[1].default_value = 0.0
+        tree.links.new(slope_div.outputs[0], slope_low.inputs[0])
+
+        slope_high = tree.nodes.new("ShaderNodeMath")
+        slope_high.operation = "MINIMUM"
+        slope_high.inputs[1].default_value = 1.0
+        tree.links.new(slope_low.outputs[0], slope_high.inputs[0])
+
+        visibility = tree.nodes.new("ShaderNodeMath")
+        visibility.operation = "MULTIPLY"
+        tree.links.new(clamp_high.outputs[0], visibility.inputs[0])
+        tree.links.new(slope_high.outputs[0], visibility.inputs[1])
+
         transparent = tree.nodes.new("ShaderNodeBsdfTransparent")
         mix = tree.nodes.new("ShaderNodeMixShader")
-        tree.links.new(clamp_high.outputs[0], mix.inputs[0])
+        tree.links.new(visibility.outputs[0], mix.inputs[0])
         tree.links.new(transparent.outputs[0], mix.inputs[1])
         tree.links.new(source_socket, mix.inputs[2])
         tree.links.new(mix.outputs[0], surface)
@@ -205,7 +247,16 @@ def main() -> None:
 
     root, meshes = import_photogrammetry(model, registration)
     edge_fade_m = 100.0
-    apply_photogrammetry_edge_fade(root, meshes, inspection, edge_fade_m)
+    slope_fade_start = 0.18
+    slope_fade_end = 0.62
+    apply_photogrammetry_surface_mask(
+        root,
+        meshes,
+        inspection,
+        edge_fade_m,
+        slope_fade_start=slope_fade_start,
+        slope_fade_end=slope_fade_end,
+    )
 
     camera_data = bpy.data.cameras.new("V2_001_Hero_Camera")
     camera = bpy.data.objects.new("V2_001_Hero_Camera", camera_data)
@@ -315,12 +366,14 @@ def main() -> None:
         "render_seconds": elapsed,
         "resolution": cfg["hero"]["resolution"],
         "lens_mm": review_lens_mm,
-        "visual_revision": "composition-triple-review-v3",
+        "visual_revision": "slope-masked-photogrammetry-v4",
         "review_variants": variant_receipts,
         "selected_variant": selected_variant["name"],
         "camera_z_lift_m": camera_z_lift_m,
         "target_z_offset_m": target_z_offset_m,
         "photogrammetry_edge_fade_m": edge_fade_m,
+        "photogrammetry_slope_fade_start_abs_nz": slope_fade_start,
+        "photogrammetry_slope_fade_end_abs_nz": slope_fade_end,
         "cycles_samples": cfg["hero"]["cycles_samples"],
         "metal_devices": metal_devices,
         "motion_blur": False,
