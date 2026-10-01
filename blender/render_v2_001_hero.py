@@ -20,6 +20,7 @@ import build_dgt_terrain_scene as terrain_builder
 CONFIG = ROOT / "config" / "coimbra_v2_001.json"
 SOURCE_MANIFEST = ROOT / "bridge_output_v2_001" / "photogrammetry" / "source-manifest.json"
 REGISTRATION = ROOT / "bridge_output_v2_001" / "registration" / "registration.json"
+INSPECTION = ROOT / "bridge_output_v2_001" / "registration" / "photogrammetry-inspection.json"
 DGT_ROOT = ROOT / "bridge_output_v2_001" / "dgt"
 ORTHO = DGT_ROOT / "ortho" / "coimbra-v2-001-ortho-2025.jpg"
 TERRAIN = DGT_ROOT / "prepared" / "coimbra-v2-001-terrain-2m.npz"
@@ -88,14 +89,102 @@ def import_photogrammetry(model: Path, registration: dict):
     return root, meshes
 
 
+def apply_photogrammetry_edge_fade(root, meshes, inspection: dict, fade_m: float) -> None:
+    bounds = inspection["bounds"]
+    min_x, min_y = float(bounds["min"][0]), float(bounds["min"][1])
+    max_x, max_y = float(bounds["max"][0]), float(bounds["max"][1])
+
+    materials = {}
+    for mesh in meshes:
+        for slot in mesh.material_slots:
+            if slot.material is not None:
+                materials[slot.material.name_full] = slot.material
+
+    for material in materials.values():
+        material.use_nodes = True
+        tree = material.node_tree
+        output = next(
+            (node for node in tree.nodes if node.type == "OUTPUT_MATERIAL" and node.is_active_output),
+            None,
+        )
+        if output is None:
+            continue
+        surface = output.inputs.get("Surface")
+        if surface is None or not surface.is_linked:
+            continue
+
+        source_socket = surface.links[0].from_socket
+        tree.links.remove(surface.links[0])
+
+        tex = tree.nodes.new("ShaderNodeTexCoord")
+        tex.object = root
+        separate = tree.nodes.new("ShaderNodeSeparateXYZ")
+        tree.links.new(tex.outputs["Object"], separate.inputs["Vector"])
+
+        distances = []
+        for axis, bound, operation in (
+            ("X", min_x, "SUBTRACT"),
+            ("X", max_x, "SUBTRACT"),
+            ("Y", min_y, "SUBTRACT"),
+            ("Y", max_y, "SUBTRACT"),
+        ):
+            node = tree.nodes.new("ShaderNodeMath")
+            node.operation = operation
+            if bound in (min_x, min_y):
+                tree.links.new(separate.outputs[axis], node.inputs[0])
+                node.inputs[1].default_value = bound
+            else:
+                node.inputs[0].default_value = bound
+                tree.links.new(separate.outputs[axis], node.inputs[1])
+            distances.append(node)
+
+        min_a = tree.nodes.new("ShaderNodeMath")
+        min_a.operation = "MINIMUM"
+        tree.links.new(distances[0].outputs[0], min_a.inputs[0])
+        tree.links.new(distances[1].outputs[0], min_a.inputs[1])
+
+        min_b = tree.nodes.new("ShaderNodeMath")
+        min_b.operation = "MINIMUM"
+        tree.links.new(distances[2].outputs[0], min_b.inputs[0])
+        tree.links.new(distances[3].outputs[0], min_b.inputs[1])
+
+        min_all = tree.nodes.new("ShaderNodeMath")
+        min_all.operation = "MINIMUM"
+        tree.links.new(min_a.outputs[0], min_all.inputs[0])
+        tree.links.new(min_b.outputs[0], min_all.inputs[1])
+
+        divide = tree.nodes.new("ShaderNodeMath")
+        divide.operation = "DIVIDE"
+        divide.inputs[1].default_value = float(fade_m)
+        tree.links.new(min_all.outputs[0], divide.inputs[0])
+
+        clamp_low = tree.nodes.new("ShaderNodeMath")
+        clamp_low.operation = "MAXIMUM"
+        clamp_low.inputs[1].default_value = 0.0
+        tree.links.new(divide.outputs[0], clamp_low.inputs[0])
+
+        clamp_high = tree.nodes.new("ShaderNodeMath")
+        clamp_high.operation = "MINIMUM"
+        clamp_high.inputs[1].default_value = 1.0
+        tree.links.new(clamp_low.outputs[0], clamp_high.inputs[0])
+
+        transparent = tree.nodes.new("ShaderNodeBsdfTransparent")
+        mix = tree.nodes.new("ShaderNodeMixShader")
+        tree.links.new(clamp_high.outputs[0], mix.inputs[0])
+        tree.links.new(transparent.outputs[0], mix.inputs[1])
+        tree.links.new(source_socket, mix.inputs[2])
+        tree.links.new(mix.outputs[0], surface)
+
+
 def main() -> None:
-    for path in (CONFIG, SOURCE_MANIFEST, REGISTRATION, ORTHO, TERRAIN):
+    for path in (CONFIG, SOURCE_MANIFEST, REGISTRATION, INSPECTION, ORTHO, TERRAIN):
         if not path.is_file():
             raise SystemExit(f"Missing V2-001 hero input: {path}")
 
     cfg = json.loads(CONFIG.read_text())
     source = json.loads(SOURCE_MANIFEST.read_text())
     registration = json.loads(REGISTRATION.read_text())
+    inspection = json.loads(INSPECTION.read_text())
     model = ROOT / source["scene"]
     if not model.is_file():
         raise SystemExit(f"Missing photogrammetry scene: {model}")
@@ -114,15 +203,31 @@ def main() -> None:
     terrain_obj["v2_role"] = "DGT context"
 
     root, meshes = import_photogrammetry(model, registration)
+    edge_fade_m = 50.0
+    apply_photogrammetry_edge_fade(root, meshes, inspection, edge_fade_m)
 
     camera_data = bpy.data.cameras.new("V2_001_Hero_Camera")
     camera = bpy.data.objects.new("V2_001_Hero_Camera", camera_data)
     bpy.context.collection.objects.link(camera)
-    camera.location = tuple(registration["hero_camera_local"])
-    camera_data.lens = float(cfg["hero"]["lens_mm"])
+    base_camera = registration["hero_camera_local"]
+    base_target = registration["hero_target_local"]
+    camera_z_lift_m = 70.0
+    target_z_offset_m = -25.0
+    review_lens_mm = 70.0
+    camera.location = (
+        float(base_camera[0]),
+        float(base_camera[1]),
+        float(base_camera[2]) + camera_z_lift_m,
+    )
+    camera_data.lens = review_lens_mm
     camera_data.sensor_width = 36.0
     camera_data.dof.use_dof = False
-    look_at(camera, registration["hero_target_local"])
+    review_target = (
+        float(base_target[0]),
+        float(base_target[1]),
+        float(base_target[2]) + target_z_offset_m,
+    )
+    look_at(camera, review_target)
 
     scene = bpy.context.scene
     scene.camera = camera
@@ -182,7 +287,11 @@ def main() -> None:
         "image_sha256": digest(IMAGE),
         "render_seconds": elapsed,
         "resolution": cfg["hero"]["resolution"],
-        "lens_mm": cfg["hero"]["lens_mm"],
+        "lens_mm": review_lens_mm,
+        "visual_revision": "composition-edge-fade-v2",
+        "camera_z_lift_m": camera_z_lift_m,
+        "target_z_offset_m": target_z_offset_m,
+        "photogrammetry_edge_fade_m": edge_fade_m,
         "cycles_samples": cfg["hero"]["cycles_samples"],
         "metal_devices": metal_devices,
         "motion_blur": False,
