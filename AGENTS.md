@@ -283,3 +283,20 @@ forward-target spline; do not interpolate Euler angles directly.
 motion blur disabled. The accepted 032 video is used only as the left-hand visual
 baseline for the side-by-side review. Passing the independent verifier does not
 authorize a full Cycles render; human review is required first.
+
+
+## Visual polish review lane 035
+
+`feature/coimbra-035-visual-polish-review` is a review-only derivative of the
+accepted Coimbra 032 delivery. Camera animation, fractional-frame timing, route
+speed, framing and production geometry are frozen.
+
+The only permitted review variants are the four fixed variants in
+`docs/specs/SPEC-COIMBRA-VISUAL-POLISH-1.md`: baseline, isolated
+180-degree-equivalent motion blur, isolated subtle atmosphere/light rebalance,
+and isolated 64-sample quality.
+
+Use only output checkpoints `121, 421, 721, 1021, 1321`. The review must
+restore accepted scene state after every temporary change and must not save a
+modified production blend. Passing 035 verification does not authorize a full
+render; human visual review is required first.
