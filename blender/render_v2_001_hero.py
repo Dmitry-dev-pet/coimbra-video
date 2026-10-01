@@ -304,7 +304,7 @@ def main() -> None:
     root, meshes = import_photogrammetry(model, registration)
     face_cull = cull_near_vertical_photogrammetry_faces(
         meshes,
-        max_abs_normal_z=0.15,
+        max_abs_normal_z=0.45,
     )
     edge_fade_m = 100.0
     slope_fade_start = 0.18
@@ -426,7 +426,7 @@ def main() -> None:
         "render_seconds": elapsed,
         "resolution": cfg["hero"]["resolution"],
         "lens_mm": review_lens_mm,
-        "visual_revision": "geometric-steep-face-cull-v6",
+        "visual_revision": "strong-steep-face-cull-review-v7",
         "review_variants": variant_receipts,
         "selected_variant": selected_variant["name"],
         "camera_z_lift_m": camera_z_lift_m,
