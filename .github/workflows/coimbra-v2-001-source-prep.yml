@@ -1,0 +1,78 @@
+name: Coimbra V2-001 source prep
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dgt:
+    if: github.event.issue.user.login == 'Dmitry-dev-pet' && github.event.issue.title == '[v2] coimbra-001-source-prep'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DGT_USER: ${{ secrets.DGT_USER }}
+      DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install DGT preparation dependencies
+        run: python -m pip install --disable-pip-version-check numpy==2.3.3 requests==2.32.5 pillow==11.3.0 pyproj==3.7.2 rasterio==1.4.3
+      - name: Prepare historic-core DGT sources
+        run: python scripts/prepare_v2_001_dgt.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-v2-001-dgt
+          path: bridge_output_v2_001/dgt
+          compression-level: 1
+          retention-days: 30
+          if-no-files-found: error
+
+  photogrammetry:
+    if: github.event.issue.user.login == 'Dmitry-dev-pet' && github.event.issue.title == '[v2] coimbra-001-source-prep'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SKETCHFAB_TOKEN: ${{ secrets.SKETCHFAB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --disable-pip-version-check requests==2.32.5
+      - name: Download fixed CC Attribution photogrammetry
+        run: python scripts/fetch_sketchfab_v2_001.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-v2-001-photogrammetry
+          path: bridge_output_v2_001/photogrammetry
+          compression-level: 1
+          retention-days: 30
+          if-no-files-found: error
+
+  receipt:
+    if: always() && github.event.issue.user.login == 'Dmitry-dev-pet' && github.event.issue.title == '[v2] coimbra-001-source-prep'
+    needs: [dgt, photogrammetry]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE: ${{ github.event.issue.number }}
+      DGT_RESULT: ${{ needs.dgt.result }}
+      PHOTO_RESULT: ${{ needs.photogrammetry.result }}
+    steps:
+      - name: Publish sanitized receipt
+        run: |
+          body="Coimbra V2-001 source prep: DGT=`$DGT_RESULT`, photogrammetry=`$PHOTO_RESULT`."
+          if [ "$DGT_RESULT" = "success" ] && [ "$PHOTO_RESULT" = "success" ]; then
+            body="$body Both fixed source artifacts are ready for registration."
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
+            gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --reason completed
+          else
+            body="$body Inspect the Actions run. No credential values are emitted."
+            gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
+          fi
