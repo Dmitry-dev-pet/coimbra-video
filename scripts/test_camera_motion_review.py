@@ -47,7 +47,7 @@ class CameraMotionReviewTests(unittest.TestCase):
         }
 
         self.receipt = {
-            "version": "coimbra-033-smooth-camera-motion-review-v1",
+            "version": "coimbra-033-smooth-camera-motion-review-v2",
             "source_030_run": 36720891074,
             "source_030_revision": "v2-shadow-recovery",
             "source_030_blend_sha256": "5fe8ca9e8605c6ea1908d8a814f9ad5209248c606b34ebbbb3dd47607edff881",
@@ -85,7 +85,19 @@ class CameraMotionReviewTests(unittest.TestCase):
                 "fps": 60,
                 "frame_count": 1440,
                 "total_seconds": 100.0,
-                "frames": {str(i): {"sha256": "a" * 64, "bytes": 1, "seconds": 0.1} for i in range(1, 1441)},
+                "temporary_camera": True,
+                "frames": {
+                    str(i): {
+                        "sha256": f"{i:064x}",
+                        "bytes": 1,
+                        "seconds": 0.1,
+                        "camera_location_after_render": deepcopy(records[i - 1]["location"]),
+                        "camera_quaternion_after_render": deepcopy(records[i - 1]["quaternion"]),
+                        "lens_after_render": records[i - 1]["lens"],
+                        "focus_distance_after_render": records[i - 1]["focus_distance"],
+                    }
+                    for i in range(1, 1441)
+                },
             },
             "smooth_records": records,
         }
@@ -118,6 +130,17 @@ class CameraMotionReviewTests(unittest.TestCase):
 
     def test_reject_wrong_fps(self):
         self.proxy_probe["streams"][0]["r_frame_rate"] = "30/1"
+        with self.assertRaises(ValueError):
+            validate(self.receipt, self.proxy_probe)
+
+    def test_reject_static_proxy_frames(self):
+        for item in self.receipt["proxy"]["frames"].values():
+            item["sha256"] = "a" * 64
+        with self.assertRaises(ValueError):
+            validate(self.receipt, self.proxy_probe)
+
+    def test_reject_rendered_camera_reset(self):
+        self.receipt["proxy"]["frames"]["721"]["camera_location_after_render"] = [0.0, 0.0, 0.0]
         with self.assertRaises(ValueError):
             validate(self.receipt, self.proxy_probe)
 
