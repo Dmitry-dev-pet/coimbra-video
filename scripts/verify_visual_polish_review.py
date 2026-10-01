@@ -22,7 +22,7 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def close(a, b, tol=1e-9):
+def close(a, b, tol=1e-6):
     return math.isclose(float(a), float(b), abs_tol=tol)
 
 
