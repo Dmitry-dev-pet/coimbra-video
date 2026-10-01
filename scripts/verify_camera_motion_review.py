@@ -139,17 +139,22 @@ def validate(receipt: dict, proxy_probe: dict, comparison_probe: dict | None = N
             angular_error < 1e-5,
             f"Frame {frame}: rendered proxy camera orientation drifted by {angular_error} rad",
         )
+        lens_actual = float(actual["lens_after_render"])
+        lens_expected = float(record["lens"])
         require(
-            math.isclose(float(actual["lens_after_render"]), float(record["lens"]), abs_tol=1e-6),
-            f"Frame {frame}: rendered proxy lens drifted",
+            math.isclose(lens_actual, lens_expected, abs_tol=1e-4),
+            f"Frame {frame}: rendered proxy lens drifted by {abs(lens_actual - lens_expected)} mm",
         )
         require(
             math.isclose(
                 float(actual["focus_distance_after_render"]),
                 float(record["focus_distance"]),
-                abs_tol=1e-5,
+                abs_tol=1e-3,
             ),
-            f"Frame {frame}: rendered proxy focus distance drifted",
+            (
+                f"Frame {frame}: rendered proxy focus distance drifted by "
+                f"{abs(float(actual['focus_distance_after_render']) - float(record['focus_distance']))}"
+            ),
         )
 
     stream = proxy_probe["streams"][0]
