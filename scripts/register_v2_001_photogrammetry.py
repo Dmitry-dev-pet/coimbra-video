@@ -65,6 +65,38 @@ def dgt_local_xy(
     return absolute - center_abs
 
 
+def dgt_feature_crop(
+    image: np.ndarray,
+    meta: dict,
+    center_abs: np.ndarray,
+    window_m: float = 1200.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Crop DGT around the fixed V2 center before feature matching.
+
+    The photogrammetry footprint is only about 0.7 km across. Matching it
+    against the complete 2.35 x 1.82 km orthophoto after a global resize
+    destroys comparable feature scale and adds irrelevant city clutter.
+    """
+    width, height = meta["image_size"]
+    minx, miny, maxx, maxy = [float(v) for v in meta["bbox_epsg3763"]]
+    meters_per_px_x = (maxx - minx) / (width - 1)
+    meters_per_px_y = (maxy - miny) / (height - 1)
+
+    center_px_x = (float(center_abs[0]) - minx) / (maxx - minx) * (width - 1)
+    center_px_y = (maxy - float(center_abs[1])) / (maxy - miny) * (height - 1)
+
+    half_w = int(round((window_m * 0.5) / meters_per_px_x))
+    half_h = int(round((window_m * 0.5) / meters_per_px_y))
+    x0 = max(0, int(round(center_px_x)) - half_w)
+    x1 = min(width, int(round(center_px_x)) + half_w)
+    y0 = max(0, int(round(center_px_y)) - half_h)
+    y1 = min(height, int(round(center_px_y)) + half_h)
+    if x1 - x0 < 1000 or y1 - y0 < 1000:
+        raise RuntimeError("DGT feature crop is unexpectedly small")
+
+    return image[y0:y1, x0:x1], np.array([x0, y0], dtype=np.float64)
+
+
 def grid_indices(
     xs: np.ndarray,
     ys: np.ndarray,
@@ -246,9 +278,16 @@ def main() -> None:
         raise RuntimeError("Could not load registration images")
 
     photo, photo_scale = resize_for_features(photo_full)
-    dgt, dgt_scale = resize_for_features(dgt_full)
+    dgt_crop_full, dgt_crop_origin = dgt_feature_crop(
+        dgt_full, ortho_meta, center_abs
+    )
+    dgt, dgt_scale = resize_for_features(dgt_crop_full, max_side=3200)
 
-    detector = cv2.SIFT_create(nfeatures=10_000)
+    detector = cv2.SIFT_create(
+        nfeatures=15_000,
+        contrastThreshold=0.02,
+        edgeThreshold=15,
+    )
     kp_photo, desc_photo = detector.detectAndCompute(enhanced_gray(photo), None)
     kp_dgt, desc_dgt = detector.detectAndCompute(enhanced_gray(dgt), None)
     if desc_photo is None or desc_dgt is None:
@@ -256,7 +295,7 @@ def main() -> None:
 
     matcher = cv2.BFMatcher(cv2.NORM_L2)
     pairs = matcher.knnMatch(desc_photo, desc_dgt, k=2)
-    good = [a for a, b in pairs if a.distance < 0.72 * b.distance]
+    good = [a for a, b in pairs if a.distance < 0.80 * b.distance]
 
     # Do not reject a registration merely because the tentative-match count is
     # below an arbitrary pre-RANSAC floor.  The real acceptance gate below
@@ -272,9 +311,11 @@ def main() -> None:
     photo_px = np.array(
         [kp_photo[m.queryIdx].pt for m in good], dtype=np.float64
     ) / photo_scale
-    dgt_px = np.array(
-        [kp_dgt[m.trainIdx].pt for m in good], dtype=np.float64
-    ) / dgt_scale
+    dgt_px = (
+        np.array([kp_dgt[m.trainIdx].pt for m in good], dtype=np.float64)
+        / dgt_scale
+        + dgt_crop_origin
+    )
 
     source_xy = model_xy(photo_px, inspection)
     target_xy = dgt_local_xy(dgt_px, ortho_meta, center_abs)
