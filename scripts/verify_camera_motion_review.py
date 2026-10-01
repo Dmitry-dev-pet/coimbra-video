@@ -30,7 +30,7 @@ def vec_distance(a, b):
 
 
 def validate(receipt: dict, proxy_probe: dict, comparison_probe: dict | None = None) -> dict:
-    require(receipt["version"] == "coimbra-033-smooth-camera-motion-review-v1", "Unknown 033 receipt schema")
+    require(receipt["version"] == "coimbra-033-smooth-camera-motion-review-v2", "Unknown 033 receipt schema")
     require(receipt["source_030_run"] == EXPECTED_030_RUN, "Wrong 030 source run")
     require(receipt["source_030_revision"] == EXPECTED_030_REVISION, "Wrong 030 revision")
     require(receipt["source_030_blend_sha256"] == EXPECTED_BLEND_SHA256, "Wrong 030 blend")
@@ -114,7 +114,43 @@ def validate(receipt: dict, proxy_probe: dict, comparison_probe: dict | None = N
     require(proxy["fps"] == EXPECTED_FPS, "Proxy receipt fps mismatch")
     require(proxy["frame_count"] == EXPECTED_FRAMES, "Proxy receipt frame count mismatch")
     require(proxy["total_seconds"] > 0, "Proxy render time invalid")
+    require(proxy.get("temporary_camera") is True, "033 proxy did not use a detached camera")
     require(len(proxy["frames"]) == EXPECTED_FRAMES, "Proxy frame receipt coverage incomplete")
+
+    unique_hashes = {item["sha256"] for item in proxy["frames"].values()}
+    require(
+        len(unique_hashes) >= int(EXPECTED_FRAMES * 0.95),
+        f"Proxy has too many duplicate rendered frames: {len(unique_hashes)} unique",
+    )
+
+    for record in records:
+        frame = str(record["output_frame"])
+        actual = proxy["frames"][frame]
+        require(
+            vec_distance(actual["camera_location_after_render"], record["location"]) < 1e-6,
+            f"Frame {frame}: rendered proxy camera location drifted",
+        )
+        qa = actual["camera_quaternion_after_render"]
+        qb = record["quaternion"]
+        dot = abs(sum(float(a) * float(b) for a, b in zip(qa, qb)))
+        dot = max(-1.0, min(1.0, dot))
+        angular_error = 2.0 * math.acos(dot)
+        require(
+            angular_error < 1e-5,
+            f"Frame {frame}: rendered proxy camera orientation drifted by {angular_error} rad",
+        )
+        require(
+            math.isclose(float(actual["lens_after_render"]), float(record["lens"]), abs_tol=1e-6),
+            f"Frame {frame}: rendered proxy lens drifted",
+        )
+        require(
+            math.isclose(
+                float(actual["focus_distance_after_render"]),
+                float(record["focus_distance"]),
+                abs_tol=1e-5,
+            ),
+            f"Frame {frame}: rendered proxy focus distance drifted",
+        )
 
     stream = proxy_probe["streams"][0]
     require(stream["codec_name"] == "h264", "Proxy is not H.264")
