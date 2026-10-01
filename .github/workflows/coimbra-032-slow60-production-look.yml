@@ -1,0 +1,31 @@
+name: Coimbra 032 slow60 production-look contract
+
+on:
+  pull_request:
+    paths:
+      - blender/render_production_look_slow60_metal.py
+      - scripts/verify_production_look_slow60_metal.py
+      - scripts/test_production_look_slow60_metal.py
+      - docs/specs/SPEC-COIMBRA-SLOW60-PRODUCTION-LOOK-1.md
+      - .github/workflows/coimbra-032-slow60-production-look.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile 032 scripts
+        run: |
+          python -m compileall -q \
+            blender/render_production_look_slow60_metal.py \
+            scripts/verify_production_look_slow60_metal.py \
+            scripts/test_production_look_slow60_metal.py
+      - name: Run Blender-free 032 acceptance tests
+        run: python -m unittest discover -s scripts -p 'test_production_look_slow60_metal.py' -v
