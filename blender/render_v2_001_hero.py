@@ -9,6 +9,7 @@ import sys
 import time
 
 import bpy
+import bmesh
 import numpy as np
 from mathutils import Vector
 
@@ -88,6 +89,61 @@ def import_photogrammetry(model: Path, registration: dict):
     root["source"] = "Sketchfab VirtualPhoto3D Coimbra photogrammetry"
     root["license"] = "CC Attribution"
     return root, meshes
+
+
+def cull_near_vertical_photogrammetry_faces(
+    meshes,
+    max_abs_normal_z: float = 0.15,
+) -> dict:
+    total_faces = 0
+    removed_faces = 0
+    affected_meshes = 0
+
+    for obj in meshes:
+        mesh = obj.data
+        polygon_count = len(mesh.polygons)
+        total_faces += polygon_count
+        if polygon_count == 0:
+            continue
+
+        normals = np.empty(polygon_count * 3, dtype=np.float64)
+        mesh.polygons.foreach_get("normal", normals)
+        normals = normals.reshape((-1, 3))
+
+        matrix = np.asarray(obj.matrix_world.to_3x3(), dtype=np.float64)
+        world_normals = normals @ matrix.T
+        lengths = np.linalg.norm(world_normals, axis=1)
+        abs_nz = np.abs(
+            world_normals[:, 2] / np.maximum(lengths, 1e-12)
+        )
+        remove_indices = np.flatnonzero(abs_nz < float(max_abs_normal_z))
+        if remove_indices.size == 0:
+            continue
+
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        bm.faces.ensure_lookup_table()
+        delete_faces = [bm.faces[int(i)] for i in remove_indices]
+        bmesh.ops.delete(bm, geom=delete_faces, context="FACES")
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.update()
+
+        removed_faces += int(remove_indices.size)
+        affected_meshes += 1
+
+    receipt = {
+        "max_abs_normal_z": float(max_abs_normal_z),
+        "total_faces_before": int(total_faces),
+        "removed_faces": int(removed_faces),
+        "remaining_faces": int(total_faces - removed_faces),
+        "affected_meshes": int(affected_meshes),
+        "removed_fraction": (
+            float(removed_faces / total_faces) if total_faces else 0.0
+        ),
+    }
+    print("photogrammetry face cull:", json.dumps(receipt, sort_keys=True))
+    return receipt
 
 
 def apply_photogrammetry_surface_mask(
@@ -246,6 +302,10 @@ def main() -> None:
     terrain_obj["v2_role"] = "DGT context"
 
     root, meshes = import_photogrammetry(model, registration)
+    face_cull = cull_near_vertical_photogrammetry_faces(
+        meshes,
+        max_abs_normal_z=0.15,
+    )
     edge_fade_m = 100.0
     slope_fade_start = 0.18
     slope_fade_end = 0.62
@@ -366,7 +426,7 @@ def main() -> None:
         "render_seconds": elapsed,
         "resolution": cfg["hero"]["resolution"],
         "lens_mm": review_lens_mm,
-        "visual_revision": "true-normal-slope-mask-v5",
+        "visual_revision": "geometric-steep-face-cull-v6",
         "review_variants": variant_receipts,
         "selected_variant": selected_variant["name"],
         "camera_z_lift_m": camera_z_lift_m,
@@ -380,6 +440,7 @@ def main() -> None:
         "depth_of_field": False,
         "cinematic_grade": False,
         "photogrammetry_meshes": len(meshes),
+        "photogrammetry_face_cull": face_cull,
         "photogrammetry_transform": {
             "scale": registration["scale"],
             "rotation_z_degrees": registration["rotation_z_degrees"],
