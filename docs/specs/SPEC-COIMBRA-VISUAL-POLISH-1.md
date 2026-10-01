@@ -37,7 +37,8 @@ Render exactly these 032 output frames:
 
 They cover the route at approximately 2, 7, 12, 17 and 22 seconds while
 remaining away from the animation endpoints, which avoids boundary artifacts in
-the motion-blur comparison.
+the motion-blur comparison. These checkpoints are review evidence only and do
+not replace the accepted 032 full-route timing contract.
 
 All variants must use the exact same evaluated camera state at every checkpoint.
 
