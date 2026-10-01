@@ -245,3 +245,19 @@ full 360-frame candidate movie until the paired stills have been visually review
 030 materials, world, lights, color management, non-light structure and complete
 production camera path remain frozen. The final H.264 delivery must contain visible
 DGT/OpenStreetMap attribution and pass independent 360-frame verification.
+
+
+## Slow60 production-look lane 032
+
+`feature/coimbra-032-slow60-production-look` is a timing/sampling-only derivative
+of the accepted 030 v2 production look. It must use the exact 030 packed scene from
+run `36720891074` and preserve materials, world, lights, color management,
+non-light structure and the complete native 360-frame production camera path.
+
+032 renders 1,440 real images by evaluating Blender at fractional source frames
+from 1.0 through 360.0 using `1 + (k - 1) * 359 / 1439`. It must not move camera
+keyframes, repeat rendered frames, use optical flow or use AI interpolation.
+
+The final delivery is 60 fps / 24 seconds / 1600×1000. It traverses the same complete
+route at half the 031 playback speed while providing four times the rendered temporal
+samples. Apple Metal is the only permitted execution backend for the accepted delivery.
