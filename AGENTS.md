@@ -283,3 +283,10 @@ forward-target spline; do not interpolate Euler angles directly.
 motion blur disabled. The accepted 032 video is used only as the left-hand visual
 baseline for the side-by-side review. Passing the independent verifier does not
 authorize a full Cycles render; human review is required first.
+
+
+## WebGPU feasibility lane 034
+
+`feature/coimbra-034-webgpu-feasibility` is a parallel browser-renderer experiment. It may read the pinned DGT 6 m terrain, public OSM data through the existing fetch/prepare path, and the governed `COIMBRA-BRIDGE-003-SLOW` camera anchors. It must not mutate, replace or republish the accepted Blender scene, camera keyframes, materials, lights or production render contracts.
+
+Generated 250 m web tiles are build artifacts, not a new geodata source of truth. Ordinary 034 CI must not acquire authenticated DGT sources or credentials. Passing CI proves reproducibility only; browser performance requires a separate exported benchmark receipt on the target device before any promotion.
