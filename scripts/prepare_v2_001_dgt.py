@@ -43,6 +43,11 @@ def main() -> None:
     # acquisition path and consumes DGT_USER/DGT_PASSWORD only when anonymous CDD
     # access is unavailable.
     ortho.main()
+    generated_ortho_meta = ortho.OUT.parent / "bridge_ortho_2025.json"
+    ortho_meta = ortho.OUT.parent / "coimbra-v2-001-ortho-2025.json"
+    if generated_ortho_meta != ortho_meta:
+        generated_ortho_meta.replace(ortho_meta)
+
     highres.main()
     prepare.main()
 
@@ -50,7 +55,7 @@ def main() -> None:
         "version": "coimbra-v2-001-dgt-v1",
         "config": CONFIG.relative_to(ROOT).as_posix(),
         "ortho": ortho.OUT.relative_to(ROOT).as_posix(),
-        "ortho_metadata": ortho.OUT.with_suffix(".json").relative_to(ROOT).as_posix(),
+        "ortho_metadata": ortho_meta.relative_to(ROOT).as_posix(),
         "highres_manifest": prepare.META_JSON.relative_to(ROOT).as_posix(),
         "terrain": prepare.TERRAIN_NPZ.relative_to(ROOT).as_posix(),
         "height_above_ground": prepare.HAG_NPZ.relative_to(ROOT).as_posix(),
