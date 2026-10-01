@@ -25,6 +25,7 @@ Read [AGENTS.md](AGENTS.md) before changing the project. Live branches, PRs, run
 | 031 | Production-look Metal full route | Accepted 030 v2 packed scene; 360 native frames / 12 s / 1600×1000; Metal delivery with attribution and independent verification |
 | 032 | 60 fps half-speed production look | Same accepted 030 v2 scene and route; 1,440 true Blender subframes / 60 fps / 24 s / 1600×1000; no repeated frames or optical flow |
 | 033 | Smooth camera-motion review | Same seven route anchors; Catmull–Rom + global arc-length timing; 1,440-frame 60 fps motion-only EEVEE proxy and side-by-side review against 032 |
+| 034 | WebGPU feasibility | Parallel browser renderer: DGT terrain + public OSM in 250 m tiles, WebGPURenderer streaming/LOD, governed route playback and browser performance receipts |
 | 026 | Full native-route Cycles acceptance | 360 actual frames, 12 s, 30 fps, 1600×1000; render-only extension tracked in [PR #22](https://github.com/Dmitry-dev-pet/coimbra-video/pull/22) |
 
 **020 and 026 are different deliveries.** The 48-second EEVEE version is preserved; the 12-second Cycles acceptance pass does not overwrite or silently retime it. Renderer promotion does not imply that all asset/geometry realism issues are solved.
@@ -37,6 +38,7 @@ Useful entry points:
 - [031 production-look Metal full-route specification](docs/specs/SPEC-COIMBRA-PRODUCTION-LOOK-METAL-FULL-ROUTE-1.md) and [workflow](.github/workflows/coimbra-031-production-look-metal-full-route.yml).
 - [032 60 fps half-speed production-look specification](docs/specs/SPEC-COIMBRA-SLOW60-PRODUCTION-LOOK-1.md) and [workflow](.github/workflows/coimbra-032-slow60-production-look.yml).
 - [033 smooth camera-motion review specification](docs/specs/SPEC-COIMBRA-SMOOTH-CAMERA-MOTION-1.md) and [workflow](.github/workflows/coimbra-033-smooth-camera-motion.yml).
+- [034 WebGPU feasibility specification](docs/specs/SPEC-COIMBRA-WEBGPU-FEASIBILITY-1.md) and [workflow](.github/workflows/coimbra-034-webgpu-feasibility.yml).
 - [011–025 integration design and evidence rules](docs/INTEGRATION-011-025.md), implemented through [PR #23](https://github.com/Dmitry-dev-pet/coimbra-video/pull/23).
 - [Actions runs and downloadable artifacts](https://github.com/Dmitry-dev-pet/coimbra-video/actions).
 
