@@ -42,6 +42,21 @@ def enhanced_gray(image: np.ndarray) -> np.ndarray:
     return cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
 
 
+def roof_chroma(image: np.ndarray) -> np.ndarray:
+    """Emphasize red-tile vs vegetation/stone structure independent of brightness."""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    a_channel = lab[:, :, 1]
+    return cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(a_channel)
+
+
+def unique_train_matches(matches):
+    """Keep the strongest descriptor match for each DGT feature."""
+    chosen = {}
+    for match in sorted(matches, key=lambda item: item.distance):
+        chosen.setdefault(match.trainIdx, match)
+    return list(chosen.values())
+
+
 def model_xy(points: np.ndarray, inspection: dict) -> np.ndarray:
     width, height = inspection["topdown_size"]
     bounds = inspection["topdown_model_xy"]
@@ -284,61 +299,121 @@ def main() -> None:
     dgt, dgt_scale = resize_for_features(dgt_crop_full, max_side=3200)
 
     detector = cv2.SIFT_create(
-        nfeatures=15_000,
-        contrastThreshold=0.02,
+        nfeatures=18_000,
+        contrastThreshold=0.015,
         edgeThreshold=15,
     )
-    kp_photo, desc_photo = detector.detectAndCompute(enhanced_gray(photo), None)
-    kp_dgt, desc_dgt = detector.detectAndCompute(enhanced_gray(dgt), None)
-    if desc_photo is None or desc_dgt is None:
-        raise RuntimeError("SIFT found no usable descriptors")
-
     matcher = cv2.BFMatcher(cv2.NORM_L2)
-    pairs = matcher.knnMatch(desc_photo, desc_dgt, k=2)
-    good = [a for a, b in pairs if a.distance < 0.80 * b.distance]
 
-    # Do not reject a registration merely because the tentative-match count is
-    # below an arbitrary pre-RANSAC floor.  The real acceptance gate below
-    # requires at least 24 geometrically consistent inliers, so 24 tentative
-    # matches is the smallest set that can possibly pass without weakening the
-    # reviewed geometric evidence requirement.
-    if len(good) < 24:
-        raise RuntimeError(
-            f"Too few photogrammetry/DGT feature matches to satisfy the "
-            f"24-inlier registration gate: {len(good)}"
-        )
+    feature_views = [
+        ("gray", enhanced_gray(photo), enhanced_gray(dgt)),
+        ("roof-chroma", roof_chroma(photo), roof_chroma(dgt)),
+    ]
+    candidates = []
 
-    photo_px = np.array(
-        [kp_photo[m.queryIdx].pt for m in good], dtype=np.float64
-    ) / photo_scale
-    dgt_px = (
-        np.array([kp_dgt[m.trainIdx].pt for m in good], dtype=np.float64)
-        / dgt_scale
-        + dgt_crop_origin
+    for channel, photo_view, dgt_view in feature_views:
+        kp_photo, desc_photo = detector.detectAndCompute(photo_view, None)
+        kp_dgt, desc_dgt = detector.detectAndCompute(dgt_view, None)
+        if desc_photo is None or desc_dgt is None:
+            print(f"{channel}: no usable SIFT descriptors")
+            continue
+
+        pairs = matcher.knnMatch(desc_photo, desc_dgt, k=2)
+        for lowe_ratio in (0.72, 0.76, 0.80, 0.84):
+            tentative = [
+                a for a, b in pairs if a.distance < lowe_ratio * b.distance
+            ]
+            good = unique_train_matches(tentative)
+            if len(good) < 24:
+                print(
+                    f"{channel} ratio={lowe_ratio:.2f}: "
+                    f"{len(good)} unique tentative matches"
+                )
+                continue
+
+            photo_px = np.array(
+                [kp_photo[m.queryIdx].pt for m in good], dtype=np.float64
+            ) / photo_scale
+            dgt_px = (
+                np.array([kp_dgt[m.trainIdx].pt for m in good], dtype=np.float64)
+                / dgt_scale
+                + dgt_crop_origin
+            )
+            source_xy = model_xy(photo_px, inspection)
+            target_xy = dgt_local_xy(dgt_px, ortho_meta, center_abs)
+
+            candidate_affine, candidate_mask = cv2.estimateAffinePartial2D(
+                source_xy,
+                target_xy,
+                method=cv2.RANSAC,
+                ransacReprojThreshold=6.0,
+                maxIters=50_000,
+                confidence=0.999,
+                refineIters=50,
+            )
+            if candidate_affine is None or candidate_mask is None:
+                continue
+
+            candidate_inliers = candidate_mask.ravel().astype(bool)
+            candidate_count = int(candidate_inliers.sum())
+            candidate_ratio = float(candidate_count / len(good))
+            print(
+                f"{channel} ratio={lowe_ratio:.2f}: "
+                f"{candidate_count}/{len(good)} inliers "
+                f"({candidate_ratio:.3f})"
+            )
+            candidates.append(
+                {
+                    "channel": channel,
+                    "lowe_ratio": lowe_ratio,
+                    "kp_photo": kp_photo,
+                    "kp_dgt": kp_dgt,
+                    "good": good,
+                    "inliers": candidate_inliers,
+                    "affine": candidate_affine,
+                    "inlier_count": candidate_count,
+                    "inlier_ratio": candidate_ratio,
+                }
+            )
+
+    passing = [
+        candidate
+        for candidate in candidates
+        if candidate["inlier_count"] >= 24
+        and candidate["inlier_ratio"] >= 0.15
+    ]
+    if not passing:
+        if candidates:
+            best = max(
+                candidates,
+                key=lambda item: (
+                    min(item["inlier_count"] / 24.0, 1.0)
+                    + min(item["inlier_ratio"] / 0.15, 1.0),
+                    item["inlier_count"],
+                    item["inlier_ratio"],
+                ),
+            )
+            raise RuntimeError(
+                "Weak V2 registration: best candidate "
+                f"{best['channel']} ratio={best['lowe_ratio']:.2f}, "
+                f"{best['inlier_count']} inliers, "
+                f"inlier_ratio={best['inlier_ratio']:.3f}"
+            )
+        raise RuntimeError("Could not estimate any V2 photogrammetry transform")
+
+    best = max(
+        passing,
+        key=lambda item: (item["inlier_count"], item["inlier_ratio"]),
     )
-
-    source_xy = model_xy(photo_px, inspection)
-    target_xy = dgt_local_xy(dgt_px, ortho_meta, center_abs)
-
-    affine, inlier_mask = cv2.estimateAffinePartial2D(
-        source_xy,
-        target_xy,
-        method=cv2.RANSAC,
-        ransacReprojThreshold=6.0,
-        maxIters=20_000,
-        confidence=0.999,
-        refineIters=50,
-    )
-    if affine is None or inlier_mask is None:
-        raise RuntimeError("Could not estimate V2 photogrammetry similarity transform")
-
-    inliers = inlier_mask.ravel().astype(bool)
-    inlier_count = int(inliers.sum())
-    inlier_ratio = float(inlier_count / len(good))
-    if inlier_count < 24 or inlier_ratio < 0.15:
-        raise RuntimeError(
-            f"Weak V2 registration: {inlier_count} inliers, ratio={inlier_ratio:.3f}"
-        )
+    affine = best["affine"]
+    inliers = best["inliers"]
+    inlier_count = best["inlier_count"]
+    inlier_ratio = best["inlier_ratio"]
+    good = best["good"]
+    kp_photo = best["kp_photo"]
+    kp_dgt = best["kp_dgt"]
+    feature_channel = best["channel"]
+    lowe_ratio = best["lowe_ratio"]
 
     a = float(affine[0, 0])
     b = float(affine[1, 0])
@@ -400,9 +475,11 @@ def main() -> None:
     payload = {
         "version": "coimbra-v2-001-registration-v1",
         "method": (
-            "SIFT + RANSAC 2D similarity; "
+            "multi-channel SIFT + RANSAC 2D similarity; "
             "DGT terrain 2m + LiDAR HAG 1m vertical median"
         ),
+        "feature_channel": feature_channel,
+        "lowe_ratio": lowe_ratio,
         "feature_matches": len(good),
         "inliers": inlier_count,
         "inlier_ratio": inlier_ratio,
