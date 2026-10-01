@@ -32,6 +32,10 @@ export class PerfMeter {
     if (this.samples.length > 3600) this.samples.splice(0, this.samples.length - 3600);
   }
 
+  reset() {
+    this.samples = [];
+  }
+
   receipt(mode: string): BenchmarkReceipt {
     const values = this.samples.slice();
     const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
@@ -66,4 +70,46 @@ export function downloadReceipt(receipt: BenchmarkReceipt) {
   link.download = "coimbra-034-webgpu-benchmark.json";
   link.click();
   URL.revokeObjectURL(url);
+}
+
+
+export interface WebGpuAdapterInfo {
+  available: boolean;
+  vendor?: string;
+  architecture?: string;
+  device?: string;
+  description?: string;
+  is_fallback_adapter?: boolean | null;
+}
+
+export async function collectWebGpuAdapterInfo(): Promise<WebGpuAdapterInfo> {
+  type Adapter = {
+    info?: {
+      vendor?: string;
+      architecture?: string;
+      device?: string;
+      description?: string;
+    };
+    isFallbackAdapter?: boolean;
+  };
+  type GpuNavigator = Navigator & {
+    gpu?: {
+      requestAdapter(options?: { powerPreference?: "low-power" | "high-performance" }): Promise<Adapter | null>;
+    };
+  };
+
+  const gpu = (navigator as GpuNavigator).gpu;
+  if (!gpu) return { available: false };
+  const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) return { available: false };
+
+  const info = adapter.info ?? {};
+  return {
+    available: true,
+    vendor: info.vendor,
+    architecture: info.architecture,
+    device: info.device,
+    description: info.description,
+    is_fallback_adapter: adapter.isFallbackAdapter ?? null,
+  };
 }
