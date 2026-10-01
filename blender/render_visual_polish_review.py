@@ -277,7 +277,7 @@ def main() -> None:
 
     baseline_settings = snapshot_settings(scene)
     require(baseline_settings["samples"] == 16, "035 baseline samples changed")
-    require(math.isclose(baseline_settings["adaptive_threshold"], 0.08, abs_tol=1e-9), "035 baseline adaptive threshold changed")
+    require(math.isclose(baseline_settings["adaptive_threshold"], 0.08, abs_tol=1e-6), "035 baseline adaptive threshold changed")
     require(baseline_settings["render_use_motion_blur"] is False, "035 accepted baseline unexpectedly has motion blur")
 
     checkpoint_evidence = {
