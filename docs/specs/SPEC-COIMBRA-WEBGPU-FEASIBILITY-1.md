@@ -41,7 +41,7 @@ Generated web data is a build artifact, not a new source of truth.
 The prototype lives under web/ and uses:
 
 - three.js 0.186.1;
-- WebGPURenderer;
+- WebGPURenderer; antialiasing is disabled to match the InsideWalk WebGPU reference path and avoid MSAA cost in the feasibility baseline;
 - one shared terrain material, one shared building material and shared road
   materials;
 - frozen matrices for static tile objects;
