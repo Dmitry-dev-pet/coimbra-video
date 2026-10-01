@@ -80,6 +80,14 @@ Lens/focus:
 
 ## Proxy
 
+Render through a temporary detached proxy camera:
+
+- duplicate the accepted camera object and camera data for review only;
+- clear animation data, constraints and parent on the temporary camera;
+- drive each rendered frame from the explicit 033 position/quaternion/lens/focus record;
+- after every render, record the actual camera state and require it to match the intended record;
+- restore the accepted production camera and remove the temporary camera before invariant checks.
+
 Render exactly:
 
 - 1,440 real EEVEE proxy frames;
@@ -133,7 +141,9 @@ The independent verifier must reject:
 - wrong frame count, fps, duration or proxy resolution;
 - non-monotonic route progress;
 - failure to pass near every original route anchor;
-- missing DGT/OpenStreetMap attribution.
+- missing DGT/OpenStreetMap attribution;
+- a proxy camera reset by Blender animation evaluation;
+- excessive duplicate proxy frame hashes consistent with a static camera.
 
 Passing 033 means only that the candidate is a valid inspectable motion review.
 Human visual review is still required before any full Cycles render is authorized.
