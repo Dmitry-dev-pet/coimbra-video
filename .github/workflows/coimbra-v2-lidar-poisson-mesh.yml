@@ -1,0 +1,91 @@
+name: Coimbra V2 raw LiDAR Poisson mesh review
+
+on:
+  push:
+    paths:
+      - "scripts/build_render_v2_lidar_poisson_mesh.py"
+      - ".github/workflows/coimbra-v2-lidar-poisson-mesh.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  DGT_USER: ${{ secrets.DGT_USER }}
+  DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
+  V2_SOURCE_RUN_ID: "36926607350"
+
+jobs:
+  reconstruct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install reconstruction dependencies
+        run: |
+          python -m pip install --quiet \
+            "requests>=2.32,<3" \
+            "numpy>=2,<3" \
+            "laspy[lazrs]>=2.5,<3" \
+            "pillow>=11,<12" \
+            "pyproj>=3.7,<4" \
+            "scipy>=1.14,<2" \
+            "open3d==0.20.0"
+
+      - name: Download fixed Coimbra V2 DGT source
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: ${{ env.V2_SOURCE_RUN_ID }}
+          name: coimbra-v2-001-dgt
+          github-token: ${{ github.token }}
+          path: bridge_output_v2_001/dgt
+
+      - name: Verify DGT inputs
+        run: |
+          test -s bridge_output_v2_001/dgt/prepared/coimbra-v2-001-terrain-2m.npz
+          test -s bridge_output_v2_001/dgt/prepared/coimbra-v2-001-height-above-ground-1m.npz
+
+      - name: Reconstruct and render 300m raw LiDAR mesh
+        run: python scripts/build_render_v2_lidar_poisson_mesh.py
+
+      - name: Verify mesh review
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("bridge_output_v2_lidar_mesh")
+          m = json.loads((root / "manifest.json").read_text())
+          assert m["version"] == "coimbra-v2-lidar-poisson-mesh-v1"
+          assert m["crop_size_m"] == [300.0, 300.0]
+          assert m["hard_surface_points_in_crop"] > 100_000
+          assert m["mesh"]["downsampled_points"] > 50_000
+          assert m["mesh"]["mesh_vertices"] > 10_000
+          assert m["mesh"]["mesh_triangles"] > 20_000
+          assert len(m["render"]["variants"]) == 3
+          for variant in m["render"]["variants"]:
+              p = Path(variant["image"])
+              assert p.is_file() and p.stat().st_size > 20_000
+              assert variant["projected_samples"] > 100_000
+          mesh = Path(m["mesh"]["file"])
+          assert mesh.is_file() and mesh.stat().st_size > 1_000_000
+          print(json.dumps(m, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-v2-lidar-poisson-mesh-review
+          path: |
+            bridge_output_v2_lidar_mesh/*.png
+            bridge_output_v2_lidar_mesh/manifest.json
+            bridge_output_v2_lidar_mesh/*.ply
+          if-no-files-found: error
+          compression-level: 3
+          retention-days: 30
