@@ -261,3 +261,25 @@ keyframes, repeat rendered frames, use optical flow or use AI interpolation.
 The final delivery is 60 fps / 24 seconds / 1600×1000. It traverses the same complete
 route at half the 031 playback speed while providing four times the rendered temporal
 samples. Apple Metal is the only permitted execution backend for the accepted delivery.
+
+
+## Smooth camera-motion review lane 033
+
+`feature/coimbra-033-smooth-camera-motion` is a review-only derivative of the
+accepted 030 v2 production look and completed 032 timing delivery.
+
+033 must preserve the accepted 030 scene structure and native camera animation.
+It may sample only the seven established route anchors at source frames
+`1, 61, 121, 181, 241, 301, 360` and derive a temporary proxy candidate from
+them. It must not rewrite or save new production-camera keyframes.
+
+The candidate position path uses centripetal Catmull–Rom through the accepted
+anchor locations. Output timing is parameterized by cumulative arc length across
+the complete path so the translation step is approximately constant through
+segment boundaries. Camera direction is derived from a separately smoothed
+forward-target spline; do not interpolate Euler angles directly.
+
+033 renders only a 960×600, 1,440-frame, 60 fps, 24-second EEVEE proxy with
+motion blur disabled. The accepted 032 video is used only as the left-hand visual
+baseline for the side-by-side review. Passing the independent verifier does not
+authorize a full Cycles render; human review is required first.
