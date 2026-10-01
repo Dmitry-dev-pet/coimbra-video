@@ -1,0 +1,117 @@
+name: Coimbra 034 WebGPU feasibility
+
+on:
+  pull_request:
+    paths:
+      - web/**
+      - scripts/export_webgpu_coimbra.py
+      - scripts/test_webgpu_export.py
+      - scripts/fetch_osm_bridge.py
+      - scripts/prepare_osm_local_for_terrain.py
+      - data/processed/bridge_terrain_6m.npz
+      - data/processed/bridge_terrain_6m.json
+      - contracts/COIMBRA-BRIDGE-003-SLOW.json
+      - docs/specs/SPEC-COIMBRA-WEBGPU-FEASIBILITY-1.md
+      - .github/workflows/coimbra-034-webgpu-feasibility.yml
+  workflow_dispatch:
+    inputs:
+      deploy_pages:
+        description: Deploy the verified 034 dist to GitHub Pages
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name: coimbra-034-webgpu-dist
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install 034 data dependencies
+        run: python -m pip install --disable-pip-version-check numpy==2.3.3 requests==2.32.5 pyproj==3.7.2
+
+      - name: Run 034 exporter tests
+        working-directory: scripts
+        run: python -m unittest test_webgpu_export.py -v
+
+      - name: Fetch public Coimbra OSM
+        run: python scripts/fetch_osm_bridge.py
+
+      - name: Convert OSM to terrain-local EPSG:3763
+        run: python scripts/prepare_osm_local_for_terrain.py
+
+      - name: Export 250 m WebGPU tiles
+        run: python scripts/export_webgpu_coimbra.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      - name: Type-check and build WebGPU app
+        working-directory: web
+        run: npm run build
+
+      - name: Verify static delivery
+        run: |
+          test -s web/dist/index.html
+          test -s web/dist/data/coimbra/index.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          index = json.loads(Path("web/dist/data/coimbra/index.json").read_text())
+          assert index["lane"] == "coimbra-034-webgpu-feasibility"
+          assert len(index["tiles"]) > 0
+          assert len(index["route"]["anchors"]) == 7
+          print(json.dumps({
+              "tiles": len(index["tiles"]),
+              "route_anchors": len(index["route"]["anchors"]),
+              "tile_size": index["tile_size"],
+          }, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-034-webgpu-dist
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy-pages:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages
+    needs: contract
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: \${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-034-webgpu-dist
+          path: web-dist
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-dist
+
+      - name: Deploy 034 to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
