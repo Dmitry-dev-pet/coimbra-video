@@ -78,3 +78,19 @@ Never commit tokens, passwords, sessions or authenticated source URLs. Source ac
 ## Historical setup notes
 
 The complete previous README is retained **byte-for-byte** in [README-PRE-CONSOLIDATION-2026-09-30.md](README-PRE-CONSOLIDATION-2026-09-30.md). It contains the earlier 001–008 setup chronology and command details. Its historical statements about which path was primary are not a description of current project routing.
+
+
+## Coimbra 035 visual-polish review
+
+035 keeps the accepted Coimbra 032 camera/timing unchanged and compares four
+isolated visual treatments at five fixed 032 checkpoints:
+
+- accepted 16-sample baseline;
+- 180-degree-equivalent Cycles camera motion blur for the 60 fps / 24 s 032 timing;
+- subtle atmosphere plus light rebalance;
+- 64-sample / adaptive-threshold 0.03 quality render.
+
+The lane is review-only. It renders twenty 1600×1000 Metal PNGs and requires
+human comparison before any production promotion.
+
+See [SPEC-COIMBRA-VISUAL-POLISH-1](docs/specs/SPEC-COIMBRA-VISUAL-POLISH-1.md).
