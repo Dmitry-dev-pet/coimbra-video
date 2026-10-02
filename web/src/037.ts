@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 
 const app = document.getElementById("app")!;
 const stage = document.getElementById("stage")!;
@@ -31,6 +32,7 @@ async function main() {
   scene.background = new THREE.Color(0x132033);
 
   const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
   const modelUrl = new URL("data/coimbra-032-frame181.glb", document.baseURI);
   status.textContent = "Loading accepted 032 scene…";
   const gltf = await loader.loadAsync(modelUrl.href);
