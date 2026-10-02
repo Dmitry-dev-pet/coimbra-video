@@ -88,6 +88,10 @@ def main() -> None:
         export_lights=True,
         export_animations=False,
         export_materials="EXPORT",
+        export_image_format="WEBP",
+        export_image_quality=82,
+        export_meshopt_compression_enable=True,
+        export_meshopt_extension="EXT_meshopt_compression",
         export_texcoords=True,
         export_normals=True,
         export_yup=True,
@@ -122,6 +126,12 @@ def main() -> None:
             "matrix_world": matrix_rows(camera.matrix_world),
             "lens_mm": float(camera.data.lens),
             "sensor_width_mm": float(camera.data.sensor_width),
+        },
+        "web_compression": {
+            "mesh": "EXT_meshopt_compression",
+            "images": "WebP",
+            "image_quality": 82,
+            "geometry_simplification": False,
         },
         "glb": {
             "path": glb.name,
