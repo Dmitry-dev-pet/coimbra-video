@@ -1,27 +1,20 @@
-import * as THREE from "three/webgpu";
+import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 
 type CameraState = {
   source_frame: number;
-  base_frame: number;
-  subframe: number;
-  matrix_world: number[];
-  lens_mm: number;
-  sensor_width_mm: number;
   fov_y_deg: number;
-  output_frame?: number;
 };
 
 type CameraRoute = {
   version: string;
-  resolution: [number, number];
+  camera_node: string;
   aspect: number;
   output_frame_count: number;
   fps: number;
   duration_seconds: number;
-  sampling: string;
-  anchor: CameraState;
+  animation_sample_duration_seconds: number;
   samples: CameraState[];
 };
 
@@ -41,27 +34,17 @@ function fail(error: unknown) {
   status.textContent = error instanceof Error ? error.message : String(error);
 }
 
-function matrixFromRows(values: number[]): THREE.Matrix4 {
-  if (values.length !== 16) throw new Error("Camera route matrix must contain 16 values");
-  return new THREE.Matrix4().set(
-    values[0], values[1], values[2], values[3],
-    values[4], values[5], values[6], values[7],
-    values[8], values[9], values[10], values[11],
-    values[12], values[13], values[14], values[15],
-  );
-}
-
 async function main() {
-  const renderer = new THREE.WebGPURenderer({
+  const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: "high-performance",
   });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
   renderer.setSize(stage.clientWidth, stage.clientHeight, false);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.toneMappingExposure = Math.pow(2, 0.28);
   app.appendChild(renderer.domElement);
-  await renderer.init();
 
   const scene = new THREE.Scene();
   const background = new THREE.Color();
@@ -69,9 +52,9 @@ async function main() {
   scene.background = background;
 
   const routeUrl = new URL("data/coimbra-032-camera-route.json", document.baseURI);
-  const modelUrl = new URL("../037/data/coimbra-032-frame181.glb", document.baseURI);
+  const modelUrl = new URL("data/coimbra-032-route.glb", document.baseURI);
 
-  status.textContent = "Loading accepted 032 scene and exact camera samples…";
+  status.textContent = "Loading accepted 032 route…";
 
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
@@ -80,49 +63,43 @@ async function main() {
     loader.loadAsync(modelUrl.href),
     fetch(routeUrl.href),
   ]);
-  if (!routeResponse.ok) {
-    throw new Error(`Camera route HTTP ${routeResponse.status}`);
-  }
-  const route = (await routeResponse.json()) as CameraRoute;
+  if (!routeResponse.ok) throw new Error(`Camera route HTTP ${routeResponse.status}`);
 
-  if (route.output_frame_count !== 1440 || route.fps !== 60 || route.samples.length !== 1440) {
+  const route = (await routeResponse.json()) as CameraRoute;
+  if (
+    route.output_frame_count !== 1440 ||
+    route.fps !== 60 ||
+    route.samples.length !== 1440
+  ) {
     throw new Error("032 route contract mismatch");
   }
 
   scene.add(gltf.scene);
   gltf.scene.updateMatrixWorld(true);
 
-  const importedCamera = gltf.cameras.find(
-    (value): value is THREE.PerspectiveCamera => value instanceof THREE.PerspectiveCamera,
-  );
-  if (!importedCamera) throw new Error("Exported frame-181 production camera was not found");
-
-  importedCamera.updateWorldMatrix(true, false);
-  const importedAnchorWorld = importedCamera.matrixWorld.clone();
-  const blenderAnchorWorld = matrixFromRows(route.anchor.matrix_world);
-  const alignment = importedAnchorWorld.clone().multiply(blenderAnchorWorld.clone().invert());
-
-  scene.attach(importedCamera);
-  const camera = importedCamera;
+  const candidate = gltf.scene.getObjectByName(route.camera_node);
+  if (!(candidate instanceof THREE.PerspectiveCamera)) {
+    throw new Error(`Baked camera ${route.camera_node} was not found in route GLB`);
+  }
+  const camera = candidate;
   camera.aspect = route.aspect;
+  camera.updateProjectionMatrix();
 
-  // Blender's world background and broad cool fill are not represented by glTF.
-  // Keep the exported production suns and add a low-cost ambient approximation.
+  const routeClip = gltf.animations.find((clip) =>
+    clip.tracks.some((track) => track.name.includes(route.camera_node)),
+  ) ?? gltf.animations[0];
+  if (!routeClip) throw new Error("Baked 032 camera animation was not found in route GLB");
+
+  const mixer = new THREE.AnimationMixer(gltf.scene);
+  const action = mixer.clipAction(routeClip);
+  action.play();
+  action.paused = true;
+
   const sky = new THREE.Color();
   sky.setRGB(0.58, 0.72, 1.0);
   const ground = new THREE.Color();
   ground.setRGB(0.16, 0.14, 0.12);
   scene.add(new THREE.HemisphereLight(sky, ground, 0.55));
-
-  function applyState(sample: CameraState) {
-    const blenderMatrix = matrixFromRows(sample.matrix_world);
-    const webMatrix = alignment.clone().multiply(blenderMatrix);
-    webMatrix.decompose(camera.position, camera.quaternion, camera.scale);
-    camera.fov = sample.fov_y_deg;
-    camera.aspect = route.aspect;
-    camera.updateProjectionMatrix();
-    camera.updateMatrixWorld(true);
-  }
 
   let currentIndex = 0;
   let playing = true;
@@ -137,7 +114,13 @@ async function main() {
   function showCurrent(index: number) {
     currentIndex = Math.max(0, Math.min(route.samples.length - 1, index));
     const sample = route.samples[currentIndex];
-    applyState(sample);
+
+    mixer.setTime(currentIndex / route.fps);
+    camera.fov = sample.fov_y_deg;
+    camera.aspect = route.aspect;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+
     timeline.value = String(currentIndex);
     const elapsed = currentIndex / route.fps;
     clock.textContent =
@@ -155,12 +138,9 @@ async function main() {
     }
   }
 
-  playPause.addEventListener("click", () => {
-    setPlaying(!playing);
-  });
+  playPause.addEventListener("click", () => setPlaying(!playing));
 
   restart.addEventListener("click", () => {
-    currentIndex = 0;
     showCurrent(0);
     setPlaying(true);
   });
@@ -179,10 +159,11 @@ async function main() {
       return;
     }
     setPlaying(false);
-    applyState(route.anchor);
+    const anchorIndex = Math.round((181 - 1) * (route.output_frame_count - 1) / 359);
+    showCurrent(anchorIndex);
     reference.classList.add("shown");
     compare181.textContent = "Hide frame 181 reference";
-    clock.textContent = "Exact source frame 181 · Blender reference overlay";
+    clock.textContent = "Source frame 181 · Blender reference overlay";
   });
 
   function resize() {
@@ -194,7 +175,7 @@ async function main() {
 
   showCurrent(0);
   status.textContent =
-    "032 route loaded · 1440 native Blender samples · 60 fps · 24.00 s · AgX exposure +0.28";
+    "032 route loaded · baked Blender camera · 1440 samples · 60 fps · 24.00 s";
 
   renderer.setAnimationLoop(() => {
     if (playing) {
@@ -211,7 +192,7 @@ async function main() {
   });
 
   Object.assign(window, {
-    coimbra038: { renderer, scene, camera, gltf, route, alignment },
+    coimbra038: { renderer, scene, camera, gltf, route, mixer, routeClip },
   });
 }
 

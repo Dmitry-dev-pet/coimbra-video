@@ -109,6 +109,7 @@ jobs:
           manifest = json.loads((root / "export-manifest.json").read_text())
           route = json.loads((root / "coimbra-032-camera-route.json").read_text())
           glb = root / "coimbra-032-frame181.glb"
+          route_glb = root / "coimbra-032-route.glb"
           raw = glb.read_bytes()
           magic, version, declared = struct.unpack("<4sII", raw[:12])
 
@@ -122,8 +123,17 @@ jobs:
           assert manifest["mesh_triangles"] > 10000
           assert manifest["materials"] > 0
           assert manifest["glb"]["bytes"] == len(raw)
+          assert route_glb.stat().st_size == manifest["route_glb"]["bytes"]
+          route_raw = route_glb.read_bytes()
+          _, _, route_declared = struct.unpack("<4sII", route_raw[:12])
+          assert route_declared == len(route_raw)
+          json_len, json_type = struct.unpack("<II", route_raw[12:20])
+          assert json_type == 0x4E4F534A
+          gltf_json = json.loads(route_raw[20:20 + json_len].decode("utf-8").rstrip(" \\x00"))
+          assert gltf_json.get("animations"), "Route GLB has no baked animation"
+          assert gltf_json.get("cameras"), "Route GLB has no camera"
 
-          assert route["version"] == "coimbra-038-web-route-v1"
+          assert route["version"] == "coimbra-038-web-route-v2"
           assert route["output_frame_count"] == 1440
           assert route["fps"] == 60
           assert math.isclose(route["duration_seconds"], 24.0, abs_tol=1e-12)
@@ -146,6 +156,7 @@ jobs:
               "materials": manifest["materials"],
               "route_samples": len(route["samples"]),
               "route_bytes": (root / "coimbra-032-camera-route.json").stat().st_size,
+              "route_glb_mb": round(route_glb.stat().st_size / 1024 / 1024, 2),
               "fps": route["fps"],
               "duration_seconds": route["duration_seconds"],
           }, indent=2))
@@ -177,6 +188,7 @@ jobs:
           cp bridge_output_038/export-manifest.json web/public/037/data/
 
           cp bridge_output_038/coimbra-032-camera-route.json web/public/038/data/
+          cp bridge_output_038/coimbra-032-route.glb web/public/038/data/
           cp bridge_output_038/frame-181-reference.png web/public/038/data/
           cp bridge_output_038/export-manifest.json web/public/038/data/
 
@@ -201,6 +213,7 @@ jobs:
           test -s web/dist/037/data/export-manifest.json
           test -s web/dist/038/index.html
           test -s web/dist/038/data/coimbra-032-camera-route.json
+          test -s web/dist/038/data/coimbra-032-route.glb
           test -s web/dist/038/data/frame-181-reference.png
           test -s web/dist/038/data/export-manifest.json
 
