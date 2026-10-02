@@ -1,6 +1,19 @@
 name: Coimbra 034 WebGPU feasibility
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - web/**
+      - scripts/export_webgpu_coimbra.py
+      - scripts/test_webgpu_export.py
+      - scripts/fetch_osm_bridge.py
+      - scripts/prepare_osm_local_for_terrain.py
+      - data/processed/bridge_terrain_6m.npz
+      - data/processed/bridge_terrain_6m.json
+      - contracts/COIMBRA-BRIDGE-003-SLOW.json
+      - docs/specs/SPEC-COIMBRA-WEBGPU-FEASIBILITY-1.md
+      - .github/workflows/coimbra-034-webgpu-feasibility.yml
   pull_request:
     paths:
       - web/**
@@ -90,7 +103,9 @@ jobs:
           retention-days: 14
 
   deploy-pages:
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_pages)
     needs: contract
     runs-on: ubuntu-latest
     permissions:
