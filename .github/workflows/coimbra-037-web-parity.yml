@@ -1,0 +1,232 @@
+name: Coimbra 037 web visual parity
+
+on:
+  pull_request:
+    paths:
+      - web/**
+      - blender/export_032_web_glb.py
+      - scripts/export_webgpu_coimbra.py
+      - scripts/test_webgpu_export.py
+      - scripts/fetch_osm_bridge.py
+      - scripts/prepare_osm_local_for_terrain.py
+      - docs/specs/SPEC-COIMBRA-WEB-VISUAL-PARITY-1.md
+      - .github/workflows/coimbra-037-web-parity.yml
+      - .github/workflows/coimbra-034-webgpu-feasibility.yml
+  push:
+    branches: [main]
+    paths:
+      - web/**
+      - blender/export_032_web_glb.py
+      - scripts/export_webgpu_coimbra.py
+      - scripts/test_webgpu_export.py
+      - scripts/fetch_osm_bridge.py
+      - scripts/prepare_osm_local_for_terrain.py
+      - docs/specs/SPEC-COIMBRA-WEB-VISUAL-PARITY-1.md
+      - .github/workflows/coimbra-037-web-parity.yml
+      - .github/workflows/coimbra-034-webgpu-feasibility.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.2"
+  BLENDER_CACHE: "/home/runner/.cache/blender-5.2.2"
+  SOURCE_030_RUN_ID: "36720891074"
+  SOURCE_030_BLEND_SHA256: "5fe8ca9e8605c6ea1908d8a814f9ad5209248c606b34ebbbb3dd47607edff881"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download accepted Coimbra 030/032 production scene
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: ${{ env.SOURCE_030_RUN_ID }}
+          name: coimbra-030-production-look-review
+          github-token: ${{ github.token }}
+          path: source_030_download
+
+      - name: Normalize and verify frozen production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source_030 bridge_output_037
+          blend="$(find source_030_download -type f -name 'coimbra-production-look.blend' -print -quit)"
+          reference="$(find source_030_download -type f -name 'frame-181-candidate.png' -print -quit)"
+          test -n "$blend"
+          test -n "$reference"
+          cp "$blend" source_030/coimbra-production-look.blend
+          cp "$reference" bridge_output_037/frame-181-reference.png
+          test "$(sha256sum source_030/coimbra-production-look.blend | awk '{print $1}')" = "$SOURCE_030_BLEND_SHA256"
+
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/blender-5.2.2
+          key: blender-linux-x64-5.2.2
+
+      - name: Install Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$BLENDER_CACHE"
+          if [ ! -x "$BLENDER_CACHE/blender" ]; then
+            archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+            base="https://download.blender.org/release/Blender5.2"
+            curl --fail --location --retry 4 --output "/tmp/$archive" "$base/$archive"
+            tar -xJf "/tmp/$archive" -C "$BLENDER_CACHE" --strip-components=1
+          fi
+          echo "$BLENDER_CACHE" >> "$GITHUB_PATH"
+
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+
+      - name: Export accepted production scene to GLB
+        shell: bash
+        run: |
+          set -euo pipefail
+          blender \
+            --background \
+            --factory-startup \
+            --python-exit-code 1 \
+            --python blender/export_032_web_glb.py \
+            -- \
+            --blend source_030/coimbra-production-look.blend \
+            --out bridge_output_037
+
+      - name: Verify GLB container and export manifest
+        run: |
+          python - <<'PY'
+          import json
+          import struct
+          from pathlib import Path
+
+          root = Path("bridge_output_037")
+          manifest = json.loads((root / "export-manifest.json").read_text())
+          glb = root / "coimbra-032-frame181.glb"
+          raw = glb.read_bytes()
+          magic, version, declared = struct.unpack("<4sII", raw[:12])
+          assert magic == b"glTF"
+          assert version == 2
+          assert declared == len(raw)
+          assert manifest["source_blend_sha256"] == "5fe8ca9e8605c6ea1908d8a814f9ad5209248c606b34ebbbb3dd47607edff881"
+          assert manifest["frame"] == 181
+          assert manifest["object_types"].get("MESH", 0) > 0
+          assert manifest["mesh_vertices"] > 10000
+          assert manifest["mesh_triangles"] > 10000
+          assert manifest["materials"] > 0
+          assert manifest["glb"]["bytes"] == len(raw)
+          print(json.dumps({
+              "selected_objects": manifest["selected_objects"],
+              "mesh_vertices": manifest["mesh_vertices"],
+              "mesh_triangles": manifest["mesh_triangles"],
+              "materials": manifest["materials"],
+              "packed_images": manifest["packed_images"],
+              "glb_bytes": manifest["glb"]["bytes"],
+              "glb_sha256": manifest["glb"]["sha256"],
+          }, indent=2))
+          PY
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install 034 dataset dependencies
+        run: python -m pip install --disable-pip-version-check numpy==2.3.3 requests==2.32.5 pyproj==3.7.2
+
+      - name: Build preserved 034 root dataset
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/fetch_osm_bridge.py
+          python scripts/prepare_osm_local_for_terrain.py
+          python scripts/export_webgpu_coimbra.py
+
+      - name: Stage 037 accepted-scene assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p web/public/037/data
+          cp bridge_output_037/coimbra-032-frame181.glb web/public/037/data/
+          cp bridge_output_037/frame-181-reference.png web/public/037/data/
+          cp bridge_output_037/export-manifest.json web/public/037/data/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build combined 034 + 037 site
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Verify combined Pages dist
+        run: |
+          set -euo pipefail
+          test -s web/dist/index.html
+          test -s web/dist/data/coimbra/index.json
+          test -s web/dist/037/index.html
+          test -s web/dist/037/data/coimbra-032-frame181.glb
+          test -s web/dist/037/data/frame-181-reference.png
+          test -s web/dist/037/data/export-manifest.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("web/dist/037/data")
+          m = json.loads((root / "export-manifest.json").read_text())
+          assert (root / "coimbra-032-frame181.glb").stat().st_size == m["glb"]["bytes"]
+          assert (root / "frame-181-reference.png").stat().st_size > 100000
+          print(json.dumps({
+              "037_glb_mb": round(m["glb"]["bytes"] / 1024 / 1024, 2),
+              "vertices": m["mesh_vertices"],
+              "triangles": m["mesh_triangles"],
+              "materials": m["materials"],
+              "root_034_preserved": True,
+          }, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-037-web-parity-dist
+          path: web/dist
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 30
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-037-web-parity-dist
+          path: site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy combined Coimbra web site
+        id: deployment
+        uses: actions/deploy-pages@v4
