@@ -150,9 +150,6 @@ def bake_web_camera(scene, production_camera) -> tuple[object, dict]:
 
     if web_camera.animation_data is None or web_camera.animation_data.action is None:
         raise RuntimeError("Baked web camera action was not created")
-    for fcurve in web_camera.animation_data.action.fcurves:
-        for point in fcurve.keyframe_points:
-            point.interpolation = "LINEAR"
 
     anchor = camera_state(scene, production_camera, float(FRAME))
     route = {
