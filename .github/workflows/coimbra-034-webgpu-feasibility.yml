@@ -103,9 +103,7 @@ jobs:
           retention-days: 14
 
   deploy-pages:
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy_pages)
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_pages
     needs: contract
     runs-on: ubuntu-latest
     permissions:
@@ -127,6 +125,6 @@ jobs:
         with:
           path: web-dist
 
-      - name: Deploy 034 to GitHub Pages
+      - name: Deploy standalone 034 to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
