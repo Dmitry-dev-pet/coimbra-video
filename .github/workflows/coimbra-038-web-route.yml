@@ -1,4 +1,4 @@
-name: Coimbra 037 web visual parity
+name: Coimbra 038 exact web route
 
 on:
   pull_request:
@@ -9,7 +9,8 @@ on:
       - scripts/test_webgpu_export.py
       - scripts/fetch_osm_bridge.py
       - scripts/prepare_osm_local_for_terrain.py
-      - docs/specs/SPEC-COIMBRA-WEB-VISUAL-PARITY-1.md
+      - docs/specs/SPEC-COIMBRA-WEB-ROUTE-1.md
+      - .github/workflows/coimbra-038-web-route.yml
       - .github/workflows/coimbra-037-web-parity.yml
       - .github/workflows/coimbra-034-webgpu-feasibility.yml
   push:
@@ -21,7 +22,8 @@ on:
       - scripts/test_webgpu_export.py
       - scripts/fetch_osm_bridge.py
       - scripts/prepare_osm_local_for_terrain.py
-      - docs/specs/SPEC-COIMBRA-WEB-VISUAL-PARITY-1.md
+      - docs/specs/SPEC-COIMBRA-WEB-ROUTE-1.md
+      - .github/workflows/coimbra-038-web-route.yml
       - .github/workflows/coimbra-037-web-parity.yml
       - .github/workflows/coimbra-034-webgpu-feasibility.yml
   workflow_dispatch:
@@ -57,13 +59,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p source_030 bridge_output_037
+          mkdir -p source_030 bridge_output_038
           blend="$(find source_030_download -type f -name 'coimbra-production-look.blend' -print -quit)"
           reference="$(find source_030_download -type f -name 'frame-181-candidate.png' -print -quit)"
           test -n "$blend"
           test -n "$reference"
           cp "$blend" source_030/coimbra-production-look.blend
-          cp "$reference" bridge_output_037/frame-181-reference.png
+          cp "$reference" bridge_output_038/frame-181-reference.png
           test "$(sha256sum source_030/coimbra-production-look.blend | awk '{print $1}')" = "$SOURCE_030_BLEND_SHA256"
 
       - uses: actions/cache@v4
@@ -87,34 +89,29 @@ jobs:
       - name: Install Blender runtime libraries
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
+          sudo apt-get install -y --no-install-recommends             libegl1 libgl1 libx11-6 libxi6 libxfixes3 libxrender1 libxxf86vm1 libxkbcommon0
 
-      - name: Export accepted production scene to GLB
+      - name: Export accepted scene and exact 032 camera route
         shell: bash
         run: |
           set -euo pipefail
-          blender \
-            --background \
-            --factory-startup \
-            --python-exit-code 1 \
-            --python blender/export_032_web_glb.py \
-            -- \
-            --blend source_030/coimbra-production-look.blend \
-            --out bridge_output_037
+          blender             --background             --factory-startup             --python-exit-code 1             --python blender/export_032_web_glb.py             --             --blend source_030/coimbra-production-look.blend             --out bridge_output_038
 
-      - name: Verify GLB container and export manifest
+      - name: Verify GLB and exact route contract
         run: |
           python - <<'PY'
           import json
+          import math
           import struct
           from pathlib import Path
 
-          root = Path("bridge_output_037")
+          root = Path("bridge_output_038")
           manifest = json.loads((root / "export-manifest.json").read_text())
+          route = json.loads((root / "coimbra-032-camera-route.json").read_text())
           glb = root / "coimbra-032-frame181.glb"
           raw = glb.read_bytes()
           magic, version, declared = struct.unpack("<4sII", raw[:12])
+
           assert magic == b"glTF"
           assert version == 2
           assert declared == len(raw)
@@ -125,14 +122,32 @@ jobs:
           assert manifest["mesh_triangles"] > 10000
           assert manifest["materials"] > 0
           assert manifest["glb"]["bytes"] == len(raw)
+
+          assert route["version"] == "coimbra-038-web-route-v1"
+          assert route["output_frame_count"] == 1440
+          assert route["fps"] == 60
+          assert math.isclose(route["duration_seconds"], 24.0, abs_tol=1e-12)
+          assert len(route["samples"]) == 1440
+          assert math.isclose(route["samples"][0]["source_frame"], 1.0, abs_tol=1e-12)
+          assert math.isclose(route["samples"][-1]["source_frame"], 360.0, abs_tol=1e-12)
+          assert math.isclose(route["anchor"]["source_frame"], 181.0, abs_tol=1e-12)
+          assert all(len(sample["matrix_world"]) == 16 for sample in route["samples"])
+          assert len(route["anchor"]["matrix_world"]) == 16
+
+          for index in (1, 361, 721, 1081, 1440):
+              expected = 1.0 + (index - 1) * 359.0 / 1439.0
+              actual = route["samples"][index - 1]["source_frame"]
+              assert math.isclose(actual, expected, abs_tol=1e-10), (index, actual, expected)
+
           print(json.dumps({
-              "selected_objects": manifest["selected_objects"],
-              "mesh_vertices": manifest["mesh_vertices"],
-              "mesh_triangles": manifest["mesh_triangles"],
+              "glb_mb": round(len(raw) / 1024 / 1024, 2),
+              "vertices": manifest["mesh_vertices"],
+              "triangles": manifest["mesh_triangles"],
               "materials": manifest["materials"],
-              "packed_images": manifest["packed_images"],
-              "glb_bytes": manifest["glb"]["bytes"],
-              "glb_sha256": manifest["glb"]["sha256"],
+              "route_samples": len(route["samples"]),
+              "route_bytes": (root / "coimbra-032-camera-route.json").stat().st_size,
+              "fps": route["fps"],
+              "duration_seconds": route["duration_seconds"],
           }, indent=2))
           PY
 
@@ -151,20 +166,25 @@ jobs:
           python scripts/prepare_osm_local_for_terrain.py
           python scripts/export_webgpu_coimbra.py
 
-      - name: Stage 037 accepted-scene assets
+      - name: Stage 037 and 038 accepted-scene assets
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p web/public/037/data
-          cp bridge_output_037/coimbra-032-frame181.glb web/public/037/data/
-          cp bridge_output_037/frame-181-reference.png web/public/037/data/
-          cp bridge_output_037/export-manifest.json web/public/037/data/
+          mkdir -p web/public/037/data web/public/038/data
+
+          cp bridge_output_038/coimbra-032-frame181.glb web/public/037/data/
+          cp bridge_output_038/frame-181-reference.png web/public/037/data/
+          cp bridge_output_038/export-manifest.json web/public/037/data/
+
+          cp bridge_output_038/coimbra-032-camera-route.json web/public/038/data/
+          cp bridge_output_038/frame-181-reference.png web/public/038/data/
+          cp bridge_output_038/export-manifest.json web/public/038/data/
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Build combined 034 + 037 site
+      - name: Build combined 034 + 037 + 038 site
         working-directory: web
         run: |
           npm install --no-audit --no-fund
@@ -179,28 +199,62 @@ jobs:
           test -s web/dist/037/data/coimbra-032-frame181.glb
           test -s web/dist/037/data/frame-181-reference.png
           test -s web/dist/037/data/export-manifest.json
+          test -s web/dist/038/index.html
+          test -s web/dist/038/data/coimbra-032-camera-route.json
+          test -s web/dist/038/data/frame-181-reference.png
+          test -s web/dist/038/data/export-manifest.json
+
           python - <<'PY'
           import json
           from pathlib import Path
 
-          root = Path("web/dist/037/data")
-          m = json.loads((root / "export-manifest.json").read_text())
-          assert (root / "coimbra-032-frame181.glb").stat().st_size == m["glb"]["bytes"]
-          assert (root / "frame-181-reference.png").stat().st_size > 100000
+          manifest = json.loads(Path("web/dist/037/data/export-manifest.json").read_text())
+          route = json.loads(Path("web/dist/038/data/coimbra-032-camera-route.json").read_text())
+          glb = Path("web/dist/037/data/coimbra-032-frame181.glb")
+          assert glb.stat().st_size == manifest["glb"]["bytes"]
+          assert route["output_frame_count"] == 1440
+          assert route["fps"] == 60
+          assert len(route["samples"]) == 1440
           print(json.dumps({
-              "037_glb_mb": round(m["glb"]["bytes"] / 1024 / 1024, 2),
-              "vertices": m["mesh_vertices"],
-              "triangles": m["mesh_triangles"],
-              "materials": m["materials"],
+              "037_glb_mb": round(glb.stat().st_size / 1024 / 1024, 2),
+              "038_route_kb": round(Path("web/dist/038/data/coimbra-032-camera-route.json").stat().st_size / 1024, 1),
               "root_034_preserved": True,
+              "still_037_preserved": True,
+              "route_038_present": True,
           }, indent=2))
           PY
 
       - uses: actions/upload-artifact@v4
         with:
-          name: coimbra-037-web-parity-dist
+          name: coimbra-038-web-route-dist
           path: web/dist
           if-no-files-found: error
           compression-level: 1
           retention-days: 30
 
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coimbra-038-web-route-dist
+          path: site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy combined Coimbra 034 + 037 + 038 site
+        id: deployment
+        uses: actions/deploy-pages@v4
