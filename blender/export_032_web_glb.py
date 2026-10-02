@@ -1,9 +1,10 @@
-"""Export the accepted Coimbra 032/030 production scene to a static GLB."""
+"""Export the accepted Coimbra 032/030 production scene plus the exact 032 camera route."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -12,6 +13,11 @@ import bpy
 
 EXPECTED_BLEND_SHA256 = "5fe8ca9e8605c6ea1908d8a814f9ad5209248c606b34ebbbb3dd47607edff881"
 FRAME = 181
+SOURCE_START = 1.0
+SOURCE_END = 360.0
+OUTPUT_FRAMES = 1440
+OUTPUT_FPS = 60
+RESOLUTION = [1600, 1000]
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,6 +40,97 @@ def matrix_rows(matrix):
     return [[float(v) for v in row] for row in matrix]
 
 
+def matrix_flat_rows(matrix):
+    return [float(v) for row in matrix for v in row]
+
+
+def source_time(output_frame: int) -> float:
+    if not 1 <= output_frame <= OUTPUT_FRAMES:
+        raise ValueError(output_frame)
+    t = (output_frame - 1) / (OUTPUT_FRAMES - 1)
+    return SOURCE_START + t * (SOURCE_END - SOURCE_START)
+
+
+def source_sample(output_frame: int) -> tuple[float, int, float]:
+    source = source_time(output_frame)
+    base = int(math.floor(source + 1e-10))
+    subframe = source - base
+    if subframe >= 1.0 - 1e-9:
+        base += 1
+        subframe = 0.0
+    return source, base, subframe
+
+
+def set_source_frame(scene, source: float) -> tuple[int, float]:
+    base = int(math.floor(source + 1e-10))
+    subframe = source - base
+    if subframe >= 1.0 - 1e-9:
+        base += 1
+        subframe = 0.0
+    scene.frame_set(base, subframe=subframe)
+    bpy.context.view_layer.update()
+    return base, subframe
+
+
+def camera_state(scene, camera, source: float, output_frame: int | None = None) -> dict:
+    base, subframe = set_source_frame(scene, source)
+    state = {
+        "source_frame": float(source),
+        "base_frame": int(base),
+        "subframe": float(subframe),
+        "matrix_world": matrix_flat_rows(camera.matrix_world),
+        "lens_mm": float(camera.data.lens),
+        "sensor_width_mm": float(camera.data.sensor_width),
+        "fov_y_deg": math.degrees(float(camera.data.angle_y)),
+    }
+    if output_frame is not None:
+        state["output_frame"] = int(output_frame)
+    return state
+
+
+def export_camera_route(scene, camera, out: Path) -> dict:
+    samples = []
+    for output_frame in range(1, OUTPUT_FRAMES + 1):
+        source, _base, _subframe = source_sample(output_frame)
+        samples.append(camera_state(scene, camera, source, output_frame))
+
+    anchor = camera_state(scene, camera, float(FRAME))
+    route = {
+        "version": "coimbra-038-web-route-v1",
+        "source_lane": "Coimbra 032 via accepted 030 production-look scene",
+        "source_blend_sha256": EXPECTED_BLEND_SHA256,
+        "coordinate_space": "Blender world; align to imported frame-181 glTF camera via anchor",
+        "resolution": RESOLUTION,
+        "aspect": RESOLUTION[0] / RESOLUTION[1],
+        "source_frame_start": SOURCE_START,
+        "source_frame_end": SOURCE_END,
+        "source_frame_count": 360,
+        "output_frame_count": OUTPUT_FRAMES,
+        "fps": OUTPUT_FPS,
+        "duration_seconds": OUTPUT_FRAMES / OUTPUT_FPS,
+        "source_frame_step": (SOURCE_END - SOURCE_START) / (OUTPUT_FRAMES - 1),
+        "sampling": "native Blender fractional-frame evaluation",
+        "repeated_frames": False,
+        "optical_flow": False,
+        "anchor": anchor,
+        "samples": samples,
+    }
+    route_path = out / "coimbra-032-camera-route.json"
+    route_path.write_text(
+        json.dumps(route, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "path": route_path.name,
+        "bytes": route_path.stat().st_size,
+        "sha256": sha256(route_path),
+        "output_frame_count": OUTPUT_FRAMES,
+        "fps": OUTPUT_FPS,
+        "duration_seconds": OUTPUT_FRAMES / OUTPUT_FPS,
+        "anchor_source_frame": FRAME,
+    }
+
+
 def main() -> None:
     args = parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -49,6 +146,15 @@ def main() -> None:
     camera = scene.camera
     if camera is None:
         raise RuntimeError("Production camera missing")
+
+    frame181_camera = {
+        "name": camera.name,
+        "location": [float(v) for v in camera.matrix_world.translation],
+        "matrix_world": matrix_rows(camera.matrix_world),
+        "lens_mm": float(camera.data.lens),
+        "sensor_width_mm": float(camera.data.sensor_width),
+        "fov_y_deg": math.degrees(float(camera.data.angle_y)),
+    }
 
     for obj in scene.objects:
         obj.select_set(False)
@@ -106,8 +212,12 @@ def main() -> None:
         if image.filepath and not image.packed_file
     )
 
+    route_info = export_camera_route(scene, camera, args.out)
+    scene.frame_set(FRAME)
+    bpy.context.view_layer.update()
+
     manifest = {
-        "version": "coimbra-037-web-parity-export-v1",
+        "version": "coimbra-038-web-route-export-v1",
         "source_lane": "Coimbra 032 via accepted 030 production-look scene",
         "source_run_id": 36720891074,
         "source_blend": args.blend.name,
@@ -120,13 +230,8 @@ def main() -> None:
         "materials": len(material_names),
         "packed_images": packed_images,
         "external_file_images": file_images,
-        "camera": {
-            "name": camera.name,
-            "location": [float(v) for v in camera.matrix_world.translation],
-            "matrix_world": matrix_rows(camera.matrix_world),
-            "lens_mm": float(camera.data.lens),
-            "sensor_width_mm": float(camera.data.sensor_width),
-        },
+        "camera": frame181_camera,
+        "route": route_info,
         "web_compression": {
             "mesh": "EXT_meshopt_compression",
             "images": "WebP",
