@@ -232,7 +232,7 @@ def main() -> None:
     if stats["object_types"].get("MESH", 0) == 0:
         raise RuntimeError("No render-visible production geometry found")
 
-    selected_export_objects(scene, production_camera)
+    static_objects = selected_export_objects(scene, production_camera)
     static_glb = args.out / "coimbra-032-frame181.glb"
     export_glb(static_glb, animations=False)
 
@@ -263,6 +263,7 @@ def main() -> None:
         "source_blend": args.blend.name,
         "source_blend_sha256": EXPECTED_BLEND_SHA256,
         "frame": FRAME,
+        "selected_objects": len(static_objects),
         **stats,
         "packed_images": packed_images,
         "external_file_images": file_images,
