@@ -62,3 +62,28 @@ Rules:
   Pillow, Blender, generated artwork, or the diagnostic road preview;
 - persist a completed GameScript state so loading the save does not rebuild the network;
 - do not mutate accepted Blender 032/033 assets.
+
+
+## COIMBRA-OPENTTD-004
+
+Goal: turn the verified 003 transport skeleton into a recognisable OpenTTD city by
+founding the four pinned Coimbra districts as real towns and growing visible urban
+development around them.
+
+Required towns:
+- Vale das Flores
+- Bairro Norton de Matos
+- Polo II
+- Quinta da Portela
+
+Rules:
+- town coordinates must come from the pinned 001 `coimbra-towns.json`, not from
+  hand-tuned screenshot positions;
+- if the exact tile is occupied or unsuitable, search only a small bounded radius;
+- all four towns must be created successfully before the 004 save is accepted;
+- town expansion must use OpenTTD's own town-building API, not painted or generated
+  building sprites;
+- 004 screenshots must come from the reloaded `.sav` in graphical OpenTTD;
+- preserve the 003 road/bridge/tunnel semantics and never flatten failed
+  grade-separated structures;
+- do not mutate accepted Blender 032/033 assets.
