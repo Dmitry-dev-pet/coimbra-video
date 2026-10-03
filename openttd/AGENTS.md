@@ -45,3 +45,20 @@ Rules:
   Blender 032/033 assets;
 - a GameScript package is an executable construction layer, not yet a committed
   binary .scn/savegame.
+
+
+## COIMBRA-OPENTTD-003
+
+Goal: execute the full 002 Coimbra network in official OpenTTD 15.3, save the
+result as a real .sav, verify the save with OpenTTD itself, and capture real game
+screenshots from the saved map.
+
+Rules:
+- 003 must use the pinned 001 geodata hashes and rebuild the 002 GameScript from
+  the current branch.
+- wait for `Coimbra network build complete.` before issuing the save command;
+- verify the .sav with OpenTTD `-q`;
+- screenshots must come from the saved game loaded by graphical OpenTTD, not from
+  Pillow, Blender, generated artwork, or the diagnostic road preview;
+- persist a completed GameScript state so loading the save does not rebuild the network;
+- do not mutate accepted Blender 032/033 assets.
