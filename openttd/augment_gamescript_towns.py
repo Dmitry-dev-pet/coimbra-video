@@ -61,8 +61,12 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 
     town_methods = r'''
     function TryFoundTown(item) {
-        local base_x = item[0];
-        local base_y = item[1];
+        // Keep large towns enough room to grow at the cropped map edge.
+        // The original normalized coordinate remains the anchor; this guard
+        // only nudges an edge town inward before the bounded local search.
+        local edge_margin = 40;
+        local base_x = max(edge_margin, min(GSMap.GetMapSizeX() - edge_margin - 1, item[0]));
+        local base_y = max(edge_margin, min(GSMap.GetMapSizeY() - edge_margin - 1, item[1]));
         local target_population = item[2];
         local is_city = item[3];
         local town_name = item[4];
@@ -89,7 +93,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                         local town_id = GSTile.GetClosestTown(tile);
                         if (!GSTown.IsValidTown(town_id)) return true;
 
-                        for (local grow_round = 0; grow_round < 128; grow_round++) {
+                        for (local grow_round = 0; grow_round < 256; grow_round++) {
                             if (GSTown.GetPopulation(town_id) >= target_population) break;
                             GSTown.ExpandTown(town_id, 50);
                             this.Sleep(1);
