@@ -30,6 +30,21 @@ class RoadPlanTests(unittest.TestCase):
         self.assertEqual(road.classify_structure({"layer": "-1"}, cfg)[0], "tunnel")
         self.assertEqual(road.classify_structure({}, cfg)[0], "ground")
 
+    def test_merge_ground_edges_to_runs_preserves_exact_edges(self):
+        edges = [
+            {"start": [1, 2], "end": [2, 2]},
+            {"start": [2, 2], "end": [3, 2]},
+            {"start": [3, 2], "end": [4, 2]},
+            {"start": [3, 1], "end": [3, 2]},
+            {"start": [3, 2], "end": [3, 3]},
+        ]
+        runs = road.merge_ground_edges_to_runs(edges)
+        self.assertEqual(sorted(runs), sorted([
+            [1, 2, 4, 2],
+            [3, 1, 3, 3],
+        ]))
+
+
 
 if __name__ == "__main__":
     unittest.main()
