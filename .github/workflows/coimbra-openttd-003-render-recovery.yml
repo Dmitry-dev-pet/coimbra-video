@@ -1,0 +1,265 @@
+name: Recover Coimbra OpenTTD 003 screenshots
+
+on:
+  push:
+    branches:
+      - feature/coimbra-openttd-003-save-screenshot
+    paths:
+      - ".github/workflows/coimbra-openttd-003-render-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter and image dependencies
+        run: python -m pip install --disable-pip-version-check "numpy>=2,<3" "Pillow>=11,<13" "pyproj>=3.7,<4"
+
+      - name: Download verified Coimbra 001 geodata
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: 37156903657
+          name: coimbra-openttd-001
+          github-token: ${{ github.token }}
+          path: source_001
+
+      - name: Download completed Coimbra 003 save evidence
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: 37160327427
+          name: coimbra-openttd-003
+          github-token: ${{ github.token }}
+          path: source_003
+
+      - name: Normalize sources and rebuild matching GameScript v3
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/coimbra-openttd-001 artifacts/coimbra-openttd-002 artifacts/coimbra-openttd-003
+
+          heightmap="$(find source_001 -type f -name 'coimbra-heightmap.png' -print -quit)"
+          network="$(find source_001 -type f -name 'coimbra-osm-network.geojson' -print -quit)"
+          manifest="$(find source_001 -type f -name 'manifest.json' -print -quit)"
+          towns="$(find source_001 -type f -name 'coimbra-towns.json' -print -quit)"
+          savefile="$(find source_003 -type f -name 'coimbra-openttd-003.sav' -print -quit)"
+          buildlog="$(find source_003 -type f -name 'build.log' -print -quit)"
+          saveinfo="$(find source_003 -type f -name 'save-info.txt' -print -quit)"
+
+          test -n "$heightmap" && test -n "$network" && test -n "$manifest" && test -n "$towns"
+          test -n "$savefile" && test -s "$savefile"
+          cp "$heightmap" artifacts/coimbra-openttd-001/coimbra-heightmap.png
+          cp "$network" artifacts/coimbra-openttd-001/coimbra-osm-network.geojson
+          cp "$manifest" artifacts/coimbra-openttd-001/manifest.json
+          cp "$towns" artifacts/coimbra-openttd-001/coimbra-towns.json
+          cp "$savefile" artifacts/coimbra-openttd-003/coimbra-openttd-003.sav
+          cp "$buildlog" artifacts/coimbra-openttd-003/build.log
+          cp "$saveinfo" artifacts/coimbra-openttd-003/save-info.txt
+
+          python openttd/build_road_plan.py \
+            --network artifacts/coimbra-openttd-001/coimbra-osm-network.geojson \
+            --manifest artifacts/coimbra-openttd-001/manifest.json \
+            --heightmap artifacts/coimbra-openttd-001/coimbra-heightmap.png \
+            --config openttd/config/coimbra-openttd-002.json \
+            --out artifacts/coimbra-openttd-002
+
+          grep -F 'GetVersion() { return 3; }' artifacts/coimbra-openttd-002/game/CoimbraBuilder/info.nut
+          grep -F 'completed = false;' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+
+      - name: Install pinned OpenTTD 15.3 and OpenGFX
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/openttd-003-recovery"
+          home="$RUNNER_TEMP/openttd-003-recovery-home"
+          mkdir -p "$runtime" "$home/.local/share/openttd/baseset" "$home/.local/share/openttd/game"
+
+          curl -fsSLo "$runtime/openttd.tar.xz" \
+            https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
+          echo "f49eb25d61b00f8f4d332fee02b530ad75552d1efb8f2bb01e7ca5e6540fe059  $runtime/openttd.tar.xz" | sha256sum -c -
+          mkdir -p "$runtime/openttd"
+          tar -xJf "$runtime/openttd.tar.xz" -C "$runtime/openttd"
+          openttd="$(find "$runtime/openttd" -type f -name openttd -perm -111 -print -quit)"
+          bindir="$(dirname "$openttd")"
+
+          curl -fsSLo "$runtime/opengfx.zip" \
+            https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip
+          echo "43a0c1dabf39cb865394f3a6cc36d4da5c10ecfaaf55652043104806810903be  $runtime/opengfx.zip" | sha256sum -c -
+          unzip -q "$runtime/opengfx.zip" -d "$home/.local/share/openttd/baseset"
+          cp -R artifacts/coimbra-openttd-002/game/CoimbraBuilder "$home/.local/share/openttd/game/"
+
+          cat > "$runtime/openttd.cfg" <<'EOF'
+          [misc]
+          language = english.lng
+
+          [game_creation]
+          map_x = 9
+          map_y = 9
+
+          [game_scripts]
+          "Coimbra Builder" =
+          EOF
+
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          echo "home=$home" >> "$GITHUB_OUTPUT"
+          echo "openttd=$openttd" >> "$GITHUB_OUTPUT"
+          echo "bindir=$bindir" >> "$GITHUB_OUTPUT"
+
+      - name: Install virtual display
+        run: |
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xvfb xauth
+          fi
+
+      - name: Load real save and capture dense Coimbra view
+        shell: bash
+        env:
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+          BINDIR: ${{ steps.runtime.outputs.bindir }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$BINDIR/scripts"
+          cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          scrollto instant 270 110
+          zoomto 2
+          screenshot normal size 1280 720 coimbra-openttd-003-isometric
+          screenshot minimap coimbra-openttd-003-minimap
+          EOF
+
+          log="$RUNTIME/render.log"
+          (
+            cd "$BINDIR"
+            HOME="$HOME_DIR" xvfb-run -a "$OPENTTD" \
+              -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-003/coimbra-openttd-003.sav" \
+              -I OpenGFX \
+              -s null \
+              -m null \
+              -c "$RUNTIME/openttd.cfg" \
+              -r 1280x720 \
+              -x \
+              -d script=4,misc=1
+          ) > "$log" 2>&1 &
+          pid=$!
+
+          iso=""
+          mini=""
+          reload=0
+          for _ in $(seq 1 90); do
+            iso="$(find "$RUNTIME" "$HOME_DIR" -type f -name 'coimbra-openttd-003-isometric*.png' -size +0c -print -quit 2>/dev/null || true)"
+            mini="$(find "$RUNTIME" "$HOME_DIR" -type f -name 'coimbra-openttd-003-minimap*.png' -size +0c -print -quit 2>/dev/null || true)"
+            if grep -Fq "Coimbra completed save loaded; network rebuild skipped." "$log" 2>/dev/null; then
+              reload=1
+            fi
+            if [[ -n "$iso" && -n "$mini" && "$reload" -eq 1 ]]; then
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$log"
+              exit 4
+            fi
+            sleep 1
+          done
+
+          test -n "$iso" && test -s "$iso"
+          test -n "$mini" && test -s "$mini"
+          test "$reload" -eq 1
+
+          cp "$iso" artifacts/coimbra-openttd-003/coimbra-openttd-003-isometric.png
+          cp "$mini" artifacts/coimbra-openttd-003/coimbra-openttd-003-minimap.png
+          cp "$log" artifacts/coimbra-openttd-003/render.log
+
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" || true
+
+      - name: Verify and package recovered 003
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, re
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path("artifacts/coimbra-openttd-003")
+          sav = root / "coimbra-openttd-003.sav"
+          iso = root / "coimbra-openttd-003-isometric.png"
+          mini = root / "coimbra-openttd-003-minimap.png"
+          build = (root / "build.log").read_text(errors="replace")
+          render = (root / "render.log").read_text(errors="replace")
+
+          with Image.open(iso) as im:
+              assert im.size == (1280, 720), im.size
+              iso_size = list(im.size)
+          with Image.open(mini) as im:
+              assert im.size == (512, 512), im.size
+              mini_size = list(im.size)
+
+          assert "Coimbra completed save loaded; network rebuild skipped." in render
+
+          def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+          def counts(kind):
+              m = re.search(rf"{kind} ok=(\d+) fail=(\d+)", build)
+              assert m, kind
+              return {"ok": int(m.group(1)), "fail": int(m.group(2))}
+
+          payload = {
+              "version": "coimbra-openttd-003",
+              "verified": True,
+              "openttd_version": "15.3",
+              "savegame": {
+                  "path": sav.name,
+                  "bytes": sav.stat().st_size,
+                  "sha256": sha(sav),
+                  "savegame_version": 362
+              },
+              "runtime_build": {
+                  "roads": counts("roads"),
+                  "bridges": counts("bridges"),
+                  "tunnels": counts("tunnels")
+              },
+              "reload_guard_verified": True,
+              "capture_center_tile": [270, 110],
+              "capture_zoom": 2,
+              "isometric": {"path": iso.name, "size": iso_size, "sha256": sha(iso)},
+              "minimap": {"path": mini.name, "size": mini_size, "sha256": sha(mini)},
+              "source_full_build_run": 37160327427,
+              "source_001_run": 37156903657,
+              "source_002_runtime_smoke_run": 37158799345
+          }
+          (root / "manifest.json").write_text(json.dumps(payload, indent=2) + "\n")
+          print(json.dumps(payload, indent=2))
+          PY
+
+          cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-003/
+          cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-003/
+          cp artifacts/coimbra-openttd-002/road-plan-manifest.json artifacts/coimbra-openttd-003/
+          cp -R artifacts/coimbra-openttd-002/game artifacts/coimbra-openttd-003/
+
+          cd artifacts
+          zip -r coimbra-openttd-003.zip coimbra-openttd-003
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-openttd-003-recovered
+          path: |
+            artifacts/coimbra-openttd-003/
+            artifacts/coimbra-openttd-003.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
