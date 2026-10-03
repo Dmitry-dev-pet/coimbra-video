@@ -112,8 +112,6 @@ jobs:
           set -euo pipefail
           cfg="$RUNTIME/build.cfg"
           log="$RUNTIME/build.log"
-          fifo="$RUNTIME/console.in"
-
           cat > "$cfg" <<'EOF'
           [misc]
           language = english.lng
@@ -129,16 +127,15 @@ jobs:
           number_towns = 4
           industry_density = 0
 
+          [gui]
+          autosave_on_exit = true
+
           [network]
           server_port = 0
 
           [game_scripts]
           "Coimbra Builder" =
           EOF
-
-          rm -f "$fifo"
-          mkfifo "$fifo"
-          exec 3<>"$fifo"
 
           HOME="$HOME_DIR" "$OPENTTD" \
             -D 127.0.0.1:0 \
@@ -147,7 +144,7 @@ jobs:
             -c "$cfg" \
             -x \
             -d script=4,misc=1 \
-            < "$fifo" > "$log" 2>&1 &
+            > "$log" 2>&1 &
           pid=$!
 
           complete=0
@@ -168,32 +165,26 @@ jobs:
           done
           test "$complete" -eq 1
 
-          printf 'save coimbra-openttd-003\n' >&3
-          saved=0
-          savefile=""
-          for _ in $(seq 1 90); do
-            savefile="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003.sav' -size +0c -print -quit || true)"
-            if [[ -n "$savefile" ]]; then
-              saved=1
-              break
-            fi
-            if ! kill -0 "$pid" 2>/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          test "$saved" -eq 1
-          test -n "$savefile" && test -s "$savefile"
-          cp "$savefile" artifacts/coimbra-openttd-003/coimbra-openttd-003.sav
-          cp "$log" artifacts/coimbra-openttd-003/build.log
-
-          printf 'exit\n' >&3 || true
-          for _ in $(seq 1 20); do
+          # Use OpenTTD's native dedicated-server exit-save path.
+          # DedicatedSignalHandler + autosave_on_exit calls DoExitSave(), which
+          # writes autosave/exit.sav before the server exits.
+          kill -TERM "$pid"
+          for _ in $(seq 1 60); do
             if ! kill -0 "$pid" 2>/dev/null; then break; fi
             sleep 1
           done
-          if kill -0 "$pid" 2>/dev/null; then kill "$pid" || true; fi
+          if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" || true
+            wait "$pid" || true
+            cat "$log"
+            exit 5
+          fi
           wait "$pid" || true
+
+          savefile="$(find "$HOME_DIR" -type f -name 'exit.sav' -size +0c -print -quit || true)"
+          test -n "$savefile" && test -s "$savefile"
+          cp "$savefile" artifacts/coimbra-openttd-003/coimbra-openttd-003.sav
+          cp "$log" artifacts/coimbra-openttd-003/build.log
 
           grep -F "Coimbra network build complete." artifacts/coimbra-openttd-003/build.log
           grep -F "roads ok=" artifacts/coimbra-openttd-003/build.log
