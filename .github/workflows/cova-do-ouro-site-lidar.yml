@@ -77,7 +77,7 @@ jobs:
             site_output_cova_do_ouro_parcel/cadastro_raw.geojson
             site_output_cova_do_ouro_parcel/ortho_2025.jpg
             site_output_cova_do_ouro_parcel/parcel_overlay.png
-            site_output_cova_do_ouro_listing_georef/listing_georef_summary.json
+            site_output_cova_do_ouro_listing_georef/listing_georef_summary.json\n            site_output_cova_do_ouro_listing_georef/listing_plot_outline.png
             site_output_cova_do_ouro_listing_georef/listing_outline_on_dgt_ortho.png
             site_output_cova_do_ouro_listing_georef/listing_warped_to_dgt.png
             site_output_cova_do_ouro_listing_georef/listing_yellow_mask_georef.png
