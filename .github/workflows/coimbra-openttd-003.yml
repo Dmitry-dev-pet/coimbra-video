@@ -170,8 +170,10 @@ jobs:
 
           printf 'save coimbra-openttd-003\n' >&3
           saved=0
+          savefile=""
           for _ in $(seq 1 90); do
-            if grep -Fq "Map successfully saved to 'coimbra-openttd-003.sav'." "$log"; then
+            savefile="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003.sav' -size +0c -print -quit || true)"
+            if [[ -n "$savefile" ]]; then
               saved=1
               break
             fi
@@ -181,8 +183,6 @@ jobs:
             sleep 1
           done
           test "$saved" -eq 1
-
-          savefile="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003.sav' -print -quit)"
           test -n "$savefile" && test -s "$savefile"
           cp "$savefile" artifacts/coimbra-openttd-003/coimbra-openttd-003.sav
           cp "$log" artifacts/coimbra-openttd-003/build.log
