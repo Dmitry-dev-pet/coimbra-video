@@ -29,3 +29,19 @@ Rules:
 - This lane is a geodata/import-pack milestone. A generated .scn/savegame is a
   separate follow-up milestone.
 - OSM attribution must be present in documentation and manifest.
+
+
+## COIMBRA-OPENTTD-002
+
+Goal: quantize the 001 OSM transport reference to a 512×512 four-connected
+OpenTTD road plan and emit an installable Coimbra Builder GameScript.
+
+Rules:
+- surface roads may be snapped to the tile grid;
+- bridge/tunnel/layer-tagged geometry remains grade-separated;
+- failed or unrepresentable grade-separated candidates must never be silently
+  flattened to surface roads;
+- 002 may read 001 outputs but must not mutate the pinned DGT source or accepted
+  Blender 032/033 assets;
+- a GameScript package is an executable construction layer, not yet a committed
+  binary .scn/savegame.
