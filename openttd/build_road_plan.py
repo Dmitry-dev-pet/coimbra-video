@@ -82,6 +82,57 @@ def compress_cells(cells):
     return runs
 
 
+
+def merge_ground_edges_to_runs(edges):
+    """Merge the exact unit-edge set into maximal collinear road runs.
+
+    This is topology-preserving: a run is created only where every unit edge
+    already exists in the quantized ground graph. Intersections are safe to
+    merge through because perpendicular runs later add their own road bits at
+    the shared tile.
+    """
+    horizontal = defaultdict(set)
+    vertical = defaultdict(set)
+
+    for edge in edges:
+        a = tuple(edge["start"])
+        b = tuple(edge["end"])
+        if a[0] == b[0] and abs(a[1] - b[1]) == 1:
+            vertical[a[0]].add(min(a[1], b[1]))
+        elif a[1] == b[1] and abs(a[0] - b[0]) == 1:
+            horizontal[a[1]].add(min(a[0], b[0]))
+        else:
+            raise ValueError(f"ground edge is not a unit orthogonal edge: {a} -> {b}")
+
+    runs = []
+
+    def emit(fixed, values, horizontal_axis):
+        values = sorted(values)
+        if not values:
+            return
+        start = prev = values[0]
+        for value in values[1:]:
+            if value == prev + 1:
+                prev = value
+                continue
+            if horizontal_axis:
+                runs.append([start, fixed, prev + 1, fixed])
+            else:
+                runs.append([fixed, start, fixed, prev + 1])
+            start = prev = value
+        if horizontal_axis:
+            runs.append([start, fixed, prev + 1, fixed])
+        else:
+            runs.append([fixed, start, fixed, prev + 1])
+
+    for fixed, values in sorted(horizontal.items()):
+        emit(fixed, values, True)
+    for fixed, values in sorted(vertical.items()):
+        emit(fixed, values, False)
+
+    return runs
+
+
 def classify_structure(props, config):
     layer_raw = props.get("layer")
     try:
@@ -225,7 +276,7 @@ def write_gamescript(plan, out_dir, api_version, chunk_size=400):
     game = out_dir / "game" / "CoimbraBuilder"
     game.mkdir(parents=True, exist_ok=True)
 
-    roads = [[*x["start"], *x["end"]] for x in plan["ground_edges"]]
+    roads = merge_ground_edges_to_runs(plan["ground_edges"])
     bridges = [[*x["start"], *x["end"], x["length_tiles"]] for x in plan["bridges"]]
     tunnels = [[*x["start"], *x["end"], x["length_tiles"]] for x in plan["tunnels"]]
 
@@ -249,10 +300,17 @@ def write_gamescript(plan, out_dir, api_version, chunk_size=400):
         chunk_names.append(name)
 
     runtime_load = []
-    for name in chunk_names:
+    for chunk_index, name in enumerate(chunk_names):
         runtime_load += [
             f'        require("{name}");',
             "        this.BuildRoadBatch(COIMBRA_ROAD_BATCH);",
+            f'        GSLog.Info("Coimbra road chunk {chunk_index + 1}/{len(chunk_names)} complete.");',
+        ]
+        if chunk_index == 0:
+            runtime_load.append(
+                '        GSLog.Info("Coimbra smoke checkpoint: first road chunk complete.");'
+            )
+        runtime_load += [
             "        ::COIMBRA_ROAD_BATCH = null;",
             "        this.Sleep(1);",
         ]
@@ -312,7 +370,7 @@ RegisterGS(CoimbraBuilderInfo());
         foreach (item in items) {{
             local start = GSMap.GetTileIndex(item[0], item[1]);
             local end = GSMap.GetTileIndex(item[2], item[3]);
-            if (GSRoad.AreRoadTilesConnected(start, end) || GSRoad.BuildRoad(start, end)) {{
+            if (GSRoad.BuildRoad(start, end)) {{
                 this.road_ok++;
             }} else {{
                 this.road_fail++;
@@ -375,7 +433,7 @@ RegisterGS(CoimbraBuilderInfo());
         "that cannot be represented by the imported terrain are skipped, never flattened.\n",
         encoding="utf-8",
     )
-    return game, len(chunk_names)
+    return game, len(chunk_names), len(roads)
 
 
 def draw_preview(heightmap_path, plan, out):
@@ -413,7 +471,7 @@ def main():
     plan_path = args.out / "coimbra-road-plan.json"
     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     draw_preview(args.heightmap, plan, args.out / "coimbra-road-preview.png")
-    _game, road_chunk_count = write_gamescript(plan, args.out, config["gamescript_api_version"])
+    _game, road_chunk_count, road_run_count = write_gamescript(plan, args.out, config["gamescript_api_version"])
 
     summary = {
         "version": config["version"],
@@ -425,6 +483,7 @@ def main():
         "excluded": plan["excluded"],
         "gamescript": "game/CoimbraBuilder",
         "road_chunk_count": road_chunk_count,
+        "road_run_count": road_run_count,
         "runtime_note": "GameScript attempts bridges/tunnels first and never demotes failed grade-separated structures to ground roads."
     }
     (args.out / "road-plan-manifest.json").write_text(
