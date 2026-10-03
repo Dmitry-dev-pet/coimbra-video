@@ -1,0 +1,10 @@
+{
+  "id": "cova-do-ouro-site-lidar",
+  "center_wgs84": [-8.37188243865967, 40.2276946251289],
+  "half_extent_m": 75.0,
+  "local_plane_radius_m": 20.0,
+  "profile_half_length_m": 30.0,
+  "building_lengths_m": [6.0, 7.0, 15.0],
+  "source": "DGT LiDAR 2024-2025 MDT-50cm",
+  "purpose": "Bare-earth terrain profile for the Cova do Ouro / Torres do Mondego property concept study"
+}
