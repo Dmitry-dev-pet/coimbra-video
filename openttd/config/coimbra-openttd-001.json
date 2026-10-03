@@ -1,0 +1,47 @@
+{
+  "version": "coimbra-openttd-001",
+  "name": "Coimbra South - OpenTTD prototype",
+  "terrain_npz": "data/processed/bridge_terrain_6m.npz",
+  "terrain_meta": "data/processed/bridge_terrain_6m.json",
+  "heightmap": {
+    "size_px": 512,
+    "water_elevation_m": 19.0,
+    "max_elevation_m": 135.0,
+    "sea_border_px": 2
+  },
+  "towns": [
+    {
+      "name": "Vale das Flores",
+      "lon": -8.41043,
+      "lat": 40.19522,
+      "population": 2200,
+      "city": false
+    },
+    {
+      "name": "Bairro Norton de Matos",
+      "lon": -8.407974,
+      "lat": 40.198309,
+      "population": 2600,
+      "city": false
+    },
+    {
+      "name": "Polo II",
+      "lon": -8.41473,
+      "lat": 40.18668,
+      "population": 1800,
+      "city": false
+    },
+    {
+      "name": "Quinta da Portela",
+      "lon": -8.4052,
+      "lat": 40.18579,
+      "population": 1800,
+      "city": false
+    }
+  ],
+  "overpass_endpoints": [
+    "https://overpass-api.de/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter"
+  ],
+  "osm_attribution": "Map data © OpenStreetMap contributors, ODbL"
+}
