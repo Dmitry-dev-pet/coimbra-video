@@ -221,25 +221,42 @@ def squirrel_array(items):
     return "[\n" + ",\n".join("  " + json.dumps(i, separators=(",", ":")) for i in items) + "\n]"
 
 
-def write_gamescript(plan, out_dir, api_version):
+def write_gamescript(plan, out_dir, api_version, chunk_size=400):
     game = out_dir / "game" / "CoimbraBuilder"
     game.mkdir(parents=True, exist_ok=True)
+
     roads = [[*x["start"], *x["end"]] for x in plan["ground_edges"]]
     bridges = [[*x["start"], *x["end"], x["length_tiles"]] for x in plan["bridges"]]
     tunnels = [[*x["start"], *x["end"], x["length_tiles"]] for x in plan["tunnels"]]
 
-    (game / "plan.nut").write_text(
-        "::COIMBRA_MAP_X <- %d;\n::COIMBRA_MAP_Y <- %d;\n"
-        "::COIMBRA_ROADS <- %s;\n::COIMBRA_BRIDGES <- %s;\n::COIMBRA_TUNNELS <- %s;\n"
-        % (
-            plan["map_size"][0],
-            plan["map_size"][1],
-            squirrel_array(roads),
-            squirrel_array(bridges),
-            squirrel_array(tunnels),
-        ),
+    # Keep the initial GameScript constructor tiny. OpenTTD caps constructor
+    # operations, so the large road plan is loaded in small runtime chunks from
+    # Start(), with a Sleep between batches.
+    (game / "structures.nut").write_text(
+        "::COIMBRA_BRIDGES <- %s;\n::COIMBRA_TUNNELS <- %s;\n"
+        % (squirrel_array(bridges), squirrel_array(tunnels)),
         encoding="utf-8",
     )
+
+    chunk_names = []
+    for index in range(0, len(roads), chunk_size):
+        name = f"roads_{index // chunk_size:03d}.nut"
+        chunk = roads[index : index + chunk_size]
+        (game / name).write_text(
+            "::COIMBRA_ROAD_BATCH <- %s;\n" % squirrel_array(chunk),
+            encoding="utf-8",
+        )
+        chunk_names.append(name)
+
+    runtime_load = []
+    for name in chunk_names:
+        runtime_load += [
+            f'        require("{name}");',
+            "        this.BuildRoadBatch(COIMBRA_ROAD_BATCH);",
+            "        ::COIMBRA_ROAD_BATCH = null;",
+            "        this.Sleep(1);",
+        ]
+    runtime_load_text = "\n".join(runtime_load)
 
     (game / "info.nut").write_text(
         f'''class CoimbraBuilderInfo extends GSInfo {{
@@ -259,10 +276,16 @@ RegisterGS(CoimbraBuilderInfo());
     )
 
     (game / "main.nut").write_text(
-        '''require("plan.nut");
+        f'''class CoimbraBuilder extends GSController {{
+    road_ok = 0;
+    road_fail = 0;
+    bridge_ok = 0;
+    bridge_fail = 0;
+    tunnel_ok = 0;
+    tunnel_fail = 0;
+    op = 0;
 
-class CoimbraBuilder extends GSController {
-    function BuildBridge(item) {
+    function BuildBridge(item) {{
         local start = GSMap.GetTileIndex(item[0], item[1]);
         local end = GSMap.GetTileIndex(item[2], item[3]);
         local length = item[4];
@@ -270,9 +293,9 @@ class CoimbraBuilder extends GSController {
         if (list.IsEmpty()) return false;
         local bridge_type = list.Begin();
         return GSBridge.BuildBridge(GSVehicle.VT_ROAD, bridge_type, start, end);
-    }
+    }}
 
-    function BuildTunnel(item) {
+    function BuildTunnel(item) {{
         local start = GSMap.GetTileIndex(item[0], item[1]);
         local expected = GSMap.GetTileIndex(item[2], item[3]);
         local actual = GSTunnel.GetOtherTunnelEnd(start);
@@ -283,69 +306,76 @@ class CoimbraBuilder extends GSController {
         actual = GSTunnel.GetOtherTunnelEnd(reverse_start);
         if (actual == reverse_expected) return GSTunnel.BuildTunnel(GSVehicle.VT_ROAD, reverse_start);
         return false;
-    }
+    }}
 
-    function Start() {
-        if (GSMap.GetMapSizeX() != COIMBRA_MAP_X || GSMap.GetMapSizeY() != COIMBRA_MAP_Y) {
-            GSLog.Error("Coimbra Builder requires the matching 512x512 Coimbra heightmap.");
-            return;
-        }
-
-        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);
-        local bridge_ok = 0;
-        local bridge_fail = 0;
-        local tunnel_ok = 0;
-        local tunnel_fail = 0;
-        local road_ok = 0;
-        local road_fail = 0;
-        local op = 0;
-
-        foreach (item in COIMBRA_BRIDGES) {
-            if (this.BuildBridge(item)) bridge_ok++; else bridge_fail++;
-            if (++op % 100 == 0) this.Sleep(1);
-        }
-        foreach (item in COIMBRA_TUNNELS) {
-            if (this.BuildTunnel(item)) tunnel_ok++; else tunnel_fail++;
-            if (++op % 100 == 0) this.Sleep(1);
-        }
-        foreach (item in COIMBRA_ROADS) {
+    function BuildRoadBatch(items) {{
+        foreach (item in items) {{
             local start = GSMap.GetTileIndex(item[0], item[1]);
             local end = GSMap.GetTileIndex(item[2], item[3]);
-            if (GSRoad.AreRoadTilesConnected(start, end) || GSRoad.BuildRoad(start, end)) {
-                road_ok++;
-            } else {
-                road_fail++;
-            }
-            if (++op % 200 == 0) this.Sleep(1);
-        }
+            if (GSRoad.AreRoadTilesConnected(start, end) || GSRoad.BuildRoad(start, end)) {{
+                this.road_ok++;
+            }} else {{
+                this.road_fail++;
+            }}
+            this.op++;
+            if (this.op % 200 == 0) this.Sleep(1);
+        }}
+    }}
+
+    function Start() {{
+        if (GSMap.GetMapSizeX() != 512 || GSMap.GetMapSizeY() != 512) {{
+            GSLog.Error("Coimbra Builder requires the matching 512x512 Coimbra heightmap.");
+            return;
+        }}
+
+        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);
+
+        // Structure data is small, but still loaded only after Start begins.
+        require("structures.nut");
+        foreach (item in COIMBRA_BRIDGES) {{
+            if (this.BuildBridge(item)) this.bridge_ok++; else this.bridge_fail++;
+            if (++this.op % 50 == 0) this.Sleep(1);
+        }}
+        foreach (item in COIMBRA_TUNNELS) {{
+            if (this.BuildTunnel(item)) this.tunnel_ok++; else this.tunnel_fail++;
+            if (++this.op % 50 == 0) this.Sleep(1);
+        }}
+        ::COIMBRA_BRIDGES = null;
+        ::COIMBRA_TUNNELS = null;
+        this.Sleep(1);
+
+{runtime_load_text}
 
         GSLog.Info("Coimbra network build complete.");
-        GSLog.Info("roads ok=" + road_ok + " fail=" + road_fail);
-        GSLog.Info("bridges ok=" + bridge_ok + " fail=" + bridge_fail);
-        GSLog.Info("tunnels ok=" + tunnel_ok + " fail=" + tunnel_fail);
+        GSLog.Info("roads ok=" + this.road_ok + " fail=" + this.road_fail);
+        GSLog.Info("bridges ok=" + this.bridge_ok + " fail=" + this.bridge_fail);
+        GSLog.Info("tunnels ok=" + this.tunnel_ok + " fail=" + this.tunnel_fail);
 
         while (true) this.Sleep(740);
-    }
+    }}
 
-    function Save() {
-        return {};
-    }
+    function Save() {{
+        return {{}};
+    }}
 
-    function Load(version, data) {
-    }
-}
+    function Load(version, data) {{
+    }}
+}}
 ''',
         encoding="utf-8",
     )
+
     (game / "README.txt").write_text(
         "Coimbra Builder GameScript\n"
         "Install this CoimbraBuilder directory in your OpenTTD game/ directory.\n"
         "Select 'Coimbra Builder' before starting the matching 512x512 Coimbra map.\n"
+        f"The road plan is streamed at runtime from {len(chunk_names)} small chunks "
+        f"of at most {chunk_size} edges each.\n"
         "The script builds structures first, then surface roads. Bridge/tunnel candidates\n"
         "that cannot be represented by the imported terrain are skipped, never flattened.\n",
         encoding="utf-8",
     )
-    return game
+    return game, len(chunk_names)
 
 
 def draw_preview(heightmap_path, plan, out):
@@ -383,7 +413,7 @@ def main():
     plan_path = args.out / "coimbra-road-plan.json"
     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     draw_preview(args.heightmap, plan, args.out / "coimbra-road-preview.png")
-    write_gamescript(plan, args.out, config["gamescript_api_version"])
+    _game, road_chunk_count = write_gamescript(plan, args.out, config["gamescript_api_version"])
 
     summary = {
         "version": config["version"],
@@ -394,6 +424,7 @@ def main():
         "tunnel_candidates": len(plan["tunnels"]),
         "excluded": plan["excluded"],
         "gamescript": "game/CoimbraBuilder",
+        "road_chunk_count": road_chunk_count,
         "runtime_note": "GameScript attempts bridges/tunnels first and never demotes failed grade-separated structures to ground roads."
     }
     (args.out / "road-plan-manifest.json").write_text(
