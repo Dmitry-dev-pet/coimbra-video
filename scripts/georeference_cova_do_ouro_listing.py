@@ -12,14 +12,14 @@ ROOT = Path(__file__).resolve().parents[1]
 PARCEL = ROOT / "site_output_cova_do_ouro_parcel"
 ORTHO = PARCEL / "ortho_2025.jpg"
 OUT = ROOT / "site_output_cova_do_ouro_listing_georef"
-LISTING_URL = "https://images.century21.pt/b27472e0-660a-40af-bf5a-0d77016aa932/2.png?height=1536&quality=100&width=2048"
+LISTING_URL = "https://images.century21.pt/b27472e0-660a-40af-bf5a-0d77016aa932/2.png?height=768&quality=100&width=1024"
 ORTHO_BOUNDS = [-20411.96603710206, 62053.59232631121, -20231.96603710206, 62233.59232631121]
 
 
 def download_listing():
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / "listing_plot_outline.png"
-    r = requests.get(LISTING_URL, timeout=90, headers={"User-Agent":"Mozilla/5.0"})
+    r = requests.get(LISTING_URL, timeout=90, headers={"User-Agent":"Mozilla/5.0", "Referer":"https://century21.pt/ref/C0234-02811", "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"})
     r.raise_for_status()
     path.write_bytes(r.content)
     return path
@@ -86,7 +86,19 @@ def main():
     if listing is None or ortho is None:
         raise RuntimeError("Could not read listing/ortho image")
 
-    H, metrics = match_homography(listing, ortho)
+    try:
+        H, metrics = match_homography(listing, ortho)
+    except Exception as exc:
+        payload = {
+            "listing_image_url": LISTING_URL,
+            "listing_shape": list(listing.shape),
+            "orthophoto_shape": list(ortho.shape),
+            "registration_error": repr(exc),
+            "warning": "Diagnostic result: listing image downloaded but automatic registration failed.",
+        }
+        (OUT/"listing_georef_summary.json").write_text(json.dumps(payload,indent=2)+"\\n")
+        print(json.dumps(payload,indent=2))
+        return
     h,w = ortho.shape[:2]
     warped = cv2.warpPerspective(listing, H, (w,h))
 
