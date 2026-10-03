@@ -1,0 +1,17 @@
+{
+  "version": "coimbra-openttd-002",
+  "map_size": 512,
+  "include_highways": [
+    "motorway", "motorway_link",
+    "trunk", "trunk_link",
+    "primary", "primary_link",
+    "secondary", "secondary_link",
+    "tertiary", "tertiary_link",
+    "unclassified", "residential", "living_street"
+  ],
+  "bridge_from_positive_layer": true,
+  "tunnel_from_negative_layer": true,
+  "minimum_structure_tiles": 2,
+  "gamescript_api_version": "15",
+  "openttd_target": "15.3"
+}
