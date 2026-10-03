@@ -6,7 +6,7 @@ on:
     paths:
       - "config/cova_do_ouro_site.json"
       - "scripts/analyze_cova_do_ouro_mdt.py"
-      - "scripts/analyze_cova_do_ouro_parcel.py"
+      - "scripts/analyze_cova_do_ouro_parcel.py"\n      - "scripts/georeference_cova_do_ouro_listing.py"
       - "scripts/fetch_dgt_highres_bridge.py"
       - "scripts/prepare_dgt_highres_bridge.py"
       - ".github/workflows/cova-do-ouro-site-lidar.yml"
@@ -34,7 +34,7 @@ jobs:
           python -m pip install \
             "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" \
             "rasterio>=1.4,<2" "matplotlib>=3.9,<4" \
-            "shapely>=2.0,<3" "pillow>=11,<12"
+            "shapely>=2.0,<3" "pillow>=11,<12" "opencv-python-headless>=4.10,<5"
 
       - name: Compile
         run: |
@@ -42,7 +42,7 @@ jobs:
             scripts/fetch_dgt_highres_bridge.py \
             scripts/prepare_dgt_highres_bridge.py \
             scripts/analyze_cova_do_ouro_mdt.py \
-            scripts/analyze_cova_do_ouro_parcel.py
+            scripts/analyze_cova_do_ouro_parcel.py \\\n            scripts/georeference_cova_do_ouro_listing.py
 
       - name: Download DGT MDT and analyse site
         run: |
@@ -52,7 +52,7 @@ jobs:
       - name: Resolve cadastral parcel and optimize 6x7 footprint
         run: |
           python scripts/analyze_cova_do_ouro_parcel.py
-          cat site_output_cova_do_ouro_parcel/parcel_summary.json
+          cat site_output_cova_do_ouro_parcel/parcel_summary.json\n\n      - name: Georeference Century21 parcel outline\n        run: |\n          python scripts/georeference_cova_do_ouro_listing.py\n          cat site_output_cova_do_ouro_listing_georef/listing_georef_summary.json
 
       - name: Upload site terrain evidence
         uses: actions/upload-artifact@v4
@@ -69,5 +69,5 @@ jobs:
             site_output_cova_do_ouro_parcel/parcel_summary.json
             site_output_cova_do_ouro_parcel/cadastro_raw.geojson
             site_output_cova_do_ouro_parcel/ortho_2025.jpg
-            site_output_cova_do_ouro_parcel/parcel_overlay.png
+            site_output_cova_do_ouro_parcel/parcel_overlay.png\n            site_output_cova_do_ouro_listing_georef/listing_georef_summary.json\n            site_output_cova_do_ouro_listing_georef/listing_outline_on_dgt_ortho.png\n            site_output_cova_do_ouro_listing_georef/listing_warped_to_dgt.png\n            site_output_cova_do_ouro_listing_georef/listing_yellow_mask_georef.png\n            site_output_cova_do_ouro_listing_georef/outline_lines_epsg3763.json
           if-no-files-found: error
