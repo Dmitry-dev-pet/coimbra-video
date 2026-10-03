@@ -81,25 +81,31 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 
                     if (GSTown.FoundTown(
                         tile,
-                        GSTown.TOWN_SIZE_SMALL,
+                        GSTown.TOWN_SIZE_LARGE,
                         is_city,
-                        GSTown.ROAD_LAYOUT_BETTER_ROADS,
+                        GSTown.ROAD_LAYOUT_ORIGINAL,
                         town_name
                     )) {
                         local town_id = GSTile.GetClosestTown(tile);
                         if (!GSTown.IsValidTown(town_id)) return true;
 
-                        for (local grow_round = 0; grow_round < 24; grow_round++) {
+                        for (local grow_round = 0; grow_round < 128; grow_round++) {
                             if (GSTown.GetPopulation(town_id) >= target_population) break;
-                            if (!GSTown.ExpandTown(town_id, 10)) break;
+                            GSTown.ExpandTown(town_id, 50);
                             this.Sleep(1);
                         }
 
+                        local final_population = GSTown.GetPopulation(town_id);
                         GSLog.Info(
                             "Coimbra town built: " + town_name +
-                            " population=" + GSTown.GetPopulation(town_id) +
+                            " population=" + final_population +
+                            " target=" + target_population +
                             " tile=" + x + "," + y
                         );
+                        if (final_population < target_population) {
+                            GSLog.Warning("Coimbra town below target: " + town_name);
+                            return false;
+                        }
                         return true;
                     }
                 }
@@ -127,17 +133,14 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate Start() in generated GameScript")
     main = main.replace(marker, town_methods + marker, 1)
 
-    complete_marker = (
-        '        this.completed = true;\n'
-        '        GSLog.Info("Coimbra network build complete.");\n'
-    )
-    if complete_marker not in main:
-        raise RuntimeError("could not locate completion marker in generated GameScript")
+    road_marker = '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n'
+    if road_marker not in main:
+        raise RuntimeError("could not locate road initialization in generated GameScript")
     main = main.replace(
-        complete_marker,
+        road_marker,
+        '        // Build towns first while terrain is still open; OSM transport follows.\n'
         '        this.BuildTowns();\n'
-        '        this.completed = true;\n'
-        '        GSLog.Info("Coimbra network build complete.");\n',
+        '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n',
         1,
     )
     main_path.write_text(main, encoding="utf-8")
