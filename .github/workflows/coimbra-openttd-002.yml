@@ -153,22 +153,42 @@ jobs:
           "Coimbra Builder" =
           EOF
 
-          set +e
-          HOME="$home" timeout 180s "$openttd" \
+          HOME="$home" "$openttd" \
             -D 127.0.0.1:0 \
             -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-001/coimbra-heightmap.png" \
             -I OpenGFX \
             -c "$runtime/openttd.cfg" \
             -x \
             -d script=5,misc=1 \
-            > "$runtime/openttd-smoke.log" 2>&1
-          status=$?
-          set -e
+            > "$runtime/openttd-smoke.log" 2>&1 &
+          pid=$!
+
+          smoke=1
+          for _ in $(seq 1 120); do
+            if grep -Fq "Coimbra network build complete." "$runtime/openttd-smoke.log" 2>/dev/null; then
+              smoke=0
+              break
+            fi
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires" \
+              "$runtime/openttd-smoke.log" 2>/dev/null; then
+              smoke=2
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              smoke=3
+              break
+            fi
+            sleep 1
+          done
+
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" || true
+            wait "$pid" || true
+          fi
 
           cat "$runtime/openttd-smoke.log"
-          grep -F "Coimbra network build complete." "$runtime/openttd-smoke.log"
-          test "$status" -eq 0 || test "$status" -eq 124
           cp "$runtime/openttd-smoke.log" artifacts/coimbra-openttd-002/openttd-15.3-smoke.log
+          test "$smoke" -eq 0
 
       - name: Package 001 + 002 review bundle
         run: |
