@@ -87,6 +87,61 @@ jobs:
           print(json.dumps(manifest, indent=2))
           PY
 
+      - name: Runtime-smoke CoimbraBuilder on OpenTTD 15.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/openttd-runtime"
+          home="$RUNNER_TEMP/openttd-home"
+          mkdir -p "$runtime" "$home/.local/share/openttd/baseset" "$home/.local/share/openttd/game"
+
+          curl -fsSLo "$runtime/openttd.tar.xz" \
+            https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
+          echo "f49eb25d61b00f8f4d332fee02b530ad75552d1efb8f2bb01e7ca5e6540fe059  $runtime/openttd.tar.xz" | sha256sum -c -
+          mkdir -p "$runtime/openttd"
+          tar -xJf "$runtime/openttd.tar.xz" -C "$runtime/openttd"
+          openttd="$(find "$runtime/openttd" -type f -name openttd -perm -111 -print -quit)"
+          test -n "$openttd"
+
+          curl -fsSLo "$runtime/opengfx.zip" \
+            https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip
+          echo "43a0c1dabf39cb865394f3a6cc36d4da5c10ecfaaf55652043104806810903be  $runtime/opengfx.zip" | sha256sum -c -
+          unzip -q "$runtime/opengfx.zip" -d "$home/.local/share/openttd/baseset"
+
+          cp -R artifacts/coimbra-openttd-002/game/CoimbraBuilder "$home/.local/share/openttd/game/"
+
+          cat > "$runtime/openttd.cfg" <<'EOF'
+          [misc]
+          language = english.lng
+
+          [game_creation]
+          starting_year = 1950
+          ending_year = 2050
+
+          [network]
+          server_port = 0
+
+          [game_scripts]
+          Coimbra Builder =
+          EOF
+
+          set +e
+          HOME="$home" timeout 60s "$openttd" \
+            -D 127.0.0.1:0 \
+            -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-002/coimbra-heightmap.png" \
+            -I OpenGFX \
+            -c "$runtime/openttd.cfg" \
+            -x \
+            -d script=5,misc=1 \
+            > "$runtime/openttd-smoke.log" 2>&1
+          status=$?
+          set -e
+
+          cat "$runtime/openttd-smoke.log"
+          grep -F "Coimbra network build complete." "$runtime/openttd-smoke.log"
+          test "$status" -eq 0 || test "$status" -eq 124
+          cp "$runtime/openttd-smoke.log" artifacts/coimbra-openttd-002/openttd-15.3-smoke.log
+
       - name: Package 001 + 002 review bundle
         run: |
           cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-002/
