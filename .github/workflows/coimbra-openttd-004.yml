@@ -40,7 +40,7 @@ jobs:
           repository: Dmitry-dev-pet/coimbra-video
           run-id: 37156903657
           name: coimbra-openttd-001
-          github-token: \${{ github.token }}
+          github-token: ${{ github.token }}
           path: source_001
 
       - name: Normalize and verify pinned Coimbra 001 inputs
@@ -117,9 +117,9 @@ jobs:
       - name: Build complete Coimbra city and save real game
         shell: bash
         env:
-          RUNTIME: \${{ steps.runtime.outputs.runtime }}
-          HOME_DIR: \${{ steps.runtime.outputs.home }}
-          OPENTTD: \${{ steps.runtime.outputs.openttd }}
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
         run: |
           set -euo pipefail
           cfg="$RUNTIME/build.cfg"
@@ -205,8 +205,8 @@ jobs:
       - name: Verify saved game with OpenTTD itself
         shell: bash
         env:
-          HOME_DIR: \${{ steps.runtime.outputs.home }}
-          OPENTTD: \${{ steps.runtime.outputs.openttd }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
         run: |
           set -euo pipefail
           HOME="$HOME_DIR" "$OPENTTD" -I OpenGFX \
@@ -228,7 +228,7 @@ jobs:
       - name: Build screenshot script for overview and four towns
         shell: bash
         env:
-          BINDIR: \${{ steps.runtime.outputs.bindir }}
+          BINDIR: ${{ steps.runtime.outputs.bindir }}
         run: |
           set -euo pipefail
           mkdir -p "$BINDIR/scripts"
@@ -258,10 +258,10 @@ jobs:
       - name: Reload saved city and capture real OpenTTD frames
         shell: bash
         env:
-          RUNTIME: \${{ steps.runtime.outputs.runtime }}
-          HOME_DIR: \${{ steps.runtime.outputs.home }}
-          OPENTTD: \${{ steps.runtime.outputs.openttd }}
-          BINDIR: \${{ steps.runtime.outputs.bindir }}
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+          BINDIR: ${{ steps.runtime.outputs.bindir }}
         run: |
           set -euo pipefail
           render_log="$RUNTIME/render.log"
