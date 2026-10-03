@@ -184,10 +184,11 @@ jobs:
           grep -F "towns ok=4 fail=0" "$log"
           grep -F "Coimbra network build complete." "$log"
           python - <<'PY'
+          import os
           import re
           from pathlib import Path
 
-          log = Path("$RUNTIME/build.log").read_text(errors="replace")
+          log = (Path(os.environ["RUNTIME"]) / "build.log").read_text(errors="replace")
           matches = re.findall(r"Coimbra town built: (.+?) population=(\d+) target=(\d+) tile=", log)
           assert len(matches) == 4, matches
           for name, population, target in matches:
