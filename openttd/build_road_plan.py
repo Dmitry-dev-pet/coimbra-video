@@ -342,6 +342,7 @@ RegisterGS(CoimbraBuilderInfo());
     tunnel_ok = 0;
     tunnel_fail = 0;
     op = 0;
+    completed = false;
 
     function BuildBridge(item) {{
         local start = GSMap.GetTileIndex(item[0], item[1]);
@@ -386,6 +387,11 @@ RegisterGS(CoimbraBuilderInfo());
             return;
         }}
 
+        if (this.completed) {{
+            GSLog.Info("Coimbra completed save loaded; network rebuild skipped.");
+            while (true) this.Sleep(740);
+        }}
+
         GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);
 
         // Structure data is small, but still loaded only after Start begins.
@@ -404,6 +410,7 @@ RegisterGS(CoimbraBuilderInfo());
 
 {runtime_load_text}
 
+        this.completed = true;
         GSLog.Info("Coimbra network build complete.");
         GSLog.Info("roads ok=" + this.road_ok + " fail=" + this.road_fail);
         GSLog.Info("bridges ok=" + this.bridge_ok + " fail=" + this.bridge_fail);
@@ -413,10 +420,11 @@ RegisterGS(CoimbraBuilderInfo());
     }}
 
     function Save() {{
-        return {{}};
+        return {{ completed = this.completed }};
     }}
 
     function Load(version, data) {{
+        if ("completed" in data) this.completed = data.completed;
     }}
 }}
 ''',
