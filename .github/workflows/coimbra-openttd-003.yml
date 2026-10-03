@@ -181,7 +181,7 @@ jobs:
           fi
           wait "$pid" || true
 
-          savefile="$(find "$HOME_DIR" -type f -name 'exit.sav' -size +0c -print -quit || true)"
+          savefile="$(find "$RUNTIME" "$HOME_DIR" -type f -name 'exit.sav' -size +0c -print -quit 2>/dev/null || true)"
           test -n "$savefile" && test -s "$savefile"
           cp "$savefile" artifacts/coimbra-openttd-003/coimbra-openttd-003.sav
           cp "$log" artifacts/coimbra-openttd-003/build.log
@@ -249,8 +249,8 @@ jobs:
           iso=""
           mini=""
           for _ in $(seq 1 90); do
-            iso="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003-isometric*.png' -print -quit || true)"
-            mini="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003-minimap*.png' -print -quit || true)"
+            iso="$(find "$RUNTIME" "$HOME_DIR" -type f -name 'coimbra-openttd-003-isometric*.png' -print -quit 2>/dev/null || true)"
+            mini="$(find "$RUNTIME" "$HOME_DIR" -type f -name 'coimbra-openttd-003-minimap*.png' -print -quit 2>/dev/null || true)"
             if [[ -n "$iso" && -n "$mini" && -s "$iso" && -s "$mini" ]]; then
               break
             fi
