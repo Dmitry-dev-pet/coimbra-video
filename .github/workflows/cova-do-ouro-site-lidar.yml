@@ -39,12 +39,12 @@ jobs:
           python -m py_compile \
             scripts/fetch_dgt_highres_bridge.py \
             scripts/prepare_dgt_highres_bridge.py \
-            scripts/analyze_cova_do_ouro_mdt.py
+            scripts/analyze_cova_do_ouro_mdt.py \\\n            scripts/analyze_cova_do_ouro_parcel.py
 
       - name: Download DGT MDT and analyse site
         run: |
           python scripts/analyze_cova_do_ouro_mdt.py
-          cat site_output_cova_do_ouro/site_summary.json
+          cat site_output_cova_do_ouro/site_summary.json\n\n      - name: Resolve cadastral parcel and optimize 6x7 footprint\n        run: |\n          python scripts/analyze_cova_do_ouro_parcel.py\n          cat site_output_cova_do_ouro_parcel/parcel_summary.json
 
       - name: Upload site terrain evidence
         uses: actions/upload-artifact@v4
@@ -57,5 +57,5 @@ jobs:
             site_output_cova_do_ouro/steepest_profile.csv
             site_output_cova_do_ouro/terrain_map.png
             site_output_cova_do_ouro/steepest_profile.png
-            site_output_cova_do_ouro/download-manifest.json
+            site_output_cova_do_ouro/download-manifest.json\n            site_output_cova_do_ouro_parcel/parcel_summary.json\n            site_output_cova_do_ouro_parcel/cadastro_raw.geojson\n            site_output_cova_do_ouro_parcel/ortho_2025.jpg\n            site_output_cova_do_ouro_parcel/parcel_overlay.png
           if-no-files-found: error
