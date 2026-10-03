@@ -161,7 +161,7 @@ jobs:
 
           complete=0
           for _ in $(seq 1 900); do
-            if grep -Fq "Coimbra urban layer complete." "$log" 2>/dev/null; then
+            if grep -Fq "Coimbra network build complete." "$log" 2>/dev/null; then
               complete=1
               break
             fi
@@ -183,6 +183,17 @@ jobs:
           grep -F "Coimbra town built: Quinta da Portela" "$log"
           grep -F "towns ok=4 fail=0" "$log"
           grep -F "Coimbra network build complete." "$log"
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          log = Path("$RUNTIME/build.log").read_text(errors="replace")
+          matches = re.findall(r"Coimbra town built: (.+?) population=(\d+) target=(\d+) tile=", log)
+          assert len(matches) == 4, matches
+          for name, population, target in matches:
+              assert int(population) >= int(target), (name, population, target)
+          print("all four Coimbra towns reached target population")
+          PY
 
           kill -TERM "$pid"
           for _ in $(seq 1 60); do
@@ -234,6 +245,7 @@ jobs:
           mkdir -p "$BINDIR/scripts"
           python - <<'PY'
           import json
+          import os
           import re
           from pathlib import Path
 
@@ -251,7 +263,8 @@ jobs:
                   f"screenshot normal size 1280 720 coimbra-openttd-004-{slug}",
               ]
           lines.append("screenshot minimap coimbra-openttd-004-minimap")
-          Path("$BINDIR/scripts/game_start.scr").write_text("\n".join(lines) + "\n")
+          script_path = Path(os.environ["BINDIR"]) / "scripts" / "game_start.scr"
+          script_path.write_text("\n".join(lines) + "\n")
           print("\n".join(lines))
           PY
 
