@@ -143,6 +143,8 @@ jobs:
           [game_creation]
           starting_year = 1950
           ending_year = 2050
+          map_x = 9
+          map_y = 9
 
           [network]
           server_port = 0
