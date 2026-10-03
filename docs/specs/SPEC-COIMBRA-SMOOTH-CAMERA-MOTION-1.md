@@ -147,3 +147,42 @@ The independent verifier must reject:
 
 Passing 033 means only that the candidate is a valid inspectable motion review.
 Human visual review is still required before any full Cycles render is authorized.
+
+
+## Human review decision — 2026-10-03
+
+The user reviewed the 033 motion model in a full 1,440-real-frame Cycles/Metal
+preview and explicitly accepted the camera motion for future Coimbra full-route
+renders.
+
+Acceptance evidence:
+
+- mac-access run: `37149136812`;
+- render: 1,440 real frames, 60 fps, 24.0 s;
+- review resolution: 640×480;
+- Cycles samples: 4;
+- adaptive threshold: 0.15;
+- motion blur: disabled;
+- repeated frames: none;
+- optical flow: none;
+- video SHA-256:
+  `7153a061dd4e8ac27bc51ac5c9077c3154c6162df035a0d6953336ca9a74be27`;
+- review video: https://youtu.be/ou7x35MhRSQ;
+- translation-step CV measured in the acceptance run:
+  `0.389748 → 0.000011`.
+
+### Promotion boundary
+
+This decision promotes the **033 camera-motion model only**:
+
+- seven accepted route anchors;
+- centripetal Catmull–Rom position spline;
+- centripetal Catmull–Rom target spline;
+- look-at quaternion orientation;
+- global arc-length timing;
+- cubic lens/focus interpolation.
+
+It does not promote 640×480, 4 Cycles samples or adaptive threshold 0.15 as
+production-quality settings. The accepted Coimbra 032 scene/look remains the
+production visual baseline and should be combined with this accepted 033 motion
+model for the next production-quality full-route render.

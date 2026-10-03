@@ -9,11 +9,14 @@ GitHub main is the source of truth for this repository.
 
 ### Production authority
 
-- **Coimbra 032 is the canonical Blender production baseline.**
-- Treat 033, 035, 036, V2 photogrammetry, raw-LiDAR, Poisson and other visual experiments as non-production research unless the user explicitly promotes a reviewed result.
+- **Coimbra 032 remains the canonical Blender scene / production-look baseline.**
+- **Coimbra 033 smooth camera motion is human-accepted as the canonical motion baseline for future full-route renders as of 2026-10-03.** Future full-route candidates should combine the accepted 032 scene/look with the validated 033 camera-motion model unless the user explicitly requests an A/B rollback.
+- The accepted motion model uses the seven established anchors at source frames `1, 61, 121, 181, 241, 301, 360`, centripetal Catmull–Rom position/target splines and global arc-length timing.
+- Acceptance evidence: mac-access run `37149136812`, 1,440 real Cycles/Metal frames at 60 fps / 24 s, review resolution 640×480, video SHA-256 `7153a061dd4e8ac27bc51ac5c9077c3154c6162df035a0d6953336ca9a74be27`, YouTube review `https://youtu.be/ou7x35MhRSQ`.
+- The 640×480 resolution, 4 Cycles samples and adaptive threshold 0.15 from that review are **not** promoted production-quality settings; they were only the fast visual-review envelope used to approve camera motion.
+- Treat 035, 036, V2 photogrammetry, raw-LiDAR, Poisson and other visual experiments as non-production research unless the user explicitly promotes a reviewed result.
 - Technical success, higher geometric fidelity, more source data or a newer lane number does not constitute promotion.
-- Before any future promotion, compare the candidate directly with 032 and require an explicit human judgment that the candidate is materially better for the intended shot.
-- Do not mutate, overwrite, retime or silently supersede the accepted 032 artifact while researching alternatives.
+- Do not mutate or overwrite the accepted 032 scene/look baseline or the accepted 033 motion model while researching alternatives.
 
 ## APatch Blender constraints
 
@@ -287,10 +290,15 @@ the complete path so the translation step is approximately constant through
 segment boundaries. Camera direction is derived from a separately smoothed
 forward-target spline; do not interpolate Euler angles directly.
 
-033 renders only a 960×600, 1,440-frame, 60 fps, 24-second EEVEE proxy with
-motion blur disabled. The accepted 032 video is used only as the left-hand visual
-baseline for the side-by-side review. Passing the independent verifier does not
-authorize a full Cycles render; human review is required first.
+The original 033 lane renders a 960×600, 1,440-frame, 60 fps, 24-second EEVEE
+proxy with motion blur disabled. On 2026-10-03 the same validated 033 motion model
+was then reviewed in a 640×480 / 60 fps / 24 s Cycles Metal preview
+(mac-access run `37149136812`) and explicitly accepted by the user.
+
+That human decision promotes **camera motion only**. Future full-route rendering
+should use the accepted 033 motion model over the accepted 032 scene/look. The
+640×480 review resolution, 4-sample Cycles setting and adaptive threshold 0.15
+remain preview-only and are not production-quality promotion.
 
 
 ## Visual polish review lane 035
