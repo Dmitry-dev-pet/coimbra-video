@@ -6,6 +6,7 @@ on:
     paths:
       - "config/cova_do_ouro_site.json"
       - "scripts/analyze_cova_do_ouro_mdt.py"
+      - "scripts/analyze_cova_do_ouro_parcel.py"
       - "scripts/fetch_dgt_highres_bridge.py"
       - "scripts/prepare_dgt_highres_bridge.py"
       - ".github/workflows/cova-do-ouro-site-lidar.yml"
@@ -32,19 +33,26 @@ jobs:
         run: |
           python -m pip install \
             "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" \
-            "rasterio>=1.4,<2" "matplotlib>=3.9,<4"
+            "rasterio>=1.4,<2" "matplotlib>=3.9,<4" \
+            "shapely>=2.0,<3" "pillow>=11,<12"
 
       - name: Compile
         run: |
           python -m py_compile \
             scripts/fetch_dgt_highres_bridge.py \
             scripts/prepare_dgt_highres_bridge.py \
-            scripts/analyze_cova_do_ouro_mdt.py \\\n            scripts/analyze_cova_do_ouro_parcel.py
+            scripts/analyze_cova_do_ouro_mdt.py \
+            scripts/analyze_cova_do_ouro_parcel.py
 
       - name: Download DGT MDT and analyse site
         run: |
           python scripts/analyze_cova_do_ouro_mdt.py
-          cat site_output_cova_do_ouro/site_summary.json\n\n      - name: Resolve cadastral parcel and optimize 6x7 footprint\n        run: |\n          python scripts/analyze_cova_do_ouro_parcel.py\n          cat site_output_cova_do_ouro_parcel/parcel_summary.json
+          cat site_output_cova_do_ouro/site_summary.json
+
+      - name: Resolve cadastral parcel and optimize 6x7 footprint
+        run: |
+          python scripts/analyze_cova_do_ouro_parcel.py
+          cat site_output_cova_do_ouro_parcel/parcel_summary.json
 
       - name: Upload site terrain evidence
         uses: actions/upload-artifact@v4
@@ -57,5 +65,9 @@ jobs:
             site_output_cova_do_ouro/steepest_profile.csv
             site_output_cova_do_ouro/terrain_map.png
             site_output_cova_do_ouro/steepest_profile.png
-            site_output_cova_do_ouro/download-manifest.json\n            site_output_cova_do_ouro_parcel/parcel_summary.json\n            site_output_cova_do_ouro_parcel/cadastro_raw.geojson\n            site_output_cova_do_ouro_parcel/ortho_2025.jpg\n            site_output_cova_do_ouro_parcel/parcel_overlay.png
+            site_output_cova_do_ouro/download-manifest.json
+            site_output_cova_do_ouro_parcel/parcel_summary.json
+            site_output_cova_do_ouro_parcel/cadastro_raw.geojson
+            site_output_cova_do_ouro_parcel/ortho_2025.jpg
+            site_output_cova_do_ouro_parcel/parcel_overlay.png
           if-no-files-found: error
