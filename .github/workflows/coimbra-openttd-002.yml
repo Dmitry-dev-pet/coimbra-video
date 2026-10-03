@@ -75,8 +75,12 @@ jobs:
                   assert item["length_tiles"] >= 2
 
           game = root / "game" / "CoimbraBuilder"
-          for name in ("info.nut", "main.nut", "plan.nut", "README.txt"):
+          for name in ("info.nut", "main.nut", "structures.nut", "README.txt"):
               assert (game / name).is_file() and (game / name).stat().st_size > 0
+
+          chunks = sorted(game.glob("roads_*.nut"))
+          assert len(chunks) == manifest["road_chunk_count"]
+          assert len(chunks) > 20
 
           main = (game / "main.nut").read_text()
           assert "GSBridge.BuildBridge" in main
@@ -126,7 +130,7 @@ jobs:
           EOF
 
           set +e
-          HOME="$home" timeout 60s "$openttd" \
+          HOME="$home" timeout 180s "$openttd" \
             -D 127.0.0.1:0 \
             -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-001/coimbra-heightmap.png" \
             -I OpenGFX \
