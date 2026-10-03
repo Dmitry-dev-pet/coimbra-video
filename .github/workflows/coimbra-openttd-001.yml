@@ -1,0 +1,75 @@
+name: Coimbra OpenTTD 001
+
+on:
+  push:
+    branches:
+      - feature/coimbra-openttd-001
+    paths:
+      - "openttd/**"
+      - "data/processed/bridge_terrain_6m.*"
+      - ".github/workflows/coimbra-openttd-001.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter dependencies
+        run: python -m pip install --disable-pip-version-check "numpy>=2,<3" "Pillow>=11,<13" "pyproj>=3.7,<4"
+
+      - name: Run converter unit tests
+        run: python -m unittest openttd/test_build_pack.py -v
+
+      - name: Build real Coimbra OpenTTD import pack
+        run: |
+          python openttd/build_pack.py             --config openttd/config/coimbra-openttd-001.json             --out artifacts/coimbra-openttd-001             --fetch-osm
+
+      - name: Verify import pack
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path("artifacts/coimbra-openttd-001")
+          image = Image.open(root / "coimbra-heightmap.png")
+          assert image.mode == "L"
+          assert image.size == (512, 512)
+          towns = json.loads((root / "coimbra-towns.json").read_text())
+          manifest = json.loads((root / "manifest.json").read_text())
+          assert len(towns) >= 3, towns
+          assert manifest["openttd_import_ready"] is True
+          assert manifest["scenario_file_generated"] is False
+          assert (root / "coimbra-preview.png").is_file()
+          print(json.dumps({
+              "towns": len(towns),
+              "bbox": manifest["crop_bbox_wgs84"],
+              "osm": manifest["osm"],
+              "heightmap_sha256": manifest["heightmap"]["sha256"],
+          }, indent=2))
+          PY
+
+      - name: Package import files
+        run: |
+          cd artifacts
+          zip -r coimbra-openttd-001.zip coimbra-openttd-001
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-openttd-001
+          path: |
+            artifacts/coimbra-openttd-001/
+            artifacts/coimbra-openttd-001.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
