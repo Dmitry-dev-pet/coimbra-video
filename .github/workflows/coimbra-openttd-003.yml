@@ -1,0 +1,367 @@
+name: Coimbra OpenTTD 003 playable save
+
+on:
+  push:
+    branches:
+      - feature/coimbra-openttd-003-save-screenshot
+    paths:
+      - "openttd/**"
+      - ".github/workflows/coimbra-openttd-003.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter dependencies
+        run: python -m pip install --disable-pip-version-check "numpy>=2,<3" "Pillow>=11,<13" "pyproj>=3.7,<4"
+
+      - name: Run OpenTTD converter tests
+        run: |
+          python -m unittest openttd/test_build_pack.py -v
+          python -m unittest openttd/test_build_road_plan.py -v
+
+      - name: Download pinned Coimbra 001 geodata
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: 37156903657
+          name: coimbra-openttd-001
+          github-token: ${{ github.token }}
+          path: source_001
+
+      - name: Normalize and verify pinned Coimbra 001 inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/coimbra-openttd-001 artifacts/coimbra-openttd-003
+          heightmap="$(find source_001 -type f -name 'coimbra-heightmap.png' -print -quit)"
+          towns="$(find source_001 -type f -name 'coimbra-towns.json' -print -quit)"
+          network="$(find source_001 -type f -name 'coimbra-osm-network.geojson' -print -quit)"
+          manifest="$(find source_001 -type f -name 'manifest.json' -print -quit)"
+          test -n "$heightmap" && test -n "$towns" && test -n "$network" && test -n "$manifest"
+          cp "$heightmap" artifacts/coimbra-openttd-001/coimbra-heightmap.png
+          cp "$towns" artifacts/coimbra-openttd-001/coimbra-towns.json
+          cp "$network" artifacts/coimbra-openttd-001/coimbra-osm-network.geojson
+          cp "$manifest" artifacts/coimbra-openttd-001/manifest.json
+          test "$(sha256sum artifacts/coimbra-openttd-001/coimbra-heightmap.png | awk '{print $1}')" = \
+            "ebc6bff89db876aa7ff7697d91407aaff87e745bdb41553b3d71a6d5b00cd1f8"
+          test "$(sha256sum artifacts/coimbra-openttd-001/coimbra-osm-network.geojson | awk '{print $1}')" = \
+            "318b03ad879ab1c1601cfabe56a6e55349297e38e9d950fb8af136f26a60c9c4"
+
+      - name: Rebuild CoimbraBuilder with 003 save-state support
+        run: |
+          python openttd/build_road_plan.py \
+            --network artifacts/coimbra-openttd-001/coimbra-osm-network.geojson \
+            --manifest artifacts/coimbra-openttd-001/manifest.json \
+            --heightmap artifacts/coimbra-openttd-001/coimbra-heightmap.png \
+            --config openttd/config/coimbra-openttd-002.json \
+            --out artifacts/coimbra-openttd-002
+          grep -F 'completed = false;' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'return { completed = this.completed };' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'network rebuild skipped' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+
+      - name: Install pinned OpenTTD 15.3 runtime and OpenGFX
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/coimbra-openttd-003-runtime"
+          home="$RUNNER_TEMP/coimbra-openttd-003-home"
+          mkdir -p "$runtime" "$home/.local/share/openttd/baseset" "$home/.local/share/openttd/game" \
+            "$home/.local/share/openttd/save" "$home/.local/share/openttd/screenshot"
+
+          curl -fsSLo "$runtime/openttd.tar.xz" \
+            https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
+          echo "f49eb25d61b00f8f4d332fee02b530ad75552d1efb8f2bb01e7ca5e6540fe059  $runtime/openttd.tar.xz" | sha256sum -c -
+          mkdir -p "$runtime/openttd"
+          tar -xJf "$runtime/openttd.tar.xz" -C "$runtime/openttd"
+          openttd="$(find "$runtime/openttd" -type f -name openttd -perm -111 -print -quit)"
+          test -n "$openttd"
+
+          curl -fsSLo "$runtime/opengfx.zip" \
+            https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip
+          echo "43a0c1dabf39cb865394f3a6cc36d4da5c10ecfaaf55652043104806810903be  $runtime/opengfx.zip" | sha256sum -c -
+          unzip -q "$runtime/opengfx.zip" -d "$home/.local/share/openttd/baseset"
+          cp -R artifacts/coimbra-openttd-002/game/CoimbraBuilder "$home/.local/share/openttd/game/"
+
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          echo "home=$home" >> "$GITHUB_OUTPUT"
+          echo "openttd=$openttd" >> "$GITHUB_OUTPUT"
+          echo "bindir=$(dirname "$openttd")" >> "$GITHUB_OUTPUT"
+
+      - name: Build complete Coimbra network and save real game
+        shell: bash
+        env:
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+        run: |
+          set -euo pipefail
+          cfg="$RUNTIME/build.cfg"
+          log="$RUNTIME/build.log"
+          fifo="$RUNTIME/console.in"
+
+          cat > "$cfg" <<'EOF'
+          [misc]
+          language = english.lng
+
+          [game_creation]
+          starting_year = 1950
+          ending_year = 2050
+          map_x = 9
+          map_y = 9
+          custom_town_number = 0
+
+          [difficulty]
+          number_towns = 4
+          industry_density = 0
+
+          [network]
+          server_port = 0
+
+          [game_scripts]
+          "Coimbra Builder" =
+          EOF
+
+          rm -f "$fifo"
+          mkfifo "$fifo"
+          exec 3<>"$fifo"
+
+          HOME="$HOME_DIR" "$OPENTTD" \
+            -D 127.0.0.1:0 \
+            -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-001/coimbra-heightmap.png" \
+            -I OpenGFX \
+            -c "$cfg" \
+            -x \
+            -d script=4,misc=1 \
+            < "$fifo" > "$log" 2>&1 &
+          pid=$!
+
+          complete=0
+          for _ in $(seq 1 720); do
+            if grep -Fq "Coimbra network build complete." "$log" 2>/dev/null; then
+              complete=1
+              break
+            fi
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires" "$log" 2>/dev/null; then
+              cat "$log"
+              exit 2
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$log"
+              exit 3
+            fi
+            sleep 1
+          done
+          test "$complete" -eq 1
+
+          printf 'save coimbra-openttd-003\n' >&3
+          saved=0
+          for _ in $(seq 1 90); do
+            if grep -Fq "Map successfully saved to 'coimbra-openttd-003.sav'." "$log"; then
+              saved=1
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          test "$saved" -eq 1
+
+          savefile="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003.sav' -print -quit)"
+          test -n "$savefile" && test -s "$savefile"
+          cp "$savefile" artifacts/coimbra-openttd-003/coimbra-openttd-003.sav
+          cp "$log" artifacts/coimbra-openttd-003/build.log
+
+          printf 'exit\n' >&3 || true
+          for _ in $(seq 1 20); do
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 "$pid" 2>/dev/null; then kill "$pid" || true; fi
+          wait "$pid" || true
+
+          grep -F "Coimbra network build complete." artifacts/coimbra-openttd-003/build.log
+          grep -F "roads ok=" artifacts/coimbra-openttd-003/build.log
+          grep -F "bridges ok=" artifacts/coimbra-openttd-003/build.log
+          grep -F "tunnels ok=" artifacts/coimbra-openttd-003/build.log
+
+      - name: Verify saved game with OpenTTD itself
+        shell: bash
+        env:
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+        run: |
+          set -euo pipefail
+          HOME="$HOME_DIR" "$OPENTTD" -I OpenGFX \
+            -q artifacts/coimbra-openttd-003/coimbra-openttd-003.sav \
+            > artifacts/coimbra-openttd-003/save-info.txt 2>&1
+          cat artifacts/coimbra-openttd-003/save-info.txt
+          grep -F "Savegame ver:" artifacts/coimbra-openttd-003/save-info.txt
+
+      - name: Install virtual display
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xvfb xauth
+          fi
+          command -v xvfb-run
+
+      - name: Load save in graphical OpenTTD and capture real screenshots
+        shell: bash
+        env:
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+          BINDIR: ${{ steps.runtime.outputs.bindir }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$BINDIR/scripts"
+          cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          scrollto instant 256 256
+          zoomto 3
+          screenshot normal size 1280 720 coimbra-openttd-003-isometric
+          screenshot minimap coimbra-openttd-003-minimap
+          EOF
+
+          render_log="$RUNTIME/render.log"
+          (
+            cd "$BINDIR"
+            HOME="$HOME_DIR" xvfb-run -a "$OPENTTD" \
+              -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-003/coimbra-openttd-003.sav" \
+              -I OpenGFX \
+              -s null \
+              -m null \
+              -c "$RUNTIME/build.cfg" \
+              -r 1280x720 \
+              -x \
+              -d script=3,misc=1
+          ) > "$render_log" 2>&1 &
+          pid=$!
+
+          iso=""
+          mini=""
+          for _ in $(seq 1 90); do
+            iso="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003-isometric*.png' -print -quit || true)"
+            mini="$(find "$HOME_DIR" -type f -name 'coimbra-openttd-003-minimap*.png' -print -quit || true)"
+            if [[ -n "$iso" && -n "$mini" && -s "$iso" && -s "$mini" ]]; then
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$render_log"
+              exit 4
+            fi
+            sleep 1
+          done
+
+          test -n "$iso" && test -s "$iso"
+          test -n "$mini" && test -s "$mini"
+          cp "$iso" artifacts/coimbra-openttd-003/coimbra-openttd-003-isometric.png
+          cp "$mini" artifacts/coimbra-openttd-003/coimbra-openttd-003-minimap.png
+          cp "$render_log" artifacts/coimbra-openttd-003/render.log
+
+          if kill -0 "$pid" 2>/dev/null; then kill "$pid" || true; fi
+          wait "$pid" || true
+
+          grep -F "Coimbra completed save loaded; network rebuild skipped." artifacts/coimbra-openttd-003/render.log
+
+      - name: Verify screenshots and write manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import re
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path("artifacts/coimbra-openttd-003")
+          sav = root / "coimbra-openttd-003.sav"
+          iso = root / "coimbra-openttd-003-isometric.png"
+          mini = root / "coimbra-openttd-003-minimap.png"
+          build = (root / "build.log").read_text(errors="replace")
+
+          with Image.open(iso) as im:
+              iso_meta = {"size": list(im.size), "mode": im.mode}
+              assert im.size == (1280, 720), im.size
+          with Image.open(mini) as im:
+              mini_meta = {"size": list(im.size), "mode": im.mode}
+              assert im.size == (512, 512), im.size
+
+          def sha(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def counts(label):
+              m = re.search(rf"{label} ok=(\d+) fail=(\d+)", build)
+              assert m, label
+              return {"ok": int(m.group(1)), "fail": int(m.group(2))}
+
+          payload = {
+              "version": "coimbra-openttd-003",
+              "verified": True,
+              "openttd_version": "15.3",
+              "savegame": {
+                  "path": sav.name,
+                  "bytes": sav.stat().st_size,
+                  "sha256": sha(sav),
+                  "verified_by_openttd_q": True,
+              },
+              "runtime_build": {
+                  "roads": counts("roads"),
+                  "bridges": counts("bridges"),
+                  "tunnels": counts("tunnels"),
+              },
+              "isometric_screenshot": {
+                  "path": iso.name,
+                  "sha256": sha(iso),
+                  **iso_meta,
+              },
+              "minimap_screenshot": {
+                  "path": mini.name,
+                  "sha256": sha(mini),
+                  **mini_meta,
+              },
+              "gamescript_reload": "completed save loaded; network rebuild skipped",
+              "source_001_run_id": 37156903657,
+              "source_002_verified_run_id": 37158799345,
+          }
+          (root / "manifest.json").write_text(json.dumps(payload, indent=2) + "\n")
+          print(json.dumps(payload, indent=2))
+          PY
+
+      - name: Package Coimbra OpenTTD 003
+        run: |
+          cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-003/
+          cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-003/
+          cp artifacts/coimbra-openttd-002/road-plan-manifest.json artifacts/coimbra-openttd-003/
+          cp -R artifacts/coimbra-openttd-002/game artifacts/coimbra-openttd-003/
+          cd artifacts
+          zip -r coimbra-openttd-003.zip coimbra-openttd-003
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coimbra-openttd-003
+          path: |
+            artifacts/coimbra-openttd-003/
+            artifacts/coimbra-openttd-003.zip
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 0
