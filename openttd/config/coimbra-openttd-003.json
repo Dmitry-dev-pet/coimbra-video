@@ -1,0 +1,16 @@
+{
+  "version": "coimbra-openttd-003",
+  "openttd_version": "15.3",
+  "opengfx_version": "8.0",
+  "map_size": 512,
+  "capture": {
+    "center_tile": [256, 256],
+    "zoom_level": 3,
+    "width": 1280,
+    "height": 720
+  },
+  "source_001_run_id": 37156903657,
+  "source_001_heightmap_sha256": "ebc6bff89db876aa7ff7697d91407aaff87e745bdb41553b3d71a6d5b00cd1f8",
+  "source_001_osm_sha256": "318b03ad879ab1c1601cfabe56a6e55349297e38e9d950fb8af136f26a60c9c4",
+  "source_note": "003 rebuilds the 002 GameScript from the pinned 001 geodata using the current branch, then executes the entire network in OpenTTD 15.3 before saving."
+}
