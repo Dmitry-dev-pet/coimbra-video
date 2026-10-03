@@ -1,0 +1,61 @@
+name: Cova do Ouro site LiDAR profile
+
+on:
+  push:
+    branches: [research/cova-do-ouro-site-lidar]
+    paths:
+      - "config/cova_do_ouro_site.json"
+      - "scripts/analyze_cova_do_ouro_mdt.py"
+      - "scripts/fetch_dgt_highres_bridge.py"
+      - "scripts/prepare_dgt_highres_bridge.py"
+      - ".github/workflows/cova-do-ouro-site-lidar.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  site-lidar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DGT_USER: ${{ secrets.DGT_USER }}
+      DGT_PASSWORD: ${{ secrets.DGT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install terrain dependencies
+        run: |
+          python -m pip install \
+            "requests>=2.32,<3" "numpy>=2,<3" "pyproj>=3.7,<4" \
+            "rasterio>=1.4,<2" "matplotlib>=3.9,<4"
+
+      - name: Compile
+        run: |
+          python -m py_compile \
+            scripts/fetch_dgt_highres_bridge.py \
+            scripts/prepare_dgt_highres_bridge.py \
+            scripts/analyze_cova_do_ouro_mdt.py
+
+      - name: Download DGT MDT and analyse site
+        run: |
+          python scripts/analyze_cova_do_ouro_mdt.py
+          cat site_output_cova_do_ouro/site_summary.json
+
+      - name: Upload site terrain evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cova-do-ouro-site-lidar
+          compression-level: 6
+          path: |
+            site_output_cova_do_ouro/cova_do_ouro_mdt_50cm.tif
+            site_output_cova_do_ouro/site_summary.json
+            site_output_cova_do_ouro/steepest_profile.csv
+            site_output_cova_do_ouro/terrain_map.png
+            site_output_cova_do_ouro/steepest_profile.png
+            site_output_cova_do_ouro/download-manifest.json
+          if-no-files-found: error
