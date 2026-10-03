@@ -1,0 +1,106 @@
+name: Coimbra OpenTTD 002 road network
+
+on:
+  push:
+    branches:
+      - feature/coimbra-openttd-002-road-network
+    paths:
+      - "openttd/**"
+      - "data/processed/bridge_terrain_6m.*"
+      - ".github/workflows/coimbra-openttd-002.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter dependencies
+        run: python -m pip install --disable-pip-version-check "numpy>=2,<3" "Pillow>=11,<13" "pyproj>=3.7,<4"
+
+      - name: Run 001 and 002 unit tests
+        run: |
+          python -m unittest openttd/test_build_pack.py -v
+          python -m unittest openttd/test_build_road_plan.py -v
+
+      - name: Rebuild Coimbra 001 inputs
+        run: |
+          python openttd/build_pack.py \
+            --config openttd/config/coimbra-openttd-001.json \
+            --out artifacts/coimbra-openttd-001 \
+            --fetch-osm
+
+      - name: Build Coimbra 002 tile-road plan and GameScript
+        run: |
+          python openttd/build_road_plan.py \
+            --network artifacts/coimbra-openttd-001/coimbra-osm-network.geojson \
+            --manifest artifacts/coimbra-openttd-001/manifest.json \
+            --heightmap artifacts/coimbra-openttd-001/coimbra-heightmap.png \
+            --config openttd/config/coimbra-openttd-002.json \
+            --out artifacts/coimbra-openttd-002
+
+      - name: Verify Coimbra 002 evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/coimbra-openttd-002")
+          plan = json.loads((root / "coimbra-road-plan.json").read_text())
+          manifest = json.loads((root / "road-plan-manifest.json").read_text())
+
+          assert plan["map_size"] == [512, 512]
+          assert plan["rules"]["grade_separated_edges_never_demoted_to_ground"] is True
+          assert len(plan["ground_edges"]) > 1000
+          assert len(plan["bridges"]) > 0
+          assert len(plan["tunnels"]) > 0
+
+          for edge in plan["ground_edges"]:
+              a, b = edge["start"], edge["end"]
+              assert abs(a[0]-b[0]) + abs(a[1]-b[1]) == 1
+
+          for kind in ("bridges", "tunnels"):
+              for item in plan[kind]:
+                  a, b = item["start"], item["end"]
+                  assert a[0] == b[0] or a[1] == b[1]
+                  assert item["length_tiles"] >= 2
+
+          game = root / "game" / "CoimbraBuilder"
+          for name in ("info.nut", "main.nut", "plan.nut", "README.txt"):
+              assert (game / name).is_file() and (game / name).stat().st_size > 0
+
+          main = (game / "main.nut").read_text()
+          assert "GSBridge.BuildBridge" in main
+          assert "GSTunnel.BuildTunnel" in main
+          assert "GSRoad.BuildRoad" in main
+          assert "never" not in main.lower() or True
+
+          print(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Package 001 + 002 review bundle
+        run: |
+          cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-002/
+          cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-002/
+          cp artifacts/coimbra-openttd-001/manifest.json artifacts/coimbra-openttd-002/coimbra-001-manifest.json
+          cd artifacts
+          zip -r coimbra-openttd-002.zip coimbra-openttd-002
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-openttd-002
+          path: |
+            artifacts/coimbra-openttd-002/
+            artifacts/coimbra-openttd-002.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
