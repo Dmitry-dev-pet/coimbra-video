@@ -11,9 +11,13 @@ Read [AGENTS.md](AGENTS.md) before changing the project. Live branches, PRs, run
 
 ## Current production baseline
 
-**Coimbra 032 is the canonical production baseline.** It is the accepted 60 fps / 24 s / 1600×1000 production-look delivery and remains the reference for any future full-route work.
+**Coimbra 032 remains the canonical scene / production-look baseline.** It is the accepted 60 fps / 24 s / 1600×1000 visual source.
 
-Lanes 033, 035, 036 and V2/LiDAR/photogrammetry experiments are review or research lanes unless a separate, explicit human decision promotes them. No research lane may replace 032 merely because its workflow passes technical verification. A candidate must first demonstrate a materially better visual result against 032 in a direct review.
+**Coimbra 033 is now the accepted camera-motion baseline for future full-route work.** On 2026-10-03 the user explicitly accepted the 033 centripetal Catmull–Rom + global arc-length camera motion after reviewing a 1,440-frame Cycles Metal render at 60 fps / 24 s (mac-access run `37149136812`, video SHA-256 `7153a061dd4e8ac27bc51ac5c9077c3154c6162df035a0d6953336ca9a74be27`, review video: https://youtu.be/ou7x35MhRSQ).
+
+This is a **motion-only promotion**: future renders should pair the accepted 032 scene/look with the accepted 033 motion model. The review envelope of 640×480, 4 Cycles samples and adaptive threshold 0.15 remains preview-only and is not a production-quality setting.
+
+Lanes 035, 036 and V2/LiDAR/photogrammetry experiments remain review or research lanes unless a separate, explicit human decision promotes them.
 
 ## Blender: find the right lane
 
@@ -30,7 +34,7 @@ Lanes 033, 035, 036 and V2/LiDAR/photogrammetry experiments are review or resear
 | 030 | Production-look A/B review | Accepted 026 scene; paired frames 1, 181 and 360; lighting/palette/color-management candidate; human review required before full-route promotion |
 | 031 | Production-look Metal full route | Accepted 030 v2 packed scene; 360 native frames / 12 s / 1600×1000; Metal delivery with attribution and independent verification |
 | 032 | 60 fps half-speed production look | Same accepted 030 v2 scene and route; 1,440 true Blender subframes / 60 fps / 24 s / 1600×1000; no repeated frames or optical flow |
-| 033 | Smooth camera-motion review | Same seven route anchors; Catmull–Rom + global arc-length timing; 1,440-frame 60 fps motion-only EEVEE proxy and side-by-side review against 032 |
+| 033 | **Accepted camera-motion baseline** | Same seven route anchors; centripetal Catmull–Rom position/target splines + global arc-length timing; human-accepted 2026-10-03 after 1,440-frame 60 fps Cycles/Metal review |
 | 026 | Full native-route Cycles acceptance | 360 actual frames, 12 s, 30 fps, 1600×1000; render-only extension tracked in [PR #22](https://github.com/Dmitry-dev-pet/coimbra-video/pull/22) |
 
 **020 and 026 are different deliveries.** The 48-second EEVEE version is preserved; the 12-second Cycles acceptance pass does not overwrite or silently retime it. Renderer promotion does not imply that all asset/geometry realism issues are solved.
