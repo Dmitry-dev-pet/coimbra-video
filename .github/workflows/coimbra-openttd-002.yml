@@ -122,13 +122,13 @@ jobs:
           server_port = 0
 
           [game_scripts]
-          Coimbra Builder =
+          "Coimbra Builder" =
           EOF
 
           set +e
           HOME="$home" timeout 60s "$openttd" \
             -D 127.0.0.1:0 \
-            -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-002/coimbra-heightmap.png" \
+            -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-001/coimbra-heightmap.png" \
             -I OpenGFX \
             -c "$runtime/openttd.cfg" \
             -x \
