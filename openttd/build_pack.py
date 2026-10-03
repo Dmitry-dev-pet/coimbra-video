@@ -192,6 +192,14 @@ def main() -> None:
     xs = np.asarray(terrain["xs"], dtype=np.float64)
     ys = np.asarray(terrain["ys"], dtype=np.float64)
 
+    # The pinned Coimbra terrain stores local metre coordinates around its
+    # EPSG:3763 centre. Recover absolute national-grid coordinates before
+    # projecting towns/OSM into the raster.
+    center = terrain_meta.get("center_epsg3763")
+    if center and np.max(np.abs(xs)) < 10000 and np.max(np.abs(ys)) < 10000:
+        xs = xs + float(center[0])
+        ys = ys + float(center[1])
+
     z_crop, xs_crop, ys_crop, crop = square_crop(z, xs, ys)
     bounds = epsg_bounds(xs_crop, ys_crop)
     bbox = wgs84_bbox(bounds)
