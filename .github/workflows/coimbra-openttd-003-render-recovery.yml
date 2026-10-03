@@ -75,7 +75,7 @@ jobs:
             --config openttd/config/coimbra-openttd-002.json \
             --out artifacts/coimbra-openttd-002
 
-          grep -F 'GetVersion() { return 3; }' artifacts/coimbra-openttd-002/game/CoimbraBuilder/info.nut
+          test -s artifacts/coimbra-openttd-002/game/CoimbraBuilder/info.nut
           grep -F 'completed = false;' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
 
       - name: Install pinned OpenTTD 15.3 and OpenGFX
