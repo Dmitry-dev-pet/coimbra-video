@@ -248,7 +248,7 @@ jobs:
           build = Path("artifacts/coimbra-openttd-004/build.log").read_text(errors="replace")
           rows = [("coimbra-openttd-004-overview", 256, 256, 3)]
           for name, population, target, minimum, x, y in re.findall(
-              r"Coimbra town built: (.+?) population=(\\d+) target=(\\d+) minimum=(\\d+) tile=(\\d+),(\\d+)",
+              r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=(\d+),(\d+)",
               build,
           ):
               slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
@@ -256,7 +256,7 @@ jobs:
 
           assert len(rows) == 5, rows
           out = Path("artifacts/coimbra-openttd-004/capture-targets.tsv")
-          out.write_text("\\n".join("\\t".join(map(str, row)) for row in rows) + "\\n")
+          out.write_text("\n".join("\t".join(map(str, row)) for row in rows) + "\n")
           print(out.read_text())
           PY
 
@@ -315,7 +315,118 @@ jobs:
             wait "$pid" || true
           }
 
-          while IFS=$'\\t' read -r name x y zoom; do
+          while IFS=
+            cat > "$BINDIR/scripts/game_start.scr" <<EOF
+          scrollto instant $x $y
+          zoomto $zoom
+          screenshot normal size 1280 720 $name
+          EOF
+            launch_capture "$name"
+          done < artifacts/coimbra-openttd-004/capture-targets.tsv
+
+          cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          screenshot minimap coimbra-openttd-004-minimap
+          EOF
+          launch_capture "coimbra-openttd-004-minimap"
+
+          test "$(find artifacts/coimbra-openttd-004/screenshots -type f -name '*.png' | wc -l)" -eq 6
+
+      - name: Verify frames and write manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import re
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path("artifacts/coimbra-openttd-004")
+          screenshots = sorted((root / "screenshots").glob("*.png"))
+          build = (root / "build.log").read_text(errors="replace")
+          town_plan = json.loads((root / "town-plan.json").read_text())
+
+          assert len(town_plan) == 4, town_plan
+          assert "towns ok=4 fail=0" in build
+          town_results = {}
+          for name, population, target, minimum, x, y in re.findall(
+              r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=(\d+),(\d+)",
+              build,
+          ):
+              town_results[name] = {
+                  "population": int(population),
+                  "target_population": int(target),
+                  "minimum_population": int(minimum),
+                  "built_tile": [int(x), int(y)],
+              }
+          assert len(town_results) == 4, town_results
+          for town in town_plan:
+              assert town["name"] in town_results
+              assert town_results[town["name"]]["population"] >= town_results[town["name"]]["minimum_population"]
+
+          normal_hashes = []
+          shot_meta = {}
+          for path in screenshots:
+              with Image.open(path) as im:
+                  size = list(im.size)
+                  if "minimap" in path.name:
+                      assert im.size == (512, 512), (path, im.size)
+                  else:
+                      assert im.size == (1280, 720), (path, im.size)
+                      normal_hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
+                  shot_meta[path.name] = {"size": size, "mode": im.mode}
+
+          assert len(screenshots) == 6, [p.name for p in screenshots]
+          assert len(normal_hashes) == 5, normal_hashes
+          assert len(set(normal_hashes)) == 5, "normal screenshots are not distinct viewport captures"
+
+          def sha(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          sav = root / "coimbra-openttd-004.sav"
+          payload = {
+              "version": "coimbra-openttd-004",
+              "verified": True,
+              "openttd_version": "15.3",
+              "towns": town_plan,
+              "town_results": town_results,
+              "town_count": 4,
+              "all_towns_created": True,
+              "minimum_urban_population": 900,
+              "savegame": {
+                  "path": sav.name,
+                  "bytes": sav.stat().st_size,
+                  "sha256": sha(sav),
+                  "verified_by_openttd_q": True,
+              },
+              "screenshots": shot_meta,
+              "source_001_run_id": 37156903657,
+              "source_003_verified_run_id": 37160880112,
+          }
+          (root / "manifest.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+          print(json.dumps(payload, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Package Coimbra OpenTTD 004
+        run: |
+          cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-004/
+          cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-004/
+          cp artifacts/coimbra-openttd-002/road-plan-manifest.json artifacts/coimbra-openttd-004/
+          cp -R artifacts/coimbra-openttd-002/game artifacts/coimbra-openttd-004/
+          cd artifacts
+          zip -r coimbra-openttd-004.zip coimbra-openttd-004
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coimbra-openttd-004
+          path: |
+            artifacts/coimbra-openttd-004/
+            artifacts/coimbra-openttd-004.zip
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 0
+\t' read -r name x y zoom; do
             cat > "$BINDIR/scripts/game_start.scr" <<EOF
           scrollto instant $x $y
           zoomto $zoom
