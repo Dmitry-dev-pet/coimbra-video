@@ -331,129 +331,122 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         return [count, checksum];
     }
 
-    function FabricHousePopulation(house_id) {
-        switch (house_id) {
-            case 0x06: return 30;  // town houses
-            case 0x0E: return 95;  // shops and offices
-            case 0x0F: return 95;
-            case 0x10: return 95;
-            case 0x18: return 15;  // old houses
-            case 0x19: return 12;  // cottages
-            case 0x1A: return 13;  // houses
-            case 0x1B: return 100; // flats
+    function FindBuildingSites(town_name) {
+        foreach (group in COIMBRA_BUILDING_SITES) {
+            if (group[0] == town_name) return group[1];
         }
-        return 0;
+        return null;
     }
 
-    function TryPlaceFabricHouse(tile, remaining, ordinal, radius) {
-        // Keep the centre moderately dense and the outer rings low-rise.
-        // The palette deliberately excludes 0x00/0x01/0x02: 006 proved that
-        // always selecting 0x00 creates 187-pop tall office blocks and turns
-        // forty buildings into an unrealistic ~7.5k-pop district.
-        local palette = radius <= 8
-            ? [0x1B, 0x06, 0x0E, 0x1A, 0x0F, 0x10]
-            : [0x1A, 0x06, 0x18, 0x19, 0x1A, 0x06];
-
-        local start = ordinal % palette.len();
-        for (local j = 0; j < palette.len(); j++) {
-            local house_id = palette[(start + j) % palette.len()];
-            local population = this.FabricHousePopulation(house_id);
-            if (population <= 0) continue;
-
-            // Avoid large overshoots close to the target.
-            if (remaining <= 15 && population > 15) continue;
-            if (remaining > 15 && remaining <= 35 && population > 35) continue;
-            if (remaining > 35 && population > remaining + 25) continue;
-
-            if (GSTown.PlaceHouse(tile, house_id)) return house_id;
-        }
-
-        // Permanent temperate low-rise fallbacks.
-        local fallback = [0x1A, 0x06];
-        foreach (house_id in fallback) {
-            local population = this.FabricHousePopulation(house_id);
-            if (remaining <= 15 && population > 15) continue;
-            if (remaining > 15 && remaining <= 35 && population > 35) continue;
-            if (GSTown.PlaceHouse(tile, house_id)) return house_id;
-        }
-        return -1;
-    }
-
-    function PlaceRealisticUrbanFabricLocked() {
+    function PlaceOsmFootprintFabricLocked() {
         local before = this.RoadFingerprint();
         GSLog.Info(
-            "Coimbra 007 road fingerprint before count=" + before[0] +
+            "Coimbra 008 road fingerprint before count=" + before[0] +
             " checksum=" + before[1]
         );
+
+        require("building-sites.nut");
 
         foreach (i, item in COIMBRA_TOWNS) {
             local town_id = this.town_ids[i];
             if (!GSTown.IsValidTown(town_id)) continue;
 
-            local center = GSTown.GetLocation(town_id);
-            local base_x = GSMap.GetTileX(center);
-            local base_y = GSMap.GetTileY(center);
+            local town_name = item[4];
             local target_population = item[2];
             local population_before = GSTown.GetPopulation(town_id);
+            local sites = this.FindBuildingSites(town_name);
+            if (sites == null || sites.len() < 100) {
+                GSLog.Error("Coimbra 008 OSM site plan missing or too small: " + town_name);
+                return false;
+            }
+
             local placed = 0;
             local low_rise = 0;
             local medium_rise = 0;
-            local attempts = 0;
+            local civic = 0;
+            local source_sites_checked = 0;
+            local wrong_town = 0;
+            local blocked = 0;
 
-            for (local radius = 1; radius <= 52 && GSTown.GetPopulation(town_id) < target_population; radius++) {
-                for (local dx = -radius; dx <= radius && GSTown.GetPopulation(town_id) < target_population; dx++) {
-                    for (local dy = -radius; dy <= radius && GSTown.GetPopulation(town_id) < target_population; dy++) {
-                        if (dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
+            foreach (site in sites) {
+                if (GSTown.GetPopulation(town_id) >= target_population) break;
 
-                        local x = base_x + dx;
-                        local y = base_y + dy;
-                        if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
+                local x = site[0];
+                local y = site[1];
+                local house_id = site[2];
+                local expected_population = site[3];
+                local osm_id = site[4];
+                source_sites_checked++;
 
-                        // Deterministic gaps stop continuous apartment walls along roads.
-                        if (((x * 7 + y * 11 + i * 13) % 3) == 0) continue;
-
-                        local tile = GSMap.GetTileIndex(x, y);
-                        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
-                        if (!this.HasAdjacentRoad(x, y)) continue;
-
-                        local remaining = target_population - GSTown.GetPopulation(town_id);
-                        local house_id = this.TryPlaceFabricHouse(tile, remaining, attempts, radius);
-                        attempts++;
-
-                        if (house_id >= 0) {
-                            placed++;
-                            this.density_house_ok++;
-                            if (house_id == 0x1B || house_id == 0x0E || house_id == 0x0F || house_id == 0x10) {
-                                medium_rise++;
-                            } else {
-                                low_rise++;
-                            }
-                            if (placed % 12 == 0) this.Sleep(1);
-                        } else {
-                            this.density_house_fail++;
-                        }
-                    }
+                if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
+                local tile = GSMap.GetTileIndex(x, y);
+                if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) {
+                    blocked++;
+                    continue;
                 }
+
+                // The plan is generated against the exact 005 town coordinates.
+                // Recheck ownership in the actual loaded save before placing.
+                if (GSTile.GetClosestTown(tile) != town_id) {
+                    wrong_town++;
+                    continue;
+                }
+
+                local remaining = target_population - GSTown.GetPopulation(town_id);
+                if (remaining <= 15 && expected_population > 15) continue;
+                if (remaining > 15 && remaining <= 35 && expected_population > 35) continue;
+                if (remaining > 35 && expected_population > remaining + 25) continue;
+
+                local population_at_site = GSTown.GetPopulation(town_id);
+                if (!GSTown.PlaceHouse(tile, house_id)) {
+                    this.density_house_fail++;
+                    continue;
+                }
+
+                local population_after_site = GSTown.GetPopulation(town_id);
+                if (population_after_site <= population_at_site) {
+                    GSLog.Error(
+                        "Coimbra 008 placed OSM house without source-town population gain: " +
+                        town_name + " osm_id=" + osm_id
+                    );
+                    return false;
+                }
+
+                placed++;
+                this.density_house_ok++;
+                if (house_id == 0x1B || house_id == 0x0E) {
+                    medium_rise++;
+                } else if (house_id == 0x03) {
+                    civic++;
+                } else {
+                    low_rise++;
+                }
+
+                if (placed % 12 == 0) this.Sleep(1);
             }
 
             local population_after = GSTown.GetPopulation(town_id);
             GSLog.Info(
-                "Coimbra 007 urban fabric: " + item[4] +
+                "Coimbra 008 OSM fabric: " + town_name +
                 " placed=" + placed +
                 " low_rise=" + low_rise +
                 " medium_rise=" + medium_rise +
+                " civic=" + civic +
+                " sites_checked=" + source_sites_checked +
+                " blocked=" + blocked +
+                " wrong_town=" + wrong_town +
                 " population_before=" + population_before +
                 " target=" + target_population +
                 " population_after=" + population_after
             );
 
-            if (placed < 15 || low_rise < 5 || medium_rise < 2) {
-                GSLog.Error("Coimbra 007 urban fabric insufficient mix: " + item[4]);
+            if (placed < 20 || low_rise < 8 || medium_rise < 2) {
+                GSLog.Error("Coimbra 008 OSM urban fabric insufficient mix: " + town_name);
                 return false;
             }
             if (population_after < target_population || population_after > target_population + 120) {
                 GSLog.Error(
-                    "Coimbra 007 population outside target band: " + item[4] +
+                    "Coimbra 008 population outside target band: " + town_name +
                     " target=" + target_population +
                     " actual=" + population_after
                 );
@@ -464,23 +457,24 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 
         local after = this.RoadFingerprint();
         GSLog.Info(
-            "Coimbra 007 road fingerprint after count=" + after[0] +
+            "Coimbra 008 road fingerprint after count=" + after[0] +
             " checksum=" + after[1]
         );
         GSLog.Info(
-            "Coimbra 007 houses placed=" + this.density_house_ok +
+            "Coimbra 008 houses placed=" + this.density_house_ok +
             " failed_attempts=" + this.density_house_fail
         );
 
         if (before[0] != after[0] || before[1] != after[1]) {
             GSLog.Error(
-                "Coimbra 007 road fingerprint changed before=" + before[0] + "/" + before[1] +
+                "Coimbra 008 road fingerprint changed before=" + before[0] + "/" + before[1] +
                 " after=" + after[0] + "/" + after[1]
             );
             return false;
         }
 
-        GSLog.Info("Coimbra 007 road fingerprint preserved.");
+        ::COIMBRA_BUILDING_SITES = null;
+        GSLog.Info("Coimbra 008 road fingerprint preserved.");
         return true;
     }
 
@@ -537,17 +531,17 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 
 '''
     upgrade_block = r'''        if (this.density_upgrade) {
-            GSLog.Info("Coimbra 007 realistic urban fabric upgrade from verified 005 save started.");
+            GSLog.Info("Coimbra 008 OSM-footprint urban fabric upgrade from verified 005 save started.");
             if (!this.AttachExistingTowns()) return;
-            if (!this.PlaceRealisticUrbanFabricLocked()) return;
+            if (!this.PlaceOsmFootprintFabricLocked()) return;
             this.ValidateTowns();
             if (this.town_fail != 0) {
-                GSLog.Error("Coimbra 007 source town validation failed.");
+                GSLog.Error("Coimbra 008 source town validation failed.");
                 return;
             }
             this.density_upgrade = false;
             this.completed = true;
-            GSLog.Info("Coimbra 007 realistic urban fabric upgrade complete.");
+            GSLog.Info("Coimbra 008 OSM-footprint urban fabric upgrade complete.");
             while (true) this.Sleep(740);
         }
 
@@ -566,7 +560,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate road initialization in generated GameScript")
     main = main.replace(
         road_marker,
-        '        // 006: preserve the accepted 005 OSM-first transport build.\n'
+        '        // 008: preserve the accepted 005 OSM-first transport build.\n'
         '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n',
         1,
     )
@@ -579,9 +573,9 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate unique network completion marker")
     main = main.replace(
         completion_marker,
-        '        // 006 fresh-map fallback; migration of verified 005 uses the one-shot block above.\n'
+        '        // 008 fresh-map fallback; migration of verified 005 uses the one-shot block above.\n'
         '        this.FoundTowns();\n'
-        '        if (!this.PlaceRealisticUrbanFabricLocked()) return;\n'
+        '        if (!this.PlaceOsmFootprintFabricLocked()) return;\n'
         '        this.ValidateTowns();\n'
         '        this.completed = true;\n'
         '        GSLog.Info("Coimbra network build complete.");\n',
@@ -591,10 +585,10 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Builds population-targeted mixed urban fabric beside the locked Coimbra 005 OSM roads using an editor-only API bridge."; }',
+        'function GetDescription() { return "Places population-targeted OpenTTD houses on pinned real Coimbra OSM building-footprint centroids while preserving the locked 005 roads."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 12; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 13; }", 1)
     info_path.write_text(info, encoding="utf-8")
 
     load_marker = r'''    function Load(version, data) {
@@ -603,7 +597,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 '''
     load_upgrade = r'''    function Load(version, data) {
         if ("completed" in data) this.completed = data.completed;
-        if (version < 12 && this.completed) {
+        if (version < 13 && this.completed) {
             this.completed = false;
             this.density_upgrade = true;
         }
