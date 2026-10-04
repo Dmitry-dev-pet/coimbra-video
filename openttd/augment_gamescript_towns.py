@@ -505,16 +505,20 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         1,
     )
 
-    completion_marker = '        this.completed = true;\n'
+    completion_marker = (
+        '        this.completed = true;\n'
+        '        GSLog.Info("Coimbra network build complete.");\n'
+    )
     if completion_marker not in main:
-        raise RuntimeError("could not locate network completion marker")
+        raise RuntimeError("could not locate unique network completion marker")
     main = main.replace(
         completion_marker,
-        '        // 006: preserve 005 roads and add bounded natural building density.\n'
+        '        // 006 fresh-map fallback; migration of verified 005 uses the one-shot block above.\n'
         '        this.FoundTowns();\n'
         '        if (!this.PlaceDensityHousesLocked()) return;\n'
         '        this.ValidateTowns();\n'
-        '        this.completed = true;\n',
+        '        this.completed = true;\n'
+        '        GSLog.Info("Coimbra network build complete.");\n',
         1,
     )
 

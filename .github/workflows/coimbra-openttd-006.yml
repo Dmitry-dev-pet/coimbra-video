@@ -167,6 +167,12 @@ jobs:
           git -C _openttd_house_editor diff --check
           git -C _openttd_house_editor diff -- src/script/api/script_town.hpp src/script/api/script_town.cpp src/town_cmd.cpp
 
+      - name: Cache OpenTTD 15.3 house editor build
+        uses: actions/cache@v4
+        with:
+          path: _openttd_house_editor/build
+          key: coimbra-openttd-15.3-house-editor-v1-${{ hashFiles('openttd/patch_openttd_house_editor.py') }}
+
       - name: Build dedicated OpenTTD 15.3 house editor
         id: editor
         shell: bash
@@ -177,11 +183,13 @@ jobs:
             build-essential cmake ninja-build pkg-config grfcodec \
             libcurl4-openssl-dev libfontconfig1-dev libharfbuzz-dev libicu-dev \
             liblzma-dev liblzo2-dev libpng-dev zlib1g-dev
-          cmake -S _openttd_house_editor -B _openttd_house_editor/build -GNinja \
-            -DOPTION_DEDICATED=ON \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
-          cmake --build _openttd_house_editor/build --target openttd -j 2
+          if [ ! -x _openttd_house_editor/build/openttd ]; then
+            cmake -S _openttd_house_editor -B _openttd_house_editor/build -GNinja \
+              -DOPTION_DEDICATED=ON \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
+            cmake --build _openttd_house_editor/build --target openttd -j "$(nproc)"
+          fi
           editor_bin="$(find _openttd_house_editor/build -maxdepth 3 -type f -name openttd -perm -111 -print -quit)"
           test -n "$editor_bin" && test -x "$editor_bin"
           echo "openttd=$GITHUB_WORKSPACE/$editor_bin" >> "$GITHUB_OUTPUT"
