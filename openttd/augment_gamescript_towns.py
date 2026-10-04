@@ -68,6 +68,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         local base_x = max(edge_margin, min(GSMap.GetMapSizeX() - edge_margin - 1, item[0]));
         local base_y = max(edge_margin, min(GSMap.GetMapSizeY() - edge_margin - 1, item[1]));
         local target_population = item[2];
+        local minimum_population = 900;
         local is_city = item[3];
         local town_name = item[4];
 
@@ -104,11 +105,15 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                             "Coimbra town built: " + town_name +
                             " population=" + final_population +
                             " target=" + target_population +
+                            " minimum=" + minimum_population +
                             " tile=" + x + "," + y
                         );
-                        if (final_population < target_population) {
-                            GSLog.Warning("Coimbra town below target: " + town_name);
+                        if (final_population < minimum_population) {
+                            GSLog.Warning("Coimbra town below minimum urban population: " + town_name);
                             return false;
+                        }
+                        if (final_population < target_population) {
+                            GSLog.Warning("Coimbra town below aspirational target: " + town_name);
                         }
                         return true;
                     }

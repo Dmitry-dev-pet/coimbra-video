@@ -81,6 +81,8 @@ Rules:
   hand-tuned screenshot positions;
 - if the exact tile is occupied or unsuitable, search only a small bounded radius;
 - all four towns must be created successfully before the 004 save is accepted;
+- each district must reach at least 900 residents; the pinned population remains an
+  aspirational growth target, not permission to flatten or materially distort terrain;
 - town expansion must use OpenTTD's own town-building API, not painted or generated
   building sprites;
 - 004 screenshots must come from the reloaded `.sav` in graphical OpenTTD;

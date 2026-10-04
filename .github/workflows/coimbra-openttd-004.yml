@@ -189,11 +189,11 @@ jobs:
           from pathlib import Path
 
           log = (Path(os.environ["RUNTIME"]) / "build.log").read_text(errors="replace")
-          matches = re.findall(r"Coimbra town built: (.+?) population=(\d+) target=(\d+) tile=", log)
+          matches = re.findall(r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=", log)
           assert len(matches) == 4, matches
-          for name, population, target in matches:
-              assert int(population) >= int(target), (name, population, target)
-          print("all four Coimbra towns reached target population")
+          for name, population, target, minimum in matches:
+              assert int(population) >= int(minimum), (name, population, target, minimum)
+          print("all four Coimbra towns reached the minimum urban population")
           PY
 
           kill -TERM "$pid"
@@ -332,8 +332,21 @@ jobs:
 
           assert len(town_plan) == 4, town_plan
           assert "towns ok=4 fail=0" in build
+          town_results = {}
+          for name, population, target, minimum, x, y in re.findall(
+              r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=(\d+),(\d+)",
+              build,
+          ):
+              town_results[name] = {
+                  "population": int(population),
+                  "target_population": int(target),
+                  "minimum_population": int(minimum),
+                  "built_tile": [int(x), int(y)],
+              }
+          assert len(town_results) == 4, town_results
           for town in town_plan:
-              assert f"Coimbra town built: {town['name']}" in build
+              assert town["name"] in town_results
+              assert town_results[town["name"]]["population"] >= town_results[town["name"]]["minimum_population"]
 
           shot_meta = {}
           for path in screenshots:
@@ -354,8 +367,10 @@ jobs:
               "verified": True,
               "openttd_version": "15.3",
               "towns": town_plan,
+              "town_results": town_results,
               "town_count": 4,
               "all_towns_created": True,
+              "minimum_urban_population": 900,
               "savegame": {
                   "path": sav.name,
                   "bytes": sav.stat().st_size,
