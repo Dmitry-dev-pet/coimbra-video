@@ -89,3 +89,24 @@ Rules:
 - preserve the 003 road/bridge/tunnel semantics and never flatten failed
   grade-separated structures;
 - do not mutate accepted Blender 032/033 assets.
+
+
+## COIMBRA-OPENTTD-005
+
+Goal: improve real-world road fidelity over verified 004 without changing the pinned
+001 terrain/OSM sources or accepted Blender 032/033 baselines.
+
+Rules:
+- stack on verified OpenTTD 004 run `37199363026` and keep generation seed `1996061907`;
+- found only compact town anchors before transport construction;
+- set `economy.allow_town_roads=false` and grow population only after the OSM
+  network exists, so `GSTown.ExpandTown` adds buildings rather than new roads;
+- all four required districts must still reach at least 900 residents;
+- bridge/tunnel recovery may search only within 3 tiles of OSM-derived endpoints;
+- bridge recovery may trim heads by at most 2 tiles or shift the whole span
+  parallel by at most 3 tiles;
+- failed grade-separated structures must never be flattened to surface roads;
+- the pinned 001 heightmap is immutable in 005;
+- compare runtime counts against verified 004: roads 6037/1299, bridges 25/38,
+  tunnels 0/13;
+- screenshots must come from the reloaded real 005 `.sav`.
