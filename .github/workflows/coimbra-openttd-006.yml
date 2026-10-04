@@ -94,7 +94,6 @@ jobs:
 
           python openttd/augment_gamescript_towns.py \
             --towns artifacts/coimbra-openttd-001/coimbra-towns.json \
-            --density-towns openttd/config/coimbra-openttd-006-density-towns.json \
             --game-dir artifacts/coimbra-openttd-002/game/CoimbraBuilder \
             --map-size 512 \
             --out-plan artifacts/coimbra-openttd-006/town-plan.json
@@ -106,12 +105,12 @@ jobs:
           grep -F 'GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function RoadFingerprint()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function AttachExistingTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'function TryFoundDensityTown(item)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'function AddDensityTownsLocked()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function TryPlaceDensityHouse(tile)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function PlaceDensityHousesLocked()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'GSTown.PlaceHouse(tile, house_id)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'Coimbra 006 density upgrade complete.' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          test "$(grep -c '^  \[' artifacts/coimbra-openttd-002/game/CoimbraBuilder/density_towns.nut)" -eq 5
           if grep -Fq 'GSTown.ExpandTown' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
-            echo '006 microtown review must not use ExpandTown.' >&2
+            echo '006 house-editor lane must not use ExpandTown.' >&2
             exit 1
           fi
           grep -F 'function TryBridgeCandidate' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
@@ -151,12 +150,49 @@ jobs:
           echo "openttd=$openttd" >> "$GITHUB_OUTPUT"
           echo "bindir=$(dirname "$openttd")" >> "$GITHUB_OUTPUT"
 
+      - name: Checkout exact OpenTTD 15.3 source for house editor
+        uses: actions/checkout@v4
+        with:
+          repository: OpenTTD/OpenTTD
+          ref: 14ec60f248547d4d062a1160f0fc26d742319888
+          path: _openttd_house_editor
+          fetch-depth: 1
+
+      - name: Patch OpenTTD house editor bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C _openttd_house_editor rev-parse HEAD)" = "14ec60f248547d4d062a1160f0fc26d742319888"
+          python openttd/patch_openttd_house_editor.py --source _openttd_house_editor
+          git -C _openttd_house_editor diff --check
+          git -C _openttd_house_editor diff -- src/script/api/script_town.hpp src/script/api/script_town.cpp src/town_cmd.cpp
+
+      - name: Build dedicated OpenTTD 15.3 house editor
+        id: editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config grfcodec \
+            libcurl4-openssl-dev libfontconfig1-dev libharfbuzz-dev libicu-dev \
+            liblzma-dev liblzo2-dev libpng-dev zlib1g-dev
+          cmake -S _openttd_house_editor -B _openttd_house_editor/build -GNinja \
+            -DOPTION_DEDICATED=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
+          cmake --build _openttd_house_editor/build --target openttd -j 2
+          editor_bin="$(find _openttd_house_editor/build -maxdepth 3 -type f -name openttd -perm -111 -print -quit)"
+          test -n "$editor_bin" && test -x "$editor_bin"
+          echo "openttd=$GITHUB_WORKSPACE/$editor_bin" >> "$GITHUB_OUTPUT"
+          "$editor_bin" -h | head -n 2
+
       - name: Upgrade verified Coimbra 005 save with urban density
         shell: bash
         env:
           RUNTIME: ${{ steps.runtime.outputs.runtime }}
           HOME_DIR: ${{ steps.runtime.outputs.home }}
-          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+          OPENTTD: ${{ steps.editor.outputs.openttd }}
         run: |
           set -euo pipefail
           cfg="$RUNTIME/build.cfg"
@@ -205,7 +241,7 @@ jobs:
               complete=1
               break
             fi
-            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 006 road fingerprint changed|Coimbra 006 density town creation incomplete" "$log" 2>/dev/null; then
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 006 road fingerprint changed|Coimbra 006 house density insufficient" "$log" 2>/dev/null; then
               cat "$log"
               exit 2
             fi
@@ -221,8 +257,8 @@ jobs:
           grep -F "Coimbra 006 road fingerprint before" "$log"
           grep -F "Coimbra 006 road fingerprint after" "$log"
           grep -F "Coimbra 006 road fingerprint preserved." "$log"
-          grep -F "Coimbra 006 density town built:" "$log"
-          grep -F "Coimbra 006 density towns ok=5 fail=0" "$log"
+          grep -F "Coimbra 006 house density:" "$log"
+          grep -F "Coimbra 006 houses placed=" "$log"
           grep -F "Coimbra town built: Vale das Flores" "$log"
           grep -F "Coimbra town built: Bairro Norton de Matos" "$log"
           grep -F "Coimbra town built: Polo II" "$log"
@@ -242,13 +278,14 @@ jobs:
               assert int(population) >= 1, (name, population)
 
           density = re.findall(
-              r"Coimbra 006 density town built: (.+?) population=(\d+) tile=(\d+),(\d+) source=(.+)",
+              r"Coimbra 006 house density: (.+?) placed=(\d+) population_before=(\d+) population_after=(\d+)",
               log,
           )
-          assert len(density) == 5, density
-          assert all(int(population) > 0 for _, population, _, _, _ in density), density
-          assert "Coimbra 006 density towns ok=5 fail=0" in log
-          print("all five real Coimbra density towns were founded and frozen on the exact 005 save")
+          assert len(density) == 4, density
+          for name, placed, before, after in density:
+              assert int(placed) >= 15, (name, placed)
+              assert int(after) > int(before), (name, before, after)
+          print("all four source towns gained completed houses on the exact 005 save")
           PY
 
           kill -TERM "$pid"
@@ -428,18 +465,19 @@ jobs:
               assert town_results[town["name"]]["population"] >= 1
 
           density_results = {}
-          for name, population, x, y, source in re.findall(
-              r"Coimbra 006 density town built: (.+?) population=(\d+) tile=(\d+),(\d+) source=(.+)",
+          for name, placed, before, after in re.findall(
+              r"Coimbra 006 house density: (.+?) placed=(\d+) population_before=(\d+) population_after=(\d+)",
               build,
           ):
               density_results[name] = {
-                  "population": int(population),
-                  "built_tile": [int(x), int(y)],
-                  "source": source.strip(),
+                  "houses_placed": int(placed),
+                  "population_before": int(before),
+                  "population_after": int(after),
+                  "population_gain": int(after) - int(before),
               }
-          assert len(density_results) == 5, density_results
-          assert all(item["population"] > 0 for item in density_results.values())
-          assert "Coimbra 006 density towns ok=5 fail=0" in build
+          assert len(density_results) == 4, density_results
+          assert all(item["houses_placed"] >= 15 for item in density_results.values())
+          assert all(item["population_gain"] > 0 for item in density_results.values())
 
           fingerprint_match = re.search(
               r"Coimbra 006 road fingerprint before count=(\d+) checksum=(\d+).*?"
@@ -508,9 +546,10 @@ jobs:
               "source_005_save_sha256": source_save_sha256,
               "existing_005_towns_attached_by_name": True,
               "town_roads_allowed": False,
-              "density_strategy": "five_real_frozen_microtowns_adjacent_to_existing_osm_roads",
-              "density_town_count": 5,
-              "density_town_results": density_results,
+              "density_strategy": "completed_houses_on_buildable_tiles_adjacent_to_existing_osm_roads",
+              "editor_source_commit": "14ec60f248547d4d062a1160f0fc26d742319888",
+              "editor_api_bridge": "GSTown.PlaceHouse",
+              "density_results": density_results,
               "expand_town_calls": 0,
               "road_fingerprint_preserved": True,
               "road_fingerprint": {
@@ -543,7 +582,6 @@ jobs:
           cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-006/
           test -s artifacts/coimbra-openttd-006/source-coimbra-openttd-005.sav
           cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-006/
-          cp openttd/config/coimbra-openttd-006-density-towns.json artifacts/coimbra-openttd-006/
           cp artifacts/coimbra-openttd-002/road-plan-manifest.json artifacts/coimbra-openttd-006/
           cp -R artifacts/coimbra-openttd-002/game artifacts/coimbra-openttd-006/
           cd artifacts
