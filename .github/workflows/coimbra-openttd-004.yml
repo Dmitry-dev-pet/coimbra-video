@@ -237,39 +237,30 @@ jobs:
           fi
           command -v xvfb-run
 
-      - name: Build screenshot script for overview and four towns
+      - name: Prepare capture targets from actual built towns
         shell: bash
-        env:
-          BINDIR: ${{ steps.runtime.outputs.bindir }}
         run: |
           set -euo pipefail
-          mkdir -p "$BINDIR/scripts"
           python - <<'PY'
-          import json
-          import os
           import re
           from pathlib import Path
 
-          plan = json.loads(Path("artifacts/coimbra-openttd-004/town-plan.json").read_text())
-          lines = [
-              "scrollto instant 256 256",
-              "zoomto 3",
-              "screenshot normal size 1280 720 coimbra-openttd-004-overview",
-          ]
-          for town in plan:
-              slug = re.sub(r"[^a-z0-9]+", "-", town["name"].lower()).strip("-")
-              lines += [
-                  f"scrollto instant {town['x']} {town['y']}",
-                  "zoomto 2",
-                  f"screenshot normal size 1280 720 coimbra-openttd-004-{slug}",
-              ]
-          lines.append("screenshot minimap coimbra-openttd-004-minimap")
-          script_path = Path(os.environ["BINDIR"]) / "scripts" / "game_start.scr"
-          script_path.write_text("\n".join(lines) + "\n")
-          print("\n".join(lines))
+          build = Path("artifacts/coimbra-openttd-004/build.log").read_text(errors="replace")
+          rows = [("coimbra-openttd-004-overview", 256, 256, 3)]
+          for name, population, target, minimum, x, y in re.findall(
+              r"Coimbra town built: (.+?) population=(\\d+) target=(\\d+) minimum=(\\d+) tile=(\\d+),(\\d+)",
+              build,
+          ):
+              slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+              rows.append((f"coimbra-openttd-004-{slug}", int(x), int(y), 2))
+
+          assert len(rows) == 5, rows
+          out = Path("artifacts/coimbra-openttd-004/capture-targets.tsv")
+          out.write_text("\\n".join("\\t".join(map(str, row)) for row in rows) + "\\n")
+          print(out.read_text())
           PY
 
-      - name: Reload saved city and capture real OpenTTD frames
+      - name: Reload saved city and capture distinct real OpenTTD frames
         shell: bash
         env:
           RUNTIME: ${{ steps.runtime.outputs.runtime }}
@@ -278,42 +269,67 @@ jobs:
           BINDIR: ${{ steps.runtime.outputs.bindir }}
         run: |
           set -euo pipefail
-          render_log="$RUNTIME/render.log"
-          (
-            cd "$BINDIR"
-            HOME="$HOME_DIR" xvfb-run -a "$OPENTTD" \
-              -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-004/coimbra-openttd-004.sav" \
-              -I OpenGFX \
-              -s null \
-              -m null \
-              -c "$RUNTIME/build.cfg" \
-              -r 1280x720 \
-              -x \
-              -d script=3,misc=1
-          ) > "$render_log" 2>&1 &
-          pid=$!
+          mkdir -p "$BINDIR/scripts" artifacts/coimbra-openttd-004/screenshots
+          : > artifacts/coimbra-openttd-004/render.log
 
-          for _ in $(seq 1 120); do
-            count="$(find "$RUNTIME" "$HOME_DIR" -type f -name 'coimbra-openttd-004-*.png' 2>/dev/null | wc -l | tr -d ' ')"
-            if [ "$count" -ge 6 ]; then
-              break
-            fi
-            if ! kill -0 "$pid" 2>/dev/null; then
-              cat "$render_log"
-              exit 4
-            fi
-            sleep 1
-          done
+          launch_capture() {
+            expected="$1"
+            log="$RUNTIME/render-$expected.log"
+            find "$RUNTIME" "$HOME_DIR" -type f -name "$expected.png" -delete 2>/dev/null || true
 
-          mkdir -p artifacts/coimbra-openttd-004/screenshots
-          find "$RUNTIME" "$HOME_DIR" -type f -name 'coimbra-openttd-004-*.png' -exec cp {} artifacts/coimbra-openttd-004/screenshots/ \;
-          test "$(find artifacts/coimbra-openttd-004/screenshots -type f -name '*.png' | wc -l)" -ge 6
-          cp "$render_log" artifacts/coimbra-openttd-004/render.log
+            (
+              cd "$BINDIR"
+              HOME="$HOME_DIR" xvfb-run -a "$OPENTTD" \
+                -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-004/coimbra-openttd-004.sav" \
+                -I OpenGFX \
+                -s null \
+                -m null \
+                -c "$RUNTIME/build.cfg" \
+                -r 1280x720 \
+                -x \
+                -d script=3,misc=1
+            ) > "$log" 2>&1 &
+            pid=$!
 
-          if kill -0 "$pid" 2>/dev/null; then kill "$pid" || true; fi
-          wait "$pid" || true
+            found=""
+            for _ in $(seq 1 90); do
+              found="$(find "$RUNTIME" "$HOME_DIR" -type f -name "$expected.png" -print -quit 2>/dev/null || true)"
+              if [ -n "$found" ]; then
+                break
+              fi
+              if ! kill -0 "$pid" 2>/dev/null; then
+                cat "$log"
+                exit 4
+              fi
+              sleep 1
+            done
 
-          grep -F "Coimbra completed save loaded; network rebuild skipped." artifacts/coimbra-openttd-004/render.log
+            test -n "$found" && test -s "$found"
+            cp "$found" "artifacts/coimbra-openttd-004/screenshots/$expected.png"
+            {
+              echo "===== $expected ====="
+              cat "$log"
+            } >> artifacts/coimbra-openttd-004/render.log
+
+            if kill -0 "$pid" 2>/dev/null; then kill "$pid" || true; fi
+            wait "$pid" || true
+          }
+
+          while IFS=$'\\t' read -r name x y zoom; do
+            cat > "$BINDIR/scripts/game_start.scr" <<EOF
+          scrollto instant $x $y
+          zoomto $zoom
+          screenshot normal size 1280 720 $name
+          EOF
+            launch_capture "$name"
+          done < artifacts/coimbra-openttd-004/capture-targets.tsv
+
+          cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          screenshot minimap coimbra-openttd-004-minimap
+          EOF
+          launch_capture "coimbra-openttd-004-minimap"
+
+          test "$(find artifacts/coimbra-openttd-004/screenshots -type f -name '*.png' | wc -l)" -eq 6
 
       - name: Verify frames and write manifest
         run: |
@@ -348,6 +364,7 @@ jobs:
               assert town["name"] in town_results
               assert town_results[town["name"]]["population"] >= town_results[town["name"]]["minimum_population"]
 
+          normal_hashes = []
           shot_meta = {}
           for path in screenshots:
               with Image.open(path) as im:
@@ -356,7 +373,12 @@ jobs:
                       assert im.size == (512, 512), (path, im.size)
                   else:
                       assert im.size == (1280, 720), (path, im.size)
+                      normal_hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
                   shot_meta[path.name] = {"size": size, "mode": im.mode}
+
+          assert len(screenshots) == 6, [p.name for p in screenshots]
+          assert len(normal_hashes) == 5, normal_hashes
+          assert len(set(normal_hashes)) == 5, "normal screenshots are not distinct viewport captures"
 
           def sha(path):
               return hashlib.sha256(path.read_bytes()).hexdigest()
