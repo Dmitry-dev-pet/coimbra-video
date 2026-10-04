@@ -101,6 +101,19 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                         }
 
                         local final_population = GSTown.GetPopulation(town_id);
+                        if (final_population < minimum_population) {
+                            GSLog.Info(
+                                "Coimbra town growth rescue: " + town_name +
+                                " population=" + final_population +
+                                " minimum=" + minimum_population
+                            );
+                            for (local rescue_round = 0; rescue_round < 128; rescue_round++) {
+                                if (GSTown.GetPopulation(town_id) >= minimum_population) break;
+                                GSTown.ExpandTown(town_id, 50);
+                                this.Sleep(1);
+                            }
+                            final_population = GSTown.GetPopulation(town_id);
+                        }
                         GSLog.Info(
                             "Coimbra town built: " + town_name +
                             " population=" + final_population +

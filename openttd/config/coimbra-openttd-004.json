@@ -8,6 +8,8 @@
   "town_search_radius_tiles": 12,
   "town_growth_rounds": 256,
   "town_growth_houses_per_round": 50,
+  "town_growth_rescue_rounds": 128,
+  "town_growth_rescue_houses_per_round": 50,
   "capture": {
     "overview_center_tile": [
       256,
