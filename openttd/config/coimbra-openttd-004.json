@@ -3,6 +3,7 @@
   "openttd_version": "15.3",
   "opengfx_version": "8.0",
   "map_size": 512,
+  "generation_seed": 1996061907,
   "source_001_run_id": 37156903657,
   "source_003_verified_run_id": 37160880112,
   "town_search_radius_tiles": 12,

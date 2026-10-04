@@ -151,6 +151,7 @@ jobs:
 
           HOME="$HOME_DIR" "$OPENTTD" \
             -D 127.0.0.1:0 \
+            -G 1996061907 \
             -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-001/coimbra-heightmap.png" \
             -I OpenGFX \
             -c "$cfg" \
@@ -397,6 +398,7 @@ jobs:
               "version": "coimbra-openttd-004",
               "verified": True,
               "openttd_version": "15.3",
+              "generation_seed": 1996061907,
               "towns": town_plan,
               "town_results": town_results,
               "town_count": 4,
