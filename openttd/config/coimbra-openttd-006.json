@@ -1,0 +1,25 @@
+{
+  "version": "coimbra-openttd-006",
+  "base_005_verified_run_id": 37212552230,
+  "base_005_commit": "3f27c5abd6e2ac601514b5daebb2ccf7e5aafda8",
+  "generation_seed": 1996061907,
+  "openttd_version": "15.3",
+  "allow_town_roads": false,
+  "towns_founded_after_osm": true,
+  "town_anchor_prefers_adjacent_osm_road": true,
+  "town_expansion_calls": 0,
+  "natural_growth_rate_days": 1,
+  "natural_growth_ticks": 4440,
+  "minimum_urban_population": 300,
+  "freeze_after_density_window": true,
+  "road_fingerprint_required": true,
+  "accepted_005_network": {
+    "roads_ok": 6229,
+    "roads_fail": 1107,
+    "bridges_ok": 44,
+    "bridges_fail": 19,
+    "tunnels_ok": 0,
+    "tunnels_fail": 13
+  },
+  "terrain_mutation_allowed": false
+}

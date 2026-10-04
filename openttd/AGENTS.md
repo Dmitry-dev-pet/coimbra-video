@@ -119,3 +119,26 @@ Rules:
   created a large invented road grid despite green CI;
 - run `37210983009` is a rejected diagnostic run because the OSM-first order worked
   but Bairro Norton de Matos was founded with population 0.
+
+## COIMBRA-OPENTTD-006
+
+Goal: add visible urban density on top of the verified 005 OSM road-fidelity
+baseline without changing that road network.
+
+Rules:
+- stack on verified 005 run `37212552230` / commit `3f27c5a`;
+- stay on OpenTTD 15.3 for the acceptance run;
+- preserve the exact 005 runtime network counters: roads 6229/1107, bridges 44/19,
+  tunnels 0/13;
+- keep `economy.allow_town_roads=false` from game start;
+- never call `GSTown.ExpandTown` in 006;
+- found the same four districts only after OSM transport is complete and prefer
+  buildable tiles adjacent to existing OSM roads;
+- compute a full-map road fingerprint before density growth and again afterwards;
+  both road-tile count and checksum must match exactly;
+- density may use only bounded natural town growth: growth rate 1 day for 4,440
+  GameScript ticks, then `TOWN_GROWTH_NONE`;
+- each of the four districts must reach at least 300 residents;
+- any road fingerprint change rejects the candidate even if screenshots look better;
+- screenshots must come from the reloaded real 006 `.sav`;
+- 006 is review-only until a human compares it directly with accepted 005.

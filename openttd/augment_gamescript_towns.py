@@ -273,8 +273,79 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         GSLog.Info("Coimbra compact town anchors founded.");
     }
 
+    function RoadFingerprint() {
+        local count = 0;
+        local checksum = 0;
+        local size_x = GSMap.GetMapSizeX();
+        local size_y = GSMap.GetMapSizeY();
+        local scanned = 0;
+
+        for (local y = 0; y < size_y; y++) {
+            for (local x = 0; x < size_x; x++) {
+                local tile = GSMap.GetTileIndex(x, y);
+                if (GSRoad.IsRoadTile(tile)) {
+                    count++;
+                    checksum = (checksum + tile) % 2147483647;
+                }
+                scanned++;
+                if (scanned % 4096 == 0) this.Sleep(1);
+            }
+        }
+        return [count, checksum];
+    }
+
+    function GrowBuildingsOnly() {
+        local before = this.RoadFingerprint();
+        GSLog.Info(
+            "Coimbra 006 road fingerprint before count=" + before[0] +
+            " checksum=" + before[1]
+        );
+
+        foreach (i, item in COIMBRA_TOWNS) {
+            local town_id = this.town_ids[i];
+            if (!GSTown.IsValidTown(town_id)) continue;
+            GSLog.Info(
+                "Coimbra 006 density start: " + item[4] +
+                " population=" + GSTown.GetPopulation(town_id)
+            );
+            if (!GSTown.SetGrowthRate(town_id, 1)) {
+                GSLog.Error("Coimbra 006 density growth failed: " + item[4]);
+                return false;
+            }
+        }
+
+        this.Sleep(4440);
+
+        foreach (i, item in COIMBRA_TOWNS) {
+            local town_id = this.town_ids[i];
+            if (!GSTown.IsValidTown(town_id)) continue;
+            GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
+            GSLog.Info(
+                "Coimbra 006 density end: " + item[4] +
+                " population=" + GSTown.GetPopulation(town_id)
+            );
+        }
+
+        local after = this.RoadFingerprint();
+        GSLog.Info(
+            "Coimbra 006 road fingerprint after count=" + after[0] +
+            " checksum=" + after[1]
+        );
+
+        if (before[0] != after[0] || before[1] != after[1]) {
+            GSLog.Error(
+                "Coimbra 006 road fingerprint changed before=" + before[0] + "/" + before[1] +
+                " after=" + after[0] + "/" + after[1]
+            );
+            return false;
+        }
+
+        GSLog.Info("Coimbra 006 road fingerprint preserved.");
+        return true;
+    }
+
     function ValidateTowns() {
-        local minimum_population = 1;
+        local minimum_population = 300;
 
         foreach (i, item in COIMBRA_TOWNS) {
             local target_population = item[2];
@@ -324,7 +395,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate road initialization in generated GameScript")
     main = main.replace(
         road_marker,
-        '        // 005: build the OSM transport network before any town exists.\n'
+        '        // 006: preserve the accepted 005 OSM-first transport build.\n'
         '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n',
         1,
     )
@@ -334,8 +405,9 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate network completion marker")
     main = main.replace(
         completion_marker,
-        '        // 005: found compact town anchors only after OSM transport is complete.\n'
+        '        // 006: preserve 005 roads and add bounded natural building density.\n'
         '        this.FoundTowns();\n'
+        '        if (!this.GrowBuildingsOnly()) return;\n'
         '        this.ValidateTowns();\n'
         '        this.completed = true;\n',
         1,
@@ -346,10 +418,10 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Builds the real Coimbra OSM network first, then freezes compact towns beside existing roads."; }',
+        'function GetDescription() { return "Preserves the Coimbra 005 OSM network while adding bounded natural building density without new roads."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 6; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 7; }", 1)
     info_path.write_text(info, encoding="utf-8")
 
 
