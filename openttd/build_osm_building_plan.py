@@ -76,8 +76,9 @@ def parse_town_locations(path: Path) -> dict[str, dict[str, int]]:
         r"minimum=(\d+) tile=(\d+),(\d+)"
     )
     result = {}
-    for name, population, target, minimum, x, y in pattern.findall(text):
+    for source_order, (name, population, target, minimum, x, y) in enumerate(pattern.findall(text)):
         result[name] = {
+            "source_order": source_order,
             "population": int(population),
             "target_population": int(target),
             "minimum_population": int(minimum),
@@ -118,6 +119,23 @@ def spread_key(candidate: dict) -> tuple[int, int]:
         ^ candidate["osm_id"] * 83492791
     ) & 0xFFFFFFFF
     return value, candidate["osm_id"]
+
+
+def closest_town_name(candidate: dict, exact_towns: dict[str, dict[str, int]]) -> str:
+    """Match OpenTTD 15.3 CalcClosestTownFromTile / Kdtree::FindNearest.
+
+    OpenTTD's town k-d tree uses Manhattan distance, not Euclidean distance.
+    Equal distances are resolved by the smaller TownID. The source 005 build log
+    is emitted in the same creation order, recorded as source_order below.
+    """
+    return min(
+        exact_towns,
+        key=lambda name: (
+            abs(candidate["x"] - exact_towns[name]["x"])
+            + abs(candidate["y"] - exact_towns[name]["y"]),
+            exact_towns[name]["source_order"],
+        ),
+    )
 
 
 def build_plan(
@@ -197,13 +215,7 @@ def build_plan(
 
     grouped: dict[str, list[dict]] = defaultdict(list)
     for candidate in by_tile.values():
-        nearest_name = min(
-            exact_towns,
-            key=lambda name: (
-                (candidate["x"] - exact_towns[name]["x"]) ** 2
-                + (candidate["y"] - exact_towns[name]["y"]) ** 2
-            ),
-        )
+        nearest_name = closest_town_name(candidate, exact_towns)
         town = exact_towns[nearest_name]
         distance = math.hypot(candidate["x"] - town["x"], candidate["y"] - town["y"])
         if distance > radius_tiles:
@@ -241,8 +253,9 @@ def build_plan(
             )
 
     return {
-        "version": "coimbra-openttd-008-building-plan-v1",
+        "version": "coimbra-openttd-008-building-plan-v2",
         "source": "pinned bridge_osm_oss_local.json from Coimbra 009A",
+        "town_assignment": "OpenTTD 15.3 Manhattan nearest-town semantics",
         "map_size": map_size,
         "radius_tiles": radius_tiles,
         "center_epsg3763": list(center),
