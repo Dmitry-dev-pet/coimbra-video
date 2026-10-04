@@ -85,10 +85,9 @@ jobs:
           grep -F 'GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function RoadFingerprint()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function GrowBuildingsOnly()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'GSTown.SetGrowthRate(town_id, 1)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'this.Sleep(4440)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          if grep -Fq 'GSTown.ExpandTown' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
-            echo '006 must not use forced ExpandTown; density must use natural growth on locked OSM roads.' >&2
+          grep -F 'GSTown.ExpandTown(town_id, 60)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          if grep -Fq 'GSTown.SetGrowthRate(town_id, 1)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
+            echo '006 beta review must use bounded ExpandTown, not timed natural growth.' >&2
             exit 1
           fi
           grep -F 'function TryBridgeCandidate' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
@@ -99,7 +98,7 @@ jobs:
           grep -F 'Polo II' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
           grep -F 'Quinta da Portela' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
 
-      - name: Install pinned OpenTTD 15.3 runtime and OpenGFX
+      - name: Install pinned OpenTTD 16.0-beta4 runtime and OpenGFX
         id: runtime
         shell: bash
         run: |
@@ -110,8 +109,8 @@ jobs:
             "$home/.local/share/openttd/save" "$home/.local/share/openttd/screenshot"
 
           curl -fsSLo "$runtime/openttd.tar.xz" \
-            https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
-          echo "f49eb25d61b00f8f4d332fee02b530ad75552d1efb8f2bb01e7ca5e6540fe059  $runtime/openttd.tar.xz" | sha256sum -c -
+            https://cdn.openttd.org/openttd-releases/16.0-beta4/openttd-16.0-beta4-linux-generic-amd64.tar.xz
+          echo "695fff1403d990bd2e0383962b42d2f82ed10decb41b5993d55f3eda36feedff  $runtime/openttd.tar.xz" | sha256sum -c -
           mkdir -p "$runtime/openttd"
           tar -xJf "$runtime/openttd.tar.xz" -C "$runtime/openttd"
           openttd="$(find "$runtime/openttd" -type f -name openttd -perm -111 -print -quit)"
@@ -183,7 +182,7 @@ jobs:
               complete=1
               break
             fi
-            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 006 road fingerprint changed|Coimbra 006 density growth failed" "$log" 2>/dev/null; then
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 006 road fingerprint changed|Coimbra 006 density expansion failed" "$log" 2>/dev/null; then
               cat "$log"
               exit 2
             fi
@@ -194,7 +193,13 @@ jobs:
             sleep 1
           done
           test "$complete" -eq 1
+          cp "$log" artifacts/coimbra-openttd-006/build.log
 
+          grep -F "Coimbra 006 road fingerprint before" "$log"
+          grep -F "Coimbra 006 road fingerprint after" "$log"
+          grep -F "Coimbra 006 road fingerprint preserved." "$log"
+          grep -F "Coimbra 006 density start:" "$log"
+          grep -F "Coimbra 006 density end:" "$log"
           grep -F "Coimbra town built: Vale das Flores" "$log"
           grep -F "Coimbra town built: Bairro Norton de Matos" "$log"
           grep -F "Coimbra town built: Polo II" "$log"
@@ -468,7 +473,7 @@ jobs:
           payload = {
               "version": "coimbra-openttd-006",
               "verified": True,
-              "openttd_version": "15.3",
+              "openttd_version": "16.0-beta4",
               "generation_seed": 1996061907,
               "towns": town_plan,
               "town_results": town_results,
@@ -480,7 +485,8 @@ jobs:
               "town_growth_frozen_after_density_window": True,
               "town_roads_allowed": False,
               "town_expansion_calls": 0,
-              "natural_growth_ticks": 4440,
+              "expand_town_houses_per_district": 60,
+              "openttd_16_expandtown_respects_allow_town_roads": True,
               "road_fingerprint_preserved": True,
               "road_fingerprint": {
                   "before_count": road_before_count,

@@ -3,15 +3,12 @@
   "base_005_verified_run_id": 37212552230,
   "base_005_commit": "3f27c5abd6e2ac601514b5daebb2ccf7e5aafda8",
   "generation_seed": 1996061907,
-  "openttd_version": "15.3",
+  "openttd_version": "16.0-beta4",
   "allow_town_roads": false,
   "towns_founded_after_osm": true,
   "town_anchor_prefers_adjacent_osm_road": true,
   "town_expansion_calls": 0,
-  "natural_growth_rate_days": 1,
-  "natural_growth_ticks": 4440,
   "minimum_urban_population": 300,
-  "freeze_after_density_window": true,
   "road_fingerprint_required": true,
   "accepted_005_network": {
     "roads_ok": 6229,
@@ -21,5 +18,10 @@
     "tunnels_ok": 0,
     "tunnels_fail": 13
   },
-  "terrain_mutation_allowed": false
+  "terrain_mutation_allowed": false,
+  "openttd_binary_sha256": "695fff1403d990bd2e0383962b42d2f82ed10decb41b5993d55f3eda36feedff",
+  "expand_town_houses_per_district": 60,
+  "expandtown_requires_allow_town_roads_false": true,
+  "first_006_rejected_run_id": 37220893049,
+  "first_006_rejected_reason": "OpenTTD 15.3 natural growth did not create useful density"
 }

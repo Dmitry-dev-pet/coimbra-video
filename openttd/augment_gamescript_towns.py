@@ -304,22 +304,21 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         foreach (i, item in COIMBRA_TOWNS) {
             local town_id = this.town_ids[i];
             if (!GSTown.IsValidTown(town_id)) continue;
+            local before_population = GSTown.GetPopulation(town_id);
             GSLog.Info(
                 "Coimbra 006 density start: " + item[4] +
-                " population=" + GSTown.GetPopulation(town_id)
+                " population=" + before_population
             );
-            if (!GSTown.SetGrowthRate(town_id, 1)) {
-                GSLog.Error("Coimbra 006 density growth failed: " + item[4]);
+
+            // OpenTTD 16.0-beta4 changed ExpandTown so it respects
+            // economy.allow_town_roads. With that setting false, this is a
+            // bounded buildings-only expansion over the existing road network.
+            if (!GSTown.ExpandTown(town_id, 60)) {
+                GSLog.Error("Coimbra 006 density expansion failed: " + item[4]);
                 return false;
             }
-        }
-
-        this.Sleep(4440);
-
-        foreach (i, item in COIMBRA_TOWNS) {
-            local town_id = this.town_ids[i];
-            if (!GSTown.IsValidTown(town_id)) continue;
             GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
+
             GSLog.Info(
                 "Coimbra 006 density end: " + item[4] +
                 " population=" + GSTown.GetPopulation(town_id)
@@ -418,10 +417,10 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Preserves the Coimbra 005 OSM network while adding bounded natural building density without new roads."; }',
+        'function GetDescription() { return "Tests OpenTTD 16 beta buildings-only town expansion over the locked Coimbra 005 road network."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 7; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 8; }", 1)
     info_path.write_text(info, encoding="utf-8")
 
 

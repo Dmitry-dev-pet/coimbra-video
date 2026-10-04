@@ -127,18 +127,23 @@ baseline without changing that road network.
 
 Rules:
 - stack on verified 005 run `37212552230` / commit `3f27c5a`;
-- stay on OpenTTD 15.3 for the acceptance run;
+- 005 remains the stable OpenTTD 15.3 baseline; current 006 density review uses
+  pinned OpenTTD 16.0-beta4 because its ExpandTown behavior was changed to respect
+  `allow_town_roads`;
 - preserve the exact 005 runtime network counters: roads 6229/1107, bridges 44/19,
   tunnels 0/13;
 - keep `economy.allow_town_roads=false` from game start;
-- never call `GSTown.ExpandTown` in 006;
+- in the beta review, allow exactly one bounded `GSTown.ExpandTown(town_id, 60)`
+  per district while `economy.allow_town_roads=false`;
 - found the same four districts only after OSM transport is complete and prefer
   buildable tiles adjacent to existing OSM roads;
 - compute a full-map road fingerprint before density growth and again afterwards;
   both road-tile count and checksum must match exactly;
-- density may use only bounded natural town growth: growth rate 1 day for 4,440
-  GameScript ticks, then `TOWN_GROWTH_NONE`;
+- immediately freeze each district again with `TOWN_GROWTH_NONE` after the
+  bounded 60-house expansion;
 - each of the four districts must reach at least 300 residents;
 - any road fingerprint change rejects the candidate even if screenshots look better;
 - screenshots must come from the reloaded real 006 `.sav`;
+- run `37220893049` is rejected: the OpenTTD 15.3 natural-growth experiment
+  preserved transport counters but did not create useful density;
 - 006 is review-only until a human compares it directly with accepted 005.
