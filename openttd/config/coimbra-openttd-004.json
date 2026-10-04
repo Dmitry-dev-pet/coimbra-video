@@ -1,0 +1,27 @@
+{
+  "version": "coimbra-openttd-004",
+  "openttd_version": "15.3",
+  "opengfx_version": "8.0",
+  "map_size": 512,
+  "generation_seed": 1996061907,
+  "source_001_run_id": 37156903657,
+  "source_003_verified_run_id": 37160880112,
+  "town_search_radius_tiles": 12,
+  "town_growth_rounds": 256,
+  "town_growth_houses_per_round": 50,
+  "town_growth_rescue_rounds": 128,
+  "town_growth_rescue_houses_per_round": 50,
+  "capture": {
+    "overview_center_tile": [
+      256,
+      256
+    ],
+    "overview_zoom": 3,
+    "town_zoom": 2,
+    "width": 1280,
+    "height": 720
+  },
+  "goal": "Create the four named Coimbra districts as real OpenTTD towns, grow each toward its pinned target population while preserving the real terrain, then overlay the imported OSM transport network.",
+  "town_edge_margin_tiles": 40,
+  "acceptance_min_population": 900
+}
