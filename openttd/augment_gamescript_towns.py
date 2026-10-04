@@ -294,19 +294,19 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 
             this.town_ids.append(found_id);
             if (!GSTown.IsValidTown(found_id)) {
-                GSLog.Error("Coimbra 007 source town missing: " + wanted_name);
+                GSLog.Error("Coimbra 008 source town missing: " + wanted_name);
                 return false;
             }
 
             GSLog.Info(
-                "Coimbra 007 source town attached: " + wanted_name +
+                "Coimbra 008 source town attached: " + wanted_name +
                 " population=" + GSTown.GetPopulation(found_id) +
                 " tile=" + GSMap.GetTileX(GSTown.GetLocation(found_id)) + "," +
                 GSMap.GetTileY(GSTown.GetLocation(found_id))
             );
         }
 
-        GSLog.Info("Coimbra 007 attached all four towns from verified 005 save.");
+        GSLog.Info("Coimbra 008 attached all four towns from verified 005 save.");
         return true;
     }
 
@@ -338,6 +338,12 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         return null;
     }
 
+    function HouseClass(house_id) {
+        if (house_id == 0x1B || house_id == 0x0E) return 2;
+        if (house_id == 0x03) return 3;
+        return 1;
+    }
+
     function PlaceOsmFootprintFabricLocked() {
         local before = this.RoadFingerprint();
         GSLog.Info(
@@ -364,13 +370,14 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
             local low_rise = 0;
             local medium_rise = 0;
             local civic = 0;
+            local source_low_rise = 0;
+            local source_medium_rise = 0;
+            local source_civic = 0;
             local source_sites_checked = 0;
             local wrong_town = 0;
             local blocked = 0;
 
             foreach (site in sites) {
-                if (GSTown.GetPopulation(town_id) >= target_population) break;
-
                 local x = site[0];
                 local y = site[1];
                 local house_id = site[2];
@@ -385,10 +392,24 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                     continue;
                 }
 
-                // The plan is generated against the exact 005 town coordinates.
-                // Recheck ownership in the actual loaded save before placing.
+                // build_osm_building_plan.py mirrors OpenTTD 15.3's Manhattan
+                // nearest-town rule. Keep this runtime check as falsification evidence.
                 if (GSTile.GetClosestTown(tile) != town_id) {
                     wrong_town++;
+                    continue;
+                }
+
+                local house_class = this.HouseClass(house_id);
+                if (house_class == 2) {
+                    source_medium_rise++;
+                } else if (house_class == 3) {
+                    source_civic++;
+                } else {
+                    source_low_rise++;
+                }
+
+                if (GSTown.GetPopulation(town_id) >= target_population) {
+                    if (source_sites_checked % 128 == 0) this.Sleep(1);
                     continue;
                 }
 
@@ -414,9 +435,9 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 
                 placed++;
                 this.density_house_ok++;
-                if (house_id == 0x1B || house_id == 0x0E) {
+                if (house_class == 2) {
                     medium_rise++;
-                } else if (house_id == 0x03) {
+                } else if (house_class == 3) {
                     civic++;
                 } else {
                     low_rise++;
@@ -426,12 +447,25 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
             }
 
             local population_after = GSTown.GetPopulation(town_id);
+            local source_mix = source_low_rise + source_medium_rise;
+            local placed_mix = low_rise + medium_rise;
+            local mix_delta_pp = 0;
+            if (source_mix > 0 && placed_mix > 0) {
+                local mix_delta = low_rise * source_mix - source_low_rise * placed_mix;
+                if (mix_delta < 0) mix_delta = -mix_delta;
+                mix_delta_pp = mix_delta * 100 / (source_mix * placed_mix);
+            }
+
             GSLog.Info(
                 "Coimbra 008 OSM fabric: " + town_name +
                 " placed=" + placed +
                 " low_rise=" + low_rise +
                 " medium_rise=" + medium_rise +
                 " civic=" + civic +
+                " source_low_rise=" + source_low_rise +
+                " source_medium_rise=" + source_medium_rise +
+                " source_civic=" + source_civic +
+                " mix_delta_pp=" + mix_delta_pp +
                 " sites_checked=" + source_sites_checked +
                 " blocked=" + blocked +
                 " wrong_town=" + wrong_town +
@@ -440,8 +474,27 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                 " population_after=" + population_after
             );
 
-            if (placed < 20 || low_rise < 8 || medium_rise < 2) {
-                GSLog.Error("Coimbra 008 OSM urban fabric insufficient mix: " + town_name);
+            if (wrong_town != 0) {
+                GSLog.Error("Coimbra 008 nearest-town assignment mismatch: " + town_name);
+                return false;
+            }
+            if (placed <= 0 || placed_mix <= 0) {
+                GSLog.Error("Coimbra 008 OSM urban fabric produced no residential mix: " + town_name);
+                return false;
+            }
+            if (source_low_rise * 10 >= source_mix && low_rise == 0) {
+                GSLog.Error("Coimbra 008 OSM low-rise class disappeared from placed mix: " + town_name);
+                return false;
+            }
+            if (source_medium_rise * 10 >= source_mix && medium_rise == 0) {
+                GSLog.Error("Coimbra 008 OSM medium-rise class disappeared from placed mix: " + town_name);
+                return false;
+            }
+            if (mix_delta_pp > 35) {
+                GSLog.Error(
+                    "Coimbra 008 OSM placed mix diverges from source footprints: " +
+                    town_name + " delta_pp=" + mix_delta_pp
+                );
                 return false;
             }
             if (population_after < target_population || population_after > target_population + 120) {
