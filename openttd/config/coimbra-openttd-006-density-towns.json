@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Arregaça",
+    "lon": -8.41752,
+    "lat": 40.19627,
+    "x": 167,
+    "y": 143,
+    "source": "OSM node 1910242832"
+  },
+  {
+    "name": "Bairro da Fonte do Castanheiro",
+    "lon": -8.41895,
+    "lat": 40.19536,
+    "x": 195,
+    "y": 109,
+    "source": "OSM way 782476801"
+  },
+  {
+    "name": "Quinta Dom João",
+    "lon": -8.41719,
+    "lat": 40.20005,
+    "x": 50,
+    "y": 151,
+    "source": "OSM way 917650881"
+  },
+  {
+    "name": "Quinta da Boa Vista",
+    "lon": -8.41825,
+    "lat": 40.19073,
+    "x": 338,
+    "y": 125,
+    "source": "OSM node 1353687627"
+  },
+  {
+    "name": "Bairro da Fonte da Talha",
+    "lon": -8.41626,
+    "lat": 40.19122,
+    "x": 323,
+    "y": 172,
+    "source": "OSM way 782555982"
+  }
+]

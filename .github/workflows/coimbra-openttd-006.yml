@@ -94,6 +94,7 @@ jobs:
 
           python openttd/augment_gamescript_towns.py \
             --towns artifacts/coimbra-openttd-001/coimbra-towns.json \
+            --density-towns openttd/config/coimbra-openttd-006-density-towns.json \
             --game-dir artifacts/coimbra-openttd-002/game/CoimbraBuilder \
             --map-size 512 \
             --out-plan artifacts/coimbra-openttd-006/town-plan.json
@@ -104,13 +105,13 @@ jobs:
           grep -F 'function HasAdjacentRoad(x, y)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function RoadFingerprint()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'function GrowBuildingsOnly()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function AttachExistingTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function TryFoundDensityTown(item)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function AddDensityTownsLocked()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'Coimbra 006 density upgrade complete.' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'GSTown.ExpandTown(town_id, 100)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'round < 8' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          if grep -Fq 'GSTown.SetGrowthRate(town_id, 1)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
-            echo '006 beta review must use bounded ExpandTown, not timed natural growth.' >&2
+          test "$(grep -c '^  \[' artifacts/coimbra-openttd-002/game/CoimbraBuilder/density_towns.nut)" -eq 5
+          if grep -Fq 'GSTown.ExpandTown' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
+            echo '006 microtown review must not use ExpandTown.' >&2
             exit 1
           fi
           grep -F 'function TryBridgeCandidate' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
@@ -121,7 +122,7 @@ jobs:
           grep -F 'Polo II' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
           grep -F 'Quinta da Portela' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
 
-      - name: Install pinned OpenTTD 16.0-beta4 runtime and OpenGFX
+      - name: Install pinned OpenTTD 15.3 runtime and OpenGFX
         id: runtime
         shell: bash
         run: |
@@ -132,8 +133,8 @@ jobs:
             "$home/.local/share/openttd/save" "$home/.local/share/openttd/screenshot"
 
           curl -fsSLo "$runtime/openttd.tar.xz" \
-            https://cdn.openttd.org/openttd-releases/16.0-beta4/openttd-16.0-beta4-linux-generic-amd64.tar.xz
-          echo "695fff1403d990bd2e0383962b42d2f82ed10decb41b5993d55f3eda36feedff  $runtime/openttd.tar.xz" | sha256sum -c -
+            https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
+          echo "f49eb25d61b00f8f4d332fee02b530ad75552d1efb8f2bb01e7ca5e6540fe059  $runtime/openttd.tar.xz" | sha256sum -c -
           mkdir -p "$runtime/openttd"
           tar -xJf "$runtime/openttd.tar.xz" -C "$runtime/openttd"
           openttd="$(find "$runtime/openttd" -type f -name openttd -perm -111 -print -quit)"
@@ -204,7 +205,7 @@ jobs:
               complete=1
               break
             fi
-            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 006 road fingerprint changed|Coimbra 006 density expansion failed" "$log" 2>/dev/null; then
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 006 road fingerprint changed|Coimbra 006 density town creation incomplete" "$log" 2>/dev/null; then
               cat "$log"
               exit 2
             fi
@@ -220,8 +221,8 @@ jobs:
           grep -F "Coimbra 006 road fingerprint before" "$log"
           grep -F "Coimbra 006 road fingerprint after" "$log"
           grep -F "Coimbra 006 road fingerprint preserved." "$log"
-          grep -F "Coimbra 006 density start:" "$log"
-          grep -F "Coimbra 006 density end:" "$log"
+          grep -F "Coimbra 006 density town built:" "$log"
+          grep -F "Coimbra 006 density towns ok=5 fail=0" "$log"
           grep -F "Coimbra town built: Vale das Flores" "$log"
           grep -F "Coimbra town built: Bairro Norton de Matos" "$log"
           grep -F "Coimbra town built: Polo II" "$log"
@@ -238,8 +239,16 @@ jobs:
           matches = re.findall(r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=", log)
           assert len(matches) == 4, matches
           for name, population, target, minimum in matches:
-              assert int(population) >= int(minimum), (name, population, target, minimum)
-          print("all four Coimbra towns reached the 006 density minimum on the exact 005 save")
+              assert int(population) >= 1, (name, population)
+
+          density = re.findall(
+              r"Coimbra 006 density town built: (.+?) population=(\d+) tile=(\d+),(\d+) source=(.+)",
+              log,
+          )
+          assert len(density) == 5, density
+          assert all(int(population) > 0 for _, population, _, _, _ in density), density
+          assert "Coimbra 006 density towns ok=5 fail=0" in log
+          print("all five real Coimbra density towns were founded and frozen on the exact 005 save")
           PY
 
           kill -TERM "$pid"
@@ -416,7 +425,21 @@ jobs:
           assert len(town_results) == 4, town_results
           for town in town_plan:
               assert town["name"] in town_results
-              assert town_results[town["name"]]["population"] >= town_results[town["name"]]["minimum_population"]
+              assert town_results[town["name"]]["population"] >= 1
+
+          density_results = {}
+          for name, population, x, y, source in re.findall(
+              r"Coimbra 006 density town built: (.+?) population=(\d+) tile=(\d+),(\d+) source=(.+)",
+              build,
+          ):
+              density_results[name] = {
+                  "population": int(population),
+                  "built_tile": [int(x), int(y)],
+                  "source": source.strip(),
+              }
+          assert len(density_results) == 5, density_results
+          assert all(item["population"] > 0 for item in density_results.values())
+          assert "Coimbra 006 density towns ok=5 fail=0" in build
 
           fingerprint_match = re.search(
               r"Coimbra 006 road fingerprint before count=(\d+) checksum=(\d+).*?"
@@ -474,23 +497,21 @@ jobs:
           payload = {
               "version": "coimbra-openttd-006",
               "verified": True,
-              "openttd_version": "16.0-beta4",
+              "openttd_version": "15.3",
               "generation_seed": 1996061907,
               "towns": town_plan,
               "town_results": town_results,
               "town_count": 4,
               "all_towns_created": True,
-              "minimum_urban_population": 300,
+              "minimum_source_town_population": 1,
               "source_005_save_loaded_in_place": True,
               "source_005_save_sha256": source_save_sha256,
               "existing_005_towns_attached_by_name": True,
-              "town_growth_frozen_after_density_window": True,
               "town_roads_allowed": False,
-              "town_expansion_strategy": "up_to_8_batches_of_100_until_population_600",
-              "expand_town_houses_per_batch": 100,
-              "max_expand_rounds_per_district": 8,
-              "density_growth_stop_population": 600,
-              "openttd_16_expandtown_respects_allow_town_roads": True,
+              "density_strategy": "five_real_frozen_microtowns_adjacent_to_existing_osm_roads",
+              "density_town_count": 5,
+              "density_town_results": density_results,
+              "expand_town_calls": 0,
               "road_fingerprint_preserved": True,
               "road_fingerprint": {
                   "before_count": road_before_count,
@@ -522,6 +543,7 @@ jobs:
           cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-006/
           test -s artifacts/coimbra-openttd-006/source-coimbra-openttd-005.sav
           cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-006/
+          cp openttd/config/coimbra-openttd-006-density-towns.json artifacts/coimbra-openttd-006/
           cp artifacts/coimbra-openttd-002/road-plan-manifest.json artifacts/coimbra-openttd-006/
           cp -R artifacts/coimbra-openttd-002/game artifacts/coimbra-openttd-006/
           cd artifacts

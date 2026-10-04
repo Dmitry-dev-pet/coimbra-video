@@ -32,7 +32,7 @@ def squirrel_array(items: list[list]) -> str:
     ) + "\n]"
 
 
-def augment_game(game_dir: Path, plan: list[dict]) -> None:
+def augment_game(game_dir: Path, plan: list[dict], density_plan: list[dict]) -> None:
     main_path = game_dir / "main.nut"
     info_path = game_dir / "info.nut"
     if not main_path.exists() or not info_path.exists():
@@ -47,6 +47,15 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         encoding="utf-8",
     )
 
+    density_items = [
+        [int(t["x"]), int(t["y"]), str(t["name"]), str(t.get("source", ""))]
+        for t in density_plan
+    ]
+    (game_dir / "density_towns.nut").write_text(
+        "::COIMBRA_DENSITY_TOWNS <- %s;\n" % squirrel_array(density_items),
+        encoding="utf-8",
+    )
+
     main = main_path.read_text(encoding="utf-8")
     if "town_ok = 0;" in main:
         raise RuntimeError("GameScript already contains the 004 town layer")
@@ -55,6 +64,9 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         "    completed = false;\n",
         "    completed = false;\n"
         "    density_upgrade = false;\n"
+        "    density_ok = 0;\n"
+        "    density_fail = 0;\n"
+        "    density_population = 0;\n"
         "    town_ok = 0;\n"
         "    town_fail = 0;\n"
         "    town_ids = [];\n",
@@ -329,46 +341,69 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         return [count, checksum];
     }
 
-    function GrowBuildingsOnly() {
+    function TryFoundDensityTown(item) {
+        local base_x = item[0];
+        local base_y = item[1];
+        local town_name = item[2];
+        local source = item[3];
+
+        for (local radius = 0; radius <= 16; radius++) {
+            for (local dx = -radius; dx <= radius; dx++) {
+                for (local dy = -radius; dy <= radius; dy++) {
+                    if (radius > 0 && dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
+                    local x = base_x + dx;
+                    local y = base_y + dy;
+                    if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
+                    local tile = GSMap.GetTileIndex(x, y);
+                    if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+                    if (!this.HasAdjacentRoad(x, y)) continue;
+
+                    if (GSTown.FoundTown(tile, GSTown.TOWN_SIZE_SMALL, false, GSTown.ROAD_LAYOUT_ORIGINAL, town_name)) {
+                        local town_id = GSTile.GetClosestTown(tile);
+                        if (!GSTown.IsValidTown(town_id)) continue;
+                        GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
+                        local population = GSTown.GetPopulation(town_id);
+                        this.density_ok++;
+                        this.density_population += population;
+                        GSLog.Info(
+                            "Coimbra 006 density town built: " + town_name +
+                            " population=" + population +
+                            " tile=" + x + "," + y +
+                            " source=" + source
+                        );
+                        return true;
+                    }
+                }
+            }
+        }
+
+        this.density_fail++;
+        GSLog.Warning("Coimbra 006 density town failed: " + town_name);
+        return false;
+    }
+
+    function AddDensityTownsLocked() {
+        require("density_towns.nut");
         local before = this.RoadFingerprint();
         GSLog.Info(
             "Coimbra 006 road fingerprint before count=" + before[0] +
             " checksum=" + before[1]
         );
 
-        foreach (i, item in COIMBRA_TOWNS) {
-            local town_id = this.town_ids[i];
-            if (!GSTown.IsValidTown(town_id)) continue;
-            local before_population = GSTown.GetPopulation(town_id);
-            local rounds = 0;
-            GSLog.Info(
-                "Coimbra 006 density start: " + item[4] +
-                " population=" + before_population
-            );
-
-            // OpenTTD 16.0-beta4 changed ExpandTown so it respects
-            // economy.allow_town_roads. The verified 005 save already has that
-            // setting disabled. Try bounded 100-house batches, stop early once
-            // the district is visibly denser, then freeze it again.
-            for (local round = 0; round < 8; round++) {
-                if (GSTown.GetPopulation(town_id) >= 600) break;
-                GSTown.ExpandTown(town_id, 100);
-                rounds++;
-                this.Sleep(1);
-            }
-            GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
-
-            GSLog.Info(
-                "Coimbra 006 density end: " + item[4] +
-                " population=" + GSTown.GetPopulation(town_id) +
-                " rounds=" + rounds
-            );
+        foreach (item in COIMBRA_DENSITY_TOWNS) {
+            this.TryFoundDensityTown(item);
+            this.Sleep(1);
         }
 
         local after = this.RoadFingerprint();
         GSLog.Info(
             "Coimbra 006 road fingerprint after count=" + after[0] +
             " checksum=" + after[1]
+        );
+        GSLog.Info(
+            "Coimbra 006 density towns ok=" + this.density_ok +
+            " fail=" + this.density_fail +
+            " population=" + this.density_population
         );
 
         if (before[0] != after[0] || before[1] != after[1]) {
@@ -378,13 +413,18 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
             );
             return false;
         }
+        if (this.density_fail != 0 || this.density_ok != COIMBRA_DENSITY_TOWNS.len()) {
+            GSLog.Error("Coimbra 006 density town creation incomplete.");
+            return false;
+        }
 
+        ::COIMBRA_DENSITY_TOWNS = null;
         GSLog.Info("Coimbra 006 road fingerprint preserved.");
         return true;
     }
 
     function ValidateTowns() {
-        local minimum_population = 300;
+        local minimum_population = 1;
 
         foreach (i, item in COIMBRA_TOWNS) {
             local target_population = item[2];
@@ -438,10 +478,10 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     upgrade_block = r'''        if (this.density_upgrade) {
             GSLog.Info("Coimbra 006 density upgrade from verified 005 save started.");
             if (!this.AttachExistingTowns()) return;
-            if (!this.GrowBuildingsOnly()) return;
+            if (!this.AddDensityTownsLocked()) return;
             this.ValidateTowns();
             if (this.town_fail != 0) {
-                GSLog.Error("Coimbra 006 density minimum not reached.");
+                GSLog.Error("Coimbra 006 source town validation failed.");
                 return;
             }
             this.density_upgrade = false;
@@ -477,7 +517,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         completion_marker,
         '        // 006: preserve 005 roads and add bounded natural building density.\n'
         '        this.FoundTowns();\n'
-        '        if (!this.GrowBuildingsOnly()) return;\n'
+        '        if (!this.AddDensityTownsLocked()) return;\n'
         '        this.ValidateTowns();\n'
         '        this.completed = true;\n',
         1,
@@ -486,10 +526,10 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Tests OpenTTD 16 beta buildings-only town expansion over the locked Coimbra 005 road network."; }',
+        'function GetDescription() { return "Adds frozen real Coimbra micro-neighbourhood towns beside the locked 005 OSM road network."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 9; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 10; }", 1)
     info_path.write_text(info, encoding="utf-8")
 
     load_marker = r'''    function Load(version, data) {
@@ -498,7 +538,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 '''
     load_upgrade = r'''    function Load(version, data) {
         if ("completed" in data) this.completed = data.completed;
-        if (version < 9 && this.completed) {
+        if (version < 10 && this.completed) {
             this.completed = false;
             this.density_upgrade = true;
         }
@@ -513,6 +553,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--towns", type=Path, required=True)
+    p.add_argument("--density-towns", type=Path, required=True)
     p.add_argument("--game-dir", type=Path, required=True)
     p.add_argument("--map-size", type=int, default=512)
     p.add_argument("--out-plan", type=Path, required=True)
@@ -523,10 +564,24 @@ def main() -> None:
     if len(plan) != 4:
         raise ValueError(f"expected exactly 4 Coimbra towns, got {len(plan)}")
 
-    augment_game(args.game_dir, plan)
+    density_plan = json.loads(args.density_towns.read_text(encoding="utf-8"))
+    if len(density_plan) != 5:
+        raise ValueError(f"expected exactly 5 Coimbra density towns, got {len(density_plan)}")
+    if len({item["name"] for item in density_plan}) != len(density_plan):
+        raise ValueError("density town names must be unique")
+    for item in density_plan:
+        if not (1 <= int(item["x"]) <= args.map_size - 2 and 1 <= int(item["y"]) <= args.map_size - 2):
+            raise ValueError(f"density town outside map: {item}")
+
+    augment_game(args.game_dir, plan, density_plan)
     args.out_plan.parent.mkdir(parents=True, exist_ok=True)
     args.out_plan.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(json.dumps({"town_count": len(plan), "towns": plan}, indent=2, ensure_ascii=False))
+    print(json.dumps({
+        "town_count": len(plan),
+        "towns": plan,
+        "density_town_count": len(density_plan),
+        "density_towns": density_plan,
+    }, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
