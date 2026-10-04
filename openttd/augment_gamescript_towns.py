@@ -55,95 +55,259 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         "    completed = false;\n",
         "    completed = false;\n"
         "    town_ok = 0;\n"
-        "    town_fail = 0;\n",
+        "    town_fail = 0;\n"
+        "    town_ids = [];\n",
         1,
     )
 
-    town_methods = r'''
-    function TryFoundTown(item) {
-        // Keep large towns enough room to grow at the cropped map edge.
-        // The original normalized coordinate remains the anchor; this guard
-        // only nudges an edge town inward before the bounded local search.
-        local edge_margin = 40;
-        local base_x = max(edge_margin, min(GSMap.GetMapSizeX() - edge_margin - 1, item[0]));
-        local base_y = max(edge_margin, min(GSMap.GetMapSizeY() - edge_margin - 1, item[1]));
-        local target_population = item[2];
-        local minimum_population = 900;
-        local is_city = item[3];
-        local town_name = item[4];
+    old_bridge = r'''    function BuildBridge(item) {
+        local start = GSMap.GetTileIndex(item[0], item[1]);
+        local end = GSMap.GetTileIndex(item[2], item[3]);
+        local length = item[4];
+        local list = GSBridgeList_Length(length);
+        if (list.IsEmpty()) return false;
+        local bridge_type = list.Begin();
+        return GSBridge.BuildBridge(GSVehicle.VT_ROAD, bridge_type, start, end);
+    }
 
-        for (local radius = 0; radius <= 12; radius++) {
+'''
+    new_bridge = r'''    function TryBridgeCandidate(x0, y0, x1, y1) {
+        if (x0 < 1 || y0 < 1 || x1 < 1 || y1 < 1) return false;
+        if (x0 >= GSMap.GetMapSizeX() - 1 || x1 >= GSMap.GetMapSizeX() - 1) return false;
+        if (y0 >= GSMap.GetMapSizeY() - 1 || y1 >= GSMap.GetMapSizeY() - 1) return false;
+        if (x0 != x1 && y0 != y1) return false;
+
+        local length = abs(x0 - x1) + abs(y0 - y1);
+        if (length < 2) return false;
+        local list = GSBridgeList_Length(length);
+        if (list.IsEmpty()) return false;
+
+        local start = GSMap.GetTileIndex(x0, y0);
+        local end = GSMap.GetTileIndex(x1, y1);
+        local bridge_type = list.Begin();
+        if (!GSBridge.BuildBridge(GSVehicle.VT_ROAD, bridge_type, start, end)) return false;
+
+        GSLog.Info(
+            "Coimbra bridge built: " + x0 + "," + y0 + "->" + x1 + "," + y1 +
+            " length=" + length
+        );
+        return true;
+    }
+
+    function BuildBridge(item) {
+        local x0 = item[0];
+        local y0 = item[1];
+        local x1 = item[2];
+        local y1 = item[3];
+
+        if (this.TryBridgeCandidate(x0, y0, x1, y1)) return true;
+
+        local dx = x1 > x0 ? 1 : (x1 < x0 ? -1 : 0);
+        local dy = y1 > y0 ? 1 : (y1 < y0 ? -1 : 0);
+
+        for (local trim = 1; trim <= 2; trim++) {
+            local ax = x0 + dx * trim;
+            local ay = y0 + dy * trim;
+            local bx = x1 - dx * trim;
+            local by = y1 - dy * trim;
+            if (this.TryBridgeCandidate(ax, ay, bx, by)) return true;
+        }
+
+        local px = dx == 0 ? 1 : 0;
+        local py = dy == 0 ? 1 : 0;
+        for (local shift = 1; shift <= 3; shift++) {
+            if (this.TryBridgeCandidate(
+                x0 + px * shift, y0 + py * shift,
+                x1 + px * shift, y1 + py * shift
+            )) return true;
+            if (this.TryBridgeCandidate(
+                x0 - px * shift, y0 - py * shift,
+                x1 - px * shift, y1 - py * shift
+            )) return true;
+        }
+        return false;
+    }
+
+'''
+    if old_bridge not in main:
+        raise RuntimeError("could not locate generated BuildBridge()")
+    main = main.replace(old_bridge, new_bridge, 1)
+
+    old_tunnel = r'''    function BuildTunnel(item) {
+        local start = GSMap.GetTileIndex(item[0], item[1]);
+        local expected = GSMap.GetTileIndex(item[2], item[3]);
+        local actual = GSTunnel.GetOtherTunnelEnd(start);
+        if (actual == expected) return GSTunnel.BuildTunnel(GSVehicle.VT_ROAD, start);
+
+        local reverse_start = expected;
+        local reverse_expected = start;
+        actual = GSTunnel.GetOtherTunnelEnd(reverse_start);
+        if (actual == reverse_expected) return GSTunnel.BuildTunnel(GSVehicle.VT_ROAD, reverse_start);
+        return false;
+    }
+
+'''
+    new_tunnel = r'''    function TunnelEndNear(tile, expected_x, expected_y, radius) {
+        if (tile == GSMap.TILE_INVALID) return false;
+        local dx = abs(GSMap.GetTileX(tile) - expected_x);
+        local dy = abs(GSMap.GetTileY(tile) - expected_y);
+        return dx + dy <= radius;
+    }
+
+    function TryTunnelPortal(x, y, expected_x, expected_y, end_radius) {
+        if (x < 1 || y < 1 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) return false;
+        local start = GSMap.GetTileIndex(x, y);
+        local actual = GSTunnel.GetOtherTunnelEnd(start);
+        if (!this.TunnelEndNear(actual, expected_x, expected_y, end_radius)) return false;
+        if (!GSTunnel.BuildTunnel(GSVehicle.VT_ROAD, start)) return false;
+
+        GSLog.Info(
+            "Coimbra tunnel built: portal=" + x + "," + y +
+            " exit=" + GSMap.GetTileX(actual) + "," + GSMap.GetTileY(actual)
+        );
+        return true;
+    }
+
+    function BuildTunnel(item) {
+        local x0 = item[0];
+        local y0 = item[1];
+        local x1 = item[2];
+        local y1 = item[3];
+
+        for (local radius = 0; radius <= 3; radius++) {
             for (local dx = -radius; dx <= radius; dx++) {
                 for (local dy = -radius; dy <= radius; dy++) {
                     if (radius > 0 && dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
+                    if (this.TryTunnelPortal(x0 + dx, y0 + dy, x1, y1, 3)) return true;
+                }
+            }
+        }
+        for (local radius = 0; radius <= 3; radius++) {
+            for (local dx = -radius; dx <= radius; dx++) {
+                for (local dy = -radius; dy <= radius; dy++) {
+                    if (radius > 0 && dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
+                    if (this.TryTunnelPortal(x1 + dx, y1 + dy, x0, y0, 3)) return true;
+                }
+            }
+        }
+        return false;
+    }
 
-                    local x = base_x + dx;
-                    local y = base_y + dy;
-                    if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
+'''
+    if old_tunnel not in main:
+        raise RuntimeError("could not locate generated BuildTunnel()")
+    main = main.replace(old_tunnel, new_tunnel, 1)
 
-                    local tile = GSMap.GetTileIndex(x, y);
-                    if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+    town_methods = r'''
+    function HasAdjacentRoad(x, y) {
+        local neighbours = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+        foreach (p in neighbours) {
+            if (p[0] <= 0 || p[1] <= 0 || p[0] >= GSMap.GetMapSizeX() - 1 || p[1] >= GSMap.GetMapSizeY() - 1) continue;
+            local road_tile = GSMap.GetTileIndex(p[0], p[1]);
+            if (GSMap.IsValidTile(road_tile) && GSRoad.IsRoadTile(road_tile)) return true;
+        }
+        return false;
+    }
 
-                    if (GSTown.FoundTown(
-                        tile,
-                        GSTown.TOWN_SIZE_LARGE,
-                        is_city,
-                        GSTown.ROAD_LAYOUT_ORIGINAL,
-                        town_name
-                    )) {
-                        local town_id = GSTile.GetClosestTown(tile);
-                        if (!GSTown.IsValidTown(town_id)) return true;
+    function TryFoundTown(item) {
+        local edge_margin = 40;
+        local base_x = max(edge_margin, min(GSMap.GetMapSizeX() - edge_margin - 1, item[0]));
+        local base_y = max(edge_margin, min(GSMap.GetMapSizeY() - edge_margin - 1, item[1]));
+        local is_city = item[3];
+        local town_name = item[4];
 
-                        for (local grow_round = 0; grow_round < 256; grow_round++) {
-                            if (GSTown.GetPopulation(town_id) >= target_population) break;
-                            GSTown.ExpandTown(town_id, 50);
-                            this.Sleep(1);
-                        }
+        for (local pass = 0; pass < 2; pass++) {
+            local require_road = pass == 0;
+            local max_radius = require_road ? 24 : 12;
 
-                        local final_population = GSTown.GetPopulation(town_id);
-                        if (final_population < minimum_population) {
+            for (local radius = 0; radius <= max_radius; radius++) {
+                for (local dx = -radius; dx <= radius; dx++) {
+                    for (local dy = -radius; dy <= radius; dy++) {
+                        if (radius > 0 && dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
+
+                        local x = base_x + dx;
+                        local y = base_y + dy;
+                        if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
+
+                        local tile = GSMap.GetTileIndex(x, y);
+                        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+                        if (require_road && !this.HasAdjacentRoad(x, y)) continue;
+
+                        if (GSTown.FoundTown(
+                            tile,
+                            GSTown.TOWN_SIZE_SMALL,
+                            is_city,
+                            GSTown.ROAD_LAYOUT_ORIGINAL,
+                            town_name
+                        )) {
+                            local town_id = GSTile.GetClosestTown(tile);
+                            if (!GSTown.IsValidTown(town_id)) break;
+
+                            GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
+
+                            this.town_ids.append(town_id);
                             GSLog.Info(
-                                "Coimbra town growth rescue: " + town_name +
-                                " population=" + final_population +
-                                " minimum=" + minimum_population
+                                "Coimbra town founded: " + town_name +
+                                " population=" + GSTown.GetPopulation(town_id) +
+                                " tile=" + x + "," + y +
+                                " adjacent_osm_road=" + (require_road ? "yes" : "fallback")
                             );
-                            for (local rescue_round = 0; rescue_round < 128; rescue_round++) {
-                                if (GSTown.GetPopulation(town_id) >= minimum_population) break;
-                                GSTown.ExpandTown(town_id, 50);
-                                this.Sleep(1);
-                            }
-                            final_population = GSTown.GetPopulation(town_id);
+                            return true;
                         }
-                        GSLog.Info(
-                            "Coimbra town built: " + town_name +
-                            " population=" + final_population +
-                            " target=" + target_population +
-                            " minimum=" + minimum_population +
-                            " tile=" + x + "," + y
-                        );
-                        if (final_population < minimum_population) {
-                            GSLog.Warning("Coimbra town below minimum urban population: " + town_name);
-                            return false;
-                        }
-                        if (final_population < target_population) {
-                            GSLog.Warning("Coimbra town below aspirational target: " + town_name);
-                        }
-                        return true;
                     }
                 }
             }
         }
 
+        this.town_ids.append(-1);
         GSLog.Warning("Coimbra town failed: " + town_name);
         return false;
     }
 
-    function BuildTowns() {
+    function FoundTowns() {
         require("towns.nut");
         foreach (item in COIMBRA_TOWNS) {
-            if (this.TryFoundTown(item)) this.town_ok++; else this.town_fail++;
+            this.TryFoundTown(item);
             this.Sleep(1);
         }
+        GSLog.Info("Coimbra compact town anchors founded.");
+    }
+
+    function ValidateTowns() {
+        local minimum_population = 1;
+
+        foreach (i, item in COIMBRA_TOWNS) {
+            local target_population = item[2];
+            local town_name = item[4];
+            local town_id = this.town_ids[i];
+
+            if (!GSTown.IsValidTown(town_id)) {
+                this.town_fail++;
+                GSLog.Warning("Coimbra town invalid after OSM transport build: " + town_name);
+                continue;
+            }
+
+            local final_population = GSTown.GetPopulation(town_id);
+            local tile = GSTown.GetLocation(town_id);
+            local x = GSMap.GetTileX(tile);
+            local y = GSMap.GetTileY(tile);
+
+            GSLog.Info(
+                "Coimbra town built: " + town_name +
+                " population=" + final_population +
+                " target=" + target_population +
+                " minimum=" + minimum_population +
+                " tile=" + x + "," + y
+            );
+
+            if (final_population < minimum_population) {
+                this.town_fail++;
+                GSLog.Warning("Coimbra town below minimum urban population: " + town_name);
+            } else {
+                this.town_ok++;
+            }
+        }
+
         ::COIMBRA_TOWNS = null;
         GSLog.Info("Coimbra urban layer complete.");
         GSLog.Info("towns ok=" + this.town_ok + " fail=" + this.town_fail);
@@ -160,20 +324,32 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate road initialization in generated GameScript")
     main = main.replace(
         road_marker,
-        '        // Build towns first while terrain is still open; OSM transport follows.\n'
-        '        this.BuildTowns();\n'
+        '        // 005: build the OSM transport network before any town exists.\n'
         '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n',
         1,
     )
+
+    completion_marker = '        this.completed = true;\n'
+    if completion_marker not in main:
+        raise RuntimeError("could not locate network completion marker")
+    main = main.replace(
+        completion_marker,
+        '        // 005: found compact town anchors only after OSM transport is complete.\n'
+        '        this.FoundTowns();\n'
+        '        this.ValidateTowns();\n'
+        '        this.completed = true;\n',
+        1,
+    )
+
     main_path.write_text(main, encoding="utf-8")
 
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Builds the real Coimbra transport network plus four named urban districts."; }',
+        'function GetDescription() { return "Builds the real Coimbra OSM network first, then freezes compact towns beside existing roads."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 3; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 6; }", 1)
     info_path.write_text(info, encoding="utf-8")
 
 

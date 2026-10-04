@@ -1,0 +1,30 @@
+{
+  "version": "coimbra-openttd-005",
+  "base_verified_run_id": 37199363026,
+  "generation_seed": 1996061907,
+  "town_anchor_size": "small",
+  "allow_town_roads": false,
+  "minimum_urban_population": 1,
+  "towns_founded_after_osm": true,
+  "town_expansion_calls": 0,
+  "road_fidelity_priority": true,
+  "structure_endpoint_search_radius_tiles": 3,
+  "bridge_trim_limit_tiles": 2,
+  "bridge_parallel_shift_limit_tiles": 3,
+  "terrain_mutation_allowed": false,
+  "baseline_004": {
+    "roads_ok": 6037,
+    "roads_fail": 1299,
+    "bridges_ok": 25,
+    "bridges_fail": 38,
+    "tunnels_ok": 0,
+    "tunnels_fail": 13
+  },
+  "town_anchor_prefers_adjacent_osm_road": true,
+  "town_anchor_road_search_radius_tiles": 24,
+  "town_growth_frozen_after_founding": true,
+  "rejected_diagnostic_run_ids": [
+    37202300102,
+    37210983009
+  ]
+}

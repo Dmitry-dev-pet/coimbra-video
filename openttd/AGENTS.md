@@ -89,3 +89,33 @@ Rules:
 - preserve the 003 road/bridge/tunnel semantics and never flatten failed
   grade-separated structures;
 - do not mutate accepted Blender 032/033 assets.
+
+
+## COIMBRA-OPENTTD-005
+
+Goal: improve real-world road fidelity over verified 004 without changing the pinned
+001 terrain/OSM sources or accepted Blender 032/033 baselines.
+
+Rules:
+- stack on verified OpenTTD 004 run `37199363026` and keep generation seed `1996061907`;
+- build the OSM-derived transport network before any Coimbra town exists;
+- only after OSM transport completes, found the four pinned compact town anchors;
+- first search for a buildable founding tile directly adjacent to an already-built OSM road, with only a bounded fallback around the pinned anchor;
+- freeze every successfully founded town with `GSTown.SetGrowthRate(..., TOWN_GROWTH_NONE)`;
+- 005 must contain no `GSTown.ExpandTown` calls;
+- configure `economy.allow_town_roads=false` from game start; do not rely on runtime setting changes;
+- all four required districts must be created successfully with non-zero population;
+- the 900-resident minimum belongs to 004 and is deliberately not an acceptance condition for 005;
+- after founding the four anchors, mark the GameScript complete and save immediately;
+- bridge/tunnel recovery may search only within 3 tiles of OSM-derived endpoints;
+- bridge recovery may trim heads by at most 2 tiles or shift the whole span
+  parallel by at most 3 tiles;
+- failed grade-separated structures must never be flattened to surface roads;
+- the pinned 001 heightmap is immutable in 005;
+- compare runtime counts against verified 004: roads 6037/1299, bridges 25/38,
+  tunnels 0/13;
+- screenshots must come from the reloaded real 005 `.sav`;
+- run `37202300102` is a rejected diagnostic run because autonomous town growth
+  created a large invented road grid despite green CI;
+- run `37210983009` is a rejected diagnostic run because the OSM-first order worked
+  but Bairro Norton de Matos was founded with population 0.
