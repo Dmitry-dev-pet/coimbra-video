@@ -324,36 +324,28 @@ jobs:
               sleep 1
             done
 
-            test -n "$found" && test -s "$found"
-            cp "$found" "artifacts/coimbra-openttd-005/screenshots/$expected.png"
             {
               echo "===== $expected ====="
               cat "$log"
             } >> artifacts/coimbra-openttd-005/render.log
+
+            test -n "$found" && test -s "$found"
+            cp "$found" "artifacts/coimbra-openttd-005/screenshots/$expected.png"
 
             if kill -0 "$pid" 2>/dev/null; then kill "$pid" || true; fi
             wait "$pid" || true
           }
 
           while read -r name tile zoom; do
-            cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
-          schedule on-next-calendar-month scripts/coimbra_position.scr
-          EOF
-            cat > "$BINDIR/scripts/coimbra_position.scr" <<EOF
+            cat > "$BINDIR/scripts/game_start.scr" <<EOF
           scrollto instant $tile
           zoomto $zoom
-          schedule on-next-calendar-month scripts/coimbra_capture.scr
-          EOF
-            cat > "$BINDIR/scripts/coimbra_capture.scr" <<EOF
           screenshot normal size 1280 720 $name
           EOF
             launch_capture "$name"
           done < artifacts/coimbra-openttd-005/capture-targets.tsv
 
           cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
-          schedule on-next-calendar-month scripts/coimbra_capture.scr
-          EOF
-          cat > "$BINDIR/scripts/coimbra_capture.scr" <<'EOF'
           screenshot minimap coimbra-openttd-005-minimap
           EOF
           launch_capture "coimbra-openttd-005-minimap"
