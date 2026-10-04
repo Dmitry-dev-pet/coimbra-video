@@ -6,11 +6,11 @@ It keeps the pinned DGT-derived heightmap, OSM network, four district anchors an
 generation seed, but changes the build order:
 
 1. found four small town anchors;
-2. build the OSM bridge/tunnel candidates and surface-road network;
-3. keep `economy.allow_town_roads=false`;
-4. expand towns only after the OSM roads exist, adding buildings without a second
-   autonomous town-road grid;
-5. allow only bounded local endpoint recovery for OSM grade-separated structures.
+2. temporarily allow town roads only until each district reaches the 900-resident minimum;
+3. freeze `economy.allow_town_roads=false`;
+4. build the OSM bridge/tunnel candidates and surface-road network;
+5. perform only buildings-only post-growth toward aspirational populations;
+6. allow only bounded local endpoint recovery for OSM grade-separated structures.
 
 No heightmap mutation and no demotion of failed bridge/tunnel candidates to ground
 roads is allowed.

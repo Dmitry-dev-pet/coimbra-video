@@ -189,8 +189,11 @@ jobs:
           grep -F "Coimbra town built: Bairro Norton de Matos" "$log"
           grep -F "Coimbra town built: Polo II" "$log"
           grep -F "Coimbra town built: Quinta da Portela" "$log"
-          grep -F "towns ok=4 fail=0" "$log"
           grep -F "Coimbra network build complete." "$log"
+          grep -F "roads ok=" "$log"
+          grep -F "bridges ok=" "$log"
+          grep -F "tunnels ok=" "$log"
+          grep -F "towns ok=4 fail=0" "$log"
           python - <<'PY'
           import os
           import re

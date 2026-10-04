@@ -5,8 +5,8 @@
   "town_anchor_size": "small",
   "allow_town_roads": false,
   "minimum_urban_population": 900,
-  "town_growth_rounds": 384,
-  "town_growth_rescue_rounds": 256,
+  "town_growth_rounds": 192,
+  "town_growth_rescue_rounds": 64,
   "structure_endpoint_search_radius_tiles": 3,
   "bridge_trim_limit_tiles": 2,
   "bridge_parallel_shift_limit_tiles": 3,
@@ -18,5 +18,8 @@
     "bridges_fail": 38,
     "tunnels_ok": 0,
     "tunnels_fail": 13
-  }
+  },
+  "allow_town_roads_during_minimum_growth": true,
+  "minimum_growth_target_population": 900,
+  "pre_osm_growth_rounds": 512
 }

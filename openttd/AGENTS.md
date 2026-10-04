@@ -99,8 +99,11 @@ Goal: improve real-world road fidelity over verified 004 without changing the pi
 Rules:
 - stack on verified OpenTTD 004 run `37199363026` and keep generation seed `1996061907`;
 - found only compact town anchors before transport construction;
-- set `economy.allow_town_roads=false` and grow population only after the OSM
-  network exists, so `GSTown.ExpandTown` adds buildings rather than new roads;
+- compact towns may build roads only during a bounded pre-OSM growth phase until
+  each district reaches the 900-resident minimum; immediately afterwards the script
+  must set `economy.allow_town_roads=false` before any OSM transport construction;
+- post-OSM `GSTown.ExpandTown` is buildings-only and may pursue aspirational targets
+  without extending the autonomous town road grid;
 - all four required districts must still reach at least 900 residents;
 - bridge/tunnel recovery may search only within 3 tiles of OSM-derived endpoints;
 - bridge recovery may trim heads by at most 2 tiles or shift the whole span
