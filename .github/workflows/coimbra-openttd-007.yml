@@ -1,0 +1,619 @@
+name: Coimbra OpenTTD 007 realistic urban fabric
+
+on:
+  push:
+    branches:
+      - feature/coimbra-openttd-007-realistic-urban-fabric
+    paths:
+      - "openttd/**"
+      - ".github/workflows/coimbra-openttd-007.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter dependencies
+        run: python -m pip install --disable-pip-version-check "numpy>=2,<3" "Pillow>=11,<13" "pyproj>=3.7,<4"
+
+      - name: Run OpenTTD converter tests
+        run: |
+          python -m unittest openttd/test_build_pack.py -v
+          python -m unittest openttd/test_build_road_plan.py -v
+          python -m py_compile openttd/augment_gamescript_towns.py
+
+      - name: Download pinned Coimbra 001 geodata
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: 37156903657
+          name: coimbra-openttd-001
+          github-token: ${{ github.token }}
+          path: source_001
+
+      - name: Download verified OpenTTD 005 baseline
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: 37212552230
+          name: coimbra-openttd-005
+          github-token: ${{ github.token }}
+          path: source_005
+
+      - name: Pin exact verified 005 save
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/coimbra-openttd-007
+          source_save="$(find source_005 -type f -name 'coimbra-openttd-005.sav' -print -quit)"
+          test -n "$source_save" && test -s "$source_save"
+          cp "$source_save" artifacts/coimbra-openttd-007/source-coimbra-openttd-005.sav
+          echo "6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3  artifacts/coimbra-openttd-007/source-coimbra-openttd-005.sav" | sha256sum -c -
+          sha256sum artifacts/coimbra-openttd-007/source-coimbra-openttd-005.sav > artifacts/coimbra-openttd-007/source-005.sha256
+
+      - name: Normalize and verify pinned Coimbra 001 inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/coimbra-openttd-001 artifacts/coimbra-openttd-007
+          heightmap="$(find source_001 -type f -name 'coimbra-heightmap.png' -print -quit)"
+          towns="$(find source_001 -type f -name 'coimbra-towns.json' -print -quit)"
+          network="$(find source_001 -type f -name 'coimbra-osm-network.geojson' -print -quit)"
+          manifest="$(find source_001 -type f -name 'manifest.json' -print -quit)"
+          test -n "$heightmap" && test -n "$towns" && test -n "$network" && test -n "$manifest"
+          cp "$heightmap" artifacts/coimbra-openttd-001/coimbra-heightmap.png
+          cp "$towns" artifacts/coimbra-openttd-001/coimbra-towns.json
+          cp "$network" artifacts/coimbra-openttd-001/coimbra-osm-network.geojson
+          cp "$manifest" artifacts/coimbra-openttd-001/manifest.json
+          test "$(sha256sum artifacts/coimbra-openttd-001/coimbra-heightmap.png | awk '{print $1}')" = \
+            "ebc6bff89db876aa7ff7697d91407aaff87e745bdb41553b3d71a6d5b00cd1f8"
+          test "$(sha256sum artifacts/coimbra-openttd-001/coimbra-osm-network.geojson | awk '{print $1}')" = \
+            "318b03ad879ab1c1601cfabe56a6e55349297e38e9d950fb8af136f26a60c9c4"
+
+      - name: Build Coimbra transport network and real town layer
+        run: |
+          set -euo pipefail
+          python openttd/build_road_plan.py \
+            --network artifacts/coimbra-openttd-001/coimbra-osm-network.geojson \
+            --manifest artifacts/coimbra-openttd-001/manifest.json \
+            --heightmap artifacts/coimbra-openttd-001/coimbra-heightmap.png \
+            --config openttd/config/coimbra-openttd-002.json \
+            --out artifacts/coimbra-openttd-002
+
+          python openttd/augment_gamescript_towns.py \
+            --towns artifacts/coimbra-openttd-001/coimbra-towns.json \
+            --game-dir artifacts/coimbra-openttd-002/game/CoimbraBuilder \
+            --map-size 512 \
+            --out-plan artifacts/coimbra-openttd-007/town-plan.json
+
+          grep -F 'function TryFoundTown(item)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'GSTown.TOWN_SIZE_SMALL' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function ValidateTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function HasAdjacentRoad(x, y)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function RoadFingerprint()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function AttachExistingTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function TryPlaceFabricHouse(tile, remaining, ordinal, radius)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function PlaceRealisticUrbanFabricLocked()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'GSTown.PlaceHouse(tile, house_id)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'Coimbra 007 realistic urban fabric upgrade complete.' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          if grep -Eq 'GSTown\.ExpandTown|GSTown\.PlaceHouse\(tile, 0\)|GSTown\.PlaceHouse\(tile, 1\)|GSTown\.PlaceHouse\(tile, 2\)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
+            echo '007 urban-fabric lane must not use ExpandTown.' >&2
+            exit 1
+          fi
+          grep -F 'function TryBridgeCandidate' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function TryTunnelPortal' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'Coimbra urban layer complete.' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'Vale das Flores' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
+          grep -F 'Bairro Norton de Matos' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
+          grep -F 'Polo II' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
+          grep -F 'Quinta da Portela' artifacts/coimbra-openttd-002/game/CoimbraBuilder/towns.nut
+
+      - name: Install pinned OpenTTD 15.3 runtime and OpenGFX
+        id: runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/coimbra-openttd-007-runtime"
+          home="$RUNNER_TEMP/coimbra-openttd-007-home"
+          mkdir -p "$runtime" "$home/.local/share/openttd/baseset" "$home/.local/share/openttd/game" \
+            "$home/.local/share/openttd/save" "$home/.local/share/openttd/screenshot"
+
+          curl -fsSLo "$runtime/openttd.tar.xz" \
+            https://cdn.openttd.org/openttd-releases/15.3/openttd-15.3-linux-generic-amd64.tar.xz
+          echo "f49eb25d61b00f8f4d332fee02b530ad75552d1efb8f2bb01e7ca5e6540fe059  $runtime/openttd.tar.xz" | sha256sum -c -
+          mkdir -p "$runtime/openttd"
+          tar -xJf "$runtime/openttd.tar.xz" -C "$runtime/openttd"
+          openttd="$(find "$runtime/openttd" -type f -name openttd -perm -111 -print -quit)"
+          test -n "$openttd"
+
+          curl -fsSLo "$runtime/opengfx.zip" \
+            https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip
+          echo "43a0c1dabf39cb865394f3a6cc36d4da5c10ecfaaf55652043104806810903be  $runtime/opengfx.zip" | sha256sum -c -
+          unzip -q "$runtime/opengfx.zip" -d "$home/.local/share/openttd/baseset"
+          cp -R artifacts/coimbra-openttd-002/game/CoimbraBuilder "$home/.local/share/openttd/game/"
+
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          echo "home=$home" >> "$GITHUB_OUTPUT"
+          echo "openttd=$openttd" >> "$GITHUB_OUTPUT"
+          echo "bindir=$(dirname "$openttd")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact OpenTTD 15.3 source for house editor
+        uses: actions/checkout@v4
+        with:
+          repository: OpenTTD/OpenTTD
+          ref: 14ec60f248547d4d062a1160f0fc26d742319888
+          path: _openttd_house_editor
+          fetch-depth: 1
+
+      - name: Patch OpenTTD house editor bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C _openttd_house_editor rev-parse HEAD)" = "14ec60f248547d4d062a1160f0fc26d742319888"
+          python openttd/patch_openttd_house_editor.py --source _openttd_house_editor
+          git -C _openttd_house_editor diff --check
+          git -C _openttd_house_editor diff -- src/script/api/script_town.hpp src/script/api/script_town.cpp src/town_cmd.cpp
+
+      - name: Cache OpenTTD 15.3 house editor build
+        uses: actions/cache@v4
+        with:
+          path: _openttd_house_editor/build
+          key: coimbra-openttd-15.3-house-editor-v1-${{ hashFiles('openttd/patch_openttd_house_editor.py') }}
+
+      - name: Build dedicated OpenTTD 15.3 house editor
+        id: editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config grfcodec \
+            libcurl4-openssl-dev libfontconfig1-dev libharfbuzz-dev libicu-dev \
+            liblzma-dev liblzo2-dev libpng-dev zlib1g-dev
+          if [ ! -x _openttd_house_editor/build/openttd ]; then
+            cmake -S _openttd_house_editor -B _openttd_house_editor/build -GNinja \
+              -DOPTION_DEDICATED=ON \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
+            cmake --build _openttd_house_editor/build --target openttd -j "$(nproc)"
+          fi
+          editor_bin="$(find _openttd_house_editor/build -maxdepth 3 -type f -name openttd -perm -111 -print -quit)"
+          test -n "$editor_bin" && test -x "$editor_bin"
+          echo "openttd=$GITHUB_WORKSPACE/$editor_bin" >> "$GITHUB_OUTPUT"
+          "$editor_bin" -h | head -n 2
+
+      - name: Upgrade verified Coimbra 005 save with realistic urban fabric
+        shell: bash
+        env:
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.editor.outputs.openttd }}
+        run: |
+          set -euo pipefail
+          cfg="$RUNTIME/build.cfg"
+          log="$RUNTIME/build.log"
+          cat > "$cfg" <<'EOF'
+          [misc]
+          language = english.lng
+
+          [game_creation]
+          starting_year = 1950
+          ending_year = 2050
+          map_x = 9
+          map_y = 9
+          custom_town_number = 0
+
+          [difficulty]
+          number_towns = 0
+          industry_density = 0
+
+          [economy]
+          allow_town_roads = false
+
+          [gui]
+          autosave_on_exit = true
+
+          [network]
+          server_port = 0
+
+          [game_scripts]
+          "Coimbra Builder" =
+          EOF
+
+          HOME="$HOME_DIR" "$OPENTTD" \
+            -D 127.0.0.1:0 \
+            -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-007/source-coimbra-openttd-005.sav" \
+            -I OpenGFX \
+            -c "$cfg" \
+            -x \
+            -d script=4,misc=1 \
+            > "$log" 2>&1 &
+          pid=$!
+
+          complete=0
+          for _ in $(seq 1 900); do
+            if grep -Fq "Coimbra 007 realistic urban fabric upgrade complete." "$log" 2>/dev/null; then
+              complete=1
+              break
+            fi
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 007 road fingerprint changed|Coimbra 007 urban fabric insufficient mix|Coimbra 007 population outside target band" "$log" 2>/dev/null; then
+              cat "$log"
+              exit 2
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              cat "$log"
+              exit 3
+            fi
+            sleep 1
+          done
+          test "$complete" -eq 1
+          cp "$log" artifacts/coimbra-openttd-007/build.log
+
+          grep -F "Coimbra 007 road fingerprint before" "$log"
+          grep -F "Coimbra 007 road fingerprint after" "$log"
+          grep -F "Coimbra 007 road fingerprint preserved." "$log"
+          grep -F "Coimbra 007 urban fabric:" "$log"
+          grep -F "Coimbra 007 houses placed=" "$log"
+          grep -F "Coimbra town built: Vale das Flores" "$log"
+          grep -F "Coimbra town built: Bairro Norton de Matos" "$log"
+          grep -F "Coimbra town built: Polo II" "$log"
+          grep -F "Coimbra town built: Quinta da Portela" "$log"
+          grep -F "Coimbra 007 attached all four towns from verified 005 save." "$log"
+          grep -F "Coimbra 007 realistic urban fabric upgrade complete." "$log"
+          grep -F "towns ok=4 fail=0" "$log"
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          log = (Path(os.environ["RUNTIME"]) / "build.log").read_text(errors="replace")
+          matches = re.findall(r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=", log)
+          assert len(matches) == 4, matches
+          for name, population, target, minimum in matches:
+              assert int(population) >= 1, (name, population)
+
+          fabric = re.findall(
+              r"Coimbra 007 urban fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) "
+              r"population_before=(\d+) target=(\d+) population_after=(\d+)",
+              log,
+          )
+          assert len(fabric) == 4, fabric
+          for name, placed, low_rise, medium_rise, before, target, after in fabric:
+              assert int(placed) >= 15, (name, placed)
+              assert int(low_rise) >= 5, (name, low_rise)
+              assert int(medium_rise) >= 2, (name, medium_rise)
+              assert int(after) >= int(target), (name, target, after)
+              assert int(after) <= int(target) + 120, (name, target, after)
+              assert int(after) > int(before), (name, before, after)
+          print("all four source towns reached target-banded mixed urban fabric on the exact 005 save")
+          PY
+
+          kill -TERM "$pid"
+          for _ in $(seq 1 60); do
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" || true
+            wait "$pid" || true
+            cat "$log"
+            exit 5
+          fi
+          wait "$pid" || true
+
+          savefile="$(find "$RUNTIME" "$HOME_DIR" -type f -name 'exit.sav' -size +0c -print -quit 2>/dev/null || true)"
+          test -n "$savefile" && test -s "$savefile"
+          cp "$savefile" artifacts/coimbra-openttd-007/coimbra-openttd-007.sav
+          cp "$log" artifacts/coimbra-openttd-007/build.log
+
+      - name: Verify saved game with OpenTTD itself
+        shell: bash
+        env:
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+        run: |
+          set -euo pipefail
+          HOME="$HOME_DIR" "$OPENTTD" -I OpenGFX \
+            -q artifacts/coimbra-openttd-007/coimbra-openttd-007.sav \
+            > artifacts/coimbra-openttd-007/save-info.txt 2>&1
+          cat artifacts/coimbra-openttd-007/save-info.txt
+          grep -F "Savegame ver:" artifacts/coimbra-openttd-007/save-info.txt
+
+      - name: Install virtual display
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xvfb xauth
+          fi
+          command -v xvfb-run
+
+      - name: Prepare capture targets from actual built towns
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          build = Path("artifacts/coimbra-openttd-007/build.log").read_text(errors="replace")
+          map_size = 512
+          rows = [("coimbra-openttd-007-overview", 256 * map_size + 256, 3)]
+          for name, population, target, minimum, x, y in re.findall(
+              r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=(\d+),(\d+)",
+              build,
+          ):
+              slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+              tile = int(y) * map_size + int(x)
+              rows.append((f"coimbra-openttd-007-{slug}", tile, 2))
+
+          assert len(rows) == 5, rows
+          assert len({row[1] for row in rows}) == 5, rows
+          out = Path("artifacts/coimbra-openttd-007/capture-targets.tsv")
+          out.write_text("\n".join(" ".join(map(str, row)) for row in rows) + "\n")
+          print(out.read_text())
+          PY
+
+      - name: Reload saved city and capture distinct real OpenTTD frames
+        shell: bash
+        env:
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          HOME_DIR: ${{ steps.runtime.outputs.home }}
+          OPENTTD: ${{ steps.runtime.outputs.openttd }}
+          BINDIR: ${{ steps.runtime.outputs.bindir }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$BINDIR/scripts" artifacts/coimbra-openttd-007/screenshots
+          : > artifacts/coimbra-openttd-007/render.log
+
+          launch_capture() {
+            expected="$1"
+            log="$RUNTIME/render-$expected.log"
+            find "$RUNTIME" "$HOME_DIR" -type f -name "$expected.png" -delete 2>/dev/null || true
+
+            (
+              cd "$BINDIR"
+              HOME="$HOME_DIR" xvfb-run -a "$OPENTTD" \
+                -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-007/coimbra-openttd-007.sav" \
+                -I OpenGFX \
+                -s null \
+                -m null \
+                -c "$RUNTIME/build.cfg" \
+                -r 1280x720 \
+                -x \
+                -d script=3,misc=1
+            ) > "$log" 2>&1 &
+            pid=$!
+
+            found=""
+            for _ in $(seq 1 120); do
+              found="$(find "$RUNTIME" "$HOME_DIR" -type f -name "$expected.png" -print -quit 2>/dev/null || true)"
+              if [ -n "$found" ]; then
+                break
+              fi
+              if ! kill -0 "$pid" 2>/dev/null; then
+                cat "$log"
+                exit 4
+              fi
+              sleep 1
+            done
+
+            {
+              echo "===== $expected ====="
+              cat "$log"
+            } >> artifacts/coimbra-openttd-007/render.log
+
+            test -n "$found" && test -s "$found"
+            cp "$found" "artifacts/coimbra-openttd-007/screenshots/$expected.png"
+
+            if kill -0 "$pid" 2>/dev/null; then kill "$pid" || true; fi
+            wait "$pid" || true
+          }
+
+          while read -r name tile zoom; do
+            cat > "$BINDIR/scripts/game_start.scr" <<EOF
+          unpause
+          scrollto instant $tile
+          zoomto $zoom
+          schedule on-next-calendar-month scripts/coimbra_capture.scr
+          EOF
+            cat > "$BINDIR/scripts/coimbra_capture.scr" <<EOF
+          screenshot normal size 1280 720 $name
+          EOF
+            launch_capture "$name"
+          done < artifacts/coimbra-openttd-007/capture-targets.tsv
+
+          cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          screenshot minimap coimbra-openttd-007-minimap
+          EOF
+          launch_capture "coimbra-openttd-007-minimap"
+
+          test "$(find artifacts/coimbra-openttd-007/screenshots -type f -name '*.png' | wc -l)" -eq 6
+
+      - name: Verify frames and write manifest
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import re
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path("artifacts/coimbra-openttd-007")
+          screenshots = sorted((root / "screenshots").glob("*.png"))
+          build = (root / "build.log").read_text(errors="replace")
+          town_plan = json.loads((root / "town-plan.json").read_text())
+
+          assert len(town_plan) == 4, town_plan
+          assert "towns ok=4 fail=0" in build
+          town_results = {}
+          for name, population, target, minimum, x, y in re.findall(
+              r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=(\d+),(\d+)",
+              build,
+          ):
+              town_results[name] = {
+                  "population": int(population),
+                  "target_population": int(target),
+                  "minimum_population": int(minimum),
+                  "built_tile": [int(x), int(y)],
+              }
+          assert len(town_results) == 4, town_results
+          for town in town_plan:
+              assert town["name"] in town_results
+              assert town_results[town["name"]]["population"] >= 1
+
+          fabric_results = {}
+          for name, placed, low_rise, medium_rise, before, target, after in re.findall(
+              r"Coimbra 007 urban fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) "
+              r"population_before=(\d+) target=(\d+) population_after=(\d+)",
+              build,
+          ):
+              fabric_results[name] = {
+                  "houses_placed": int(placed),
+                  "low_rise": int(low_rise),
+                  "medium_rise": int(medium_rise),
+                  "population_before": int(before),
+                  "target_population": int(target),
+                  "population_after": int(after),
+                  "population_gain": int(after) - int(before),
+              }
+          assert len(fabric_results) == 4, fabric_results
+          assert all(item["houses_placed"] >= 15 for item in fabric_results.values())
+          assert all(item["low_rise"] >= 5 for item in fabric_results.values())
+          assert all(item["medium_rise"] >= 2 for item in fabric_results.values())
+          assert all(item["population_after"] >= item["target_population"] for item in fabric_results.values())
+          assert all(item["population_after"] <= item["target_population"] + 120 for item in fabric_results.values())
+
+          fingerprint_match = re.search(
+              r"Coimbra 007 road fingerprint before count=(\d+) checksum=(\d+).*?"
+              r"Coimbra 007 road fingerprint after count=(\d+) checksum=(\d+)",
+              build,
+              re.S,
+          )
+          assert fingerprint_match, "missing 007 road fingerprint"
+          road_before_count, road_before_checksum, road_after_count, road_after_checksum = map(int, fingerprint_match.groups())
+          assert (road_before_count, road_before_checksum) == (road_after_count, road_after_checksum), fingerprint_match.groups()
+
+          source_save = root / "source-coimbra-openttd-005.sav"
+          assert source_save.exists()
+          source_save_sha256 = hashlib.sha256(source_save.read_bytes()).hexdigest()
+          assert source_save_sha256 == "6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3"
+
+          network_results = {
+              "source": "verified OpenTTD 005 save",
+              "verified_run_id": 37212552230,
+              "source_save_sha256": source_save_sha256,
+              "roads_ok": 6229,
+              "roads_fail": 1107,
+              "bridges_ok": 44,
+              "bridges_fail": 19,
+              "tunnels_ok": 0,
+              "tunnels_fail": 13,
+          }
+
+          normal_hashes = []
+          shot_meta = {}
+          for path in screenshots:
+              with Image.open(path) as im:
+                  size = list(im.size)
+                  if "minimap" in path.name:
+                      assert im.size == (512, 512), (path, im.size)
+                  else:
+                      assert im.size == (1280, 720), (path, im.size)
+                      digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                      normal_hashes.append(digest)
+                  shot_meta[path.name] = {
+                      "size": size,
+                      "mode": im.mode,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  }
+
+          assert len(screenshots) == 6, [p.name for p in screenshots]
+          assert len(normal_hashes) == 5, normal_hashes
+          print(json.dumps(shot_meta, indent=2, ensure_ascii=False))
+          assert len(set(normal_hashes)) == 5, "normal screenshots are not distinct viewport captures"
+
+          def sha(path):
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          sav = root / "coimbra-openttd-007.sav"
+          payload = {
+              "version": "coimbra-openttd-007",
+              "verified": True,
+              "openttd_version": "15.3",
+              "generation_seed": 1996061907,
+              "towns": town_plan,
+              "town_results": town_results,
+              "town_count": 4,
+              "all_towns_created": True,
+              "minimum_source_town_population": 1,
+              "source_005_save_loaded_in_place": True,
+              "source_005_save_sha256": source_save_sha256,
+              "existing_005_towns_attached_by_name": True,
+              "town_roads_allowed": False,
+              "urban_fabric_strategy": "mixed_low_and_medium_rise_population_targeted_houses_adjacent_to_existing_osm_roads",
+              "editor_source_commit": "14ec60f248547d4d062a1160f0fc26d742319888",
+              "editor_api_bridge": "GSTown.PlaceHouse",
+              "fabric_results": fabric_results,
+              "expand_town_calls": 0,
+              "road_fingerprint_preserved": True,
+              "road_fingerprint": {
+                  "before_count": road_before_count,
+                  "before_checksum": road_before_checksum,
+                  "after_count": road_after_count,
+                  "after_checksum": road_after_checksum,
+              },
+              "source_005_verified_run_id": 37212552230,
+              "road_fidelity_priority": True,
+              "structure_endpoint_search_radius_tiles": 3,
+              "source_004_verified_run_id": 37199363026,
+              "network_results": network_results,
+              "savegame": {
+                  "path": sav.name,
+                  "bytes": sav.stat().st_size,
+                  "sha256": sha(sav),
+                  "verified_by_openttd_q": True,
+              },
+              "screenshots": shot_meta,
+              "source_001_run_id": 37156903657,
+              "source_003_verified_run_id": 37160880112,
+          }
+          (root / "manifest.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+          print(json.dumps(payload, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Package Coimbra OpenTTD 006
+        run: |
+          cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-007/
+          test -s artifacts/coimbra-openttd-007/source-coimbra-openttd-005.sav
+          cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-007/
+          cp artifacts/coimbra-openttd-002/road-plan-manifest.json artifacts/coimbra-openttd-007/
+          cp -R artifacts/coimbra-openttd-002/game artifacts/coimbra-openttd-007/
+          cd artifacts
+          zip -r coimbra-openttd-007.zip coimbra-openttd-007
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coimbra-openttd-007
+          path: |
+            artifacts/coimbra-openttd-007/
+            artifacts/coimbra-openttd-007.zip
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 0

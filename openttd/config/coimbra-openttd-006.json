@@ -1,0 +1,32 @@
+{
+  "version": "coimbra-openttd-006",
+  "base_005_verified_run_id": 37212552230,
+  "base_005_commit": "3f27c5abd6e2ac601514b5daebb2ccf7e5aafda8",
+  "base_005_save_sha256": "6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3",
+  "openttd_version": "15.3",
+  "openttd_source_commit": "14ec60f248547d4d062a1160f0fc26d742319888",
+  "source_005_save_loaded_in_place": true,
+  "rebuild_osm": false,
+  "attach_existing_towns_by_name": true,
+  "density_strategy": "editor_api_completed_houses",
+  "editor_api_bridge": "GSTown.PlaceHouse",
+  "target_houses_per_district": 40,
+  "minimum_houses_per_district": 15,
+  "search_radius_tiles": 32,
+  "density_requires_adjacent_existing_road": true,
+  "allowed_base_house_ids": [
+    0,
+    1,
+    2
+  ],
+  "expand_town_calls": 0,
+  "road_fingerprint_required": true,
+  "final_stock_openttd_verification": true,
+  "terrain_mutation_allowed": false,
+  "rejected_006_run_ids": [
+    37220893049,
+    37221497082,
+    37222115679,
+    37222874353
+  ]
+}

@@ -119,3 +119,30 @@ Rules:
   created a large invented road grid despite green CI;
 - run `37210983009` is a rejected diagnostic run because the OSM-first order worked
   but Bairro Norton de Matos was founded with population 0.
+
+## COIMBRA-OPENTTD-006
+
+Goal: add ordinary completed houses to the exact verified 005 save without changing
+any accepted road tile.
+
+Rules:
+- source authority is verified 005 run `37212552230`, save SHA-256
+  `6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3`;
+- stay on OpenTTD 15.3 and do not rebuild OSM transport;
+- editor source must be exact upstream commit
+  `14ec60f248547d4d062a1160f0fc26d742319888`;
+- the temporary engine patch may only expose `GSTown.PlaceHouse`, permit Deity to
+  use existing `CMD_PLACE_HOUSE`, and complete Deity-placed houses immediately;
+- do not alter savegame serialization or town/road growth algorithms;
+- attach the four existing 005 towns by name; never refound them;
+- place houses only on buildable tiles adjacent to an already-existing road;
+- only HouseID 0, 1, or 2 may be attempted (single-tile base-house invariant);
+- target 40 successful houses per district; require at least 15 and a positive
+  population gain for every district;
+- no `GSTown.ExpandTown` calls are allowed;
+- road fingerprint before and after must match exactly;
+- final output must load successfully in official unmodified OpenTTD 15.3;
+- screenshots must be rendered with official unmodified OpenTTD 15.3;
+- rejected evidence includes runs `37220893049`, `37221497082`,
+  `37222115679`, and `37222874353`;
+- 006 remains review-only until screenshots are materially better than 005.

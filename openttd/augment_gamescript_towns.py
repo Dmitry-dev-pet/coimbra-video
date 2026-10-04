@@ -54,6 +54,9 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     main = main.replace(
         "    completed = false;\n",
         "    completed = false;\n"
+        "    density_upgrade = false;\n"
+        "    density_house_ok = 0;\n"
+        "    density_house_fail = 0;\n"
         "    town_ok = 0;\n"
         "    town_fail = 0;\n"
         "    town_ids = [];\n",
@@ -273,6 +276,214 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         GSLog.Info("Coimbra compact town anchors founded.");
     }
 
+    function AttachExistingTowns() {
+        require("towns.nut");
+        this.town_ids = [];
+        local towns = GSTownList();
+
+        foreach (item in COIMBRA_TOWNS) {
+            local wanted_name = item[4];
+            local found_id = -1;
+
+            for (local town_id = towns.Begin(); !towns.IsEnd(); town_id = towns.Next()) {
+                if (GSTown.GetName(town_id) == wanted_name) {
+                    found_id = town_id;
+                    break;
+                }
+            }
+
+            this.town_ids.append(found_id);
+            if (!GSTown.IsValidTown(found_id)) {
+                GSLog.Error("Coimbra 007 source town missing: " + wanted_name);
+                return false;
+            }
+
+            GSLog.Info(
+                "Coimbra 007 source town attached: " + wanted_name +
+                " population=" + GSTown.GetPopulation(found_id) +
+                " tile=" + GSMap.GetTileX(GSTown.GetLocation(found_id)) + "," +
+                GSMap.GetTileY(GSTown.GetLocation(found_id))
+            );
+        }
+
+        GSLog.Info("Coimbra 007 attached all four towns from verified 005 save.");
+        return true;
+    }
+
+    function RoadFingerprint() {
+        local count = 0;
+        local checksum = 0;
+        local size_x = GSMap.GetMapSizeX();
+        local size_y = GSMap.GetMapSizeY();
+        local scanned = 0;
+
+        for (local y = 0; y < size_y; y++) {
+            for (local x = 0; x < size_x; x++) {
+                local tile = GSMap.GetTileIndex(x, y);
+                if (GSRoad.IsRoadTile(tile)) {
+                    count++;
+                    checksum = (checksum + tile) % 2147483647;
+                }
+                scanned++;
+                if (scanned % 4096 == 0) this.Sleep(1);
+            }
+        }
+        return [count, checksum];
+    }
+
+    function FabricHousePopulation(house_id) {
+        switch (house_id) {
+            case 0x06: return 30;  // town houses
+            case 0x0E: return 95;  // shops and offices
+            case 0x0F: return 95;
+            case 0x10: return 95;
+            case 0x18: return 15;  // old houses
+            case 0x19: return 12;  // cottages
+            case 0x1A: return 13;  // houses
+            case 0x1B: return 100; // flats
+        }
+        return 0;
+    }
+
+    function TryPlaceFabricHouse(tile, remaining, ordinal, radius) {
+        // Keep the centre moderately dense and the outer rings low-rise.
+        // The palette deliberately excludes 0x00/0x01/0x02: 006 proved that
+        // always selecting 0x00 creates 187-pop tall office blocks and turns
+        // forty buildings into an unrealistic ~7.5k-pop district.
+        local palette = radius <= 8
+            ? [0x1B, 0x06, 0x0E, 0x1A, 0x0F, 0x10]
+            : [0x1A, 0x06, 0x18, 0x19, 0x1A, 0x06];
+
+        local start = ordinal % palette.len();
+        for (local j = 0; j < palette.len(); j++) {
+            local house_id = palette[(start + j) % palette.len()];
+            local population = this.FabricHousePopulation(house_id);
+            if (population <= 0) continue;
+
+            // Avoid large overshoots close to the target.
+            if (remaining <= 15 && population > 15) continue;
+            if (remaining > 15 && remaining <= 35 && population > 35) continue;
+            if (remaining > 35 && population > remaining + 25) continue;
+
+            if (GSTown.PlaceHouse(tile, house_id)) return house_id;
+        }
+
+        // Permanent temperate low-rise fallbacks.
+        local fallback = [0x1A, 0x06];
+        foreach (house_id in fallback) {
+            local population = this.FabricHousePopulation(house_id);
+            if (remaining <= 15 && population > 15) continue;
+            if (remaining > 15 && remaining <= 35 && population > 35) continue;
+            if (GSTown.PlaceHouse(tile, house_id)) return house_id;
+        }
+        return -1;
+    }
+
+    function PlaceRealisticUrbanFabricLocked() {
+        local before = this.RoadFingerprint();
+        GSLog.Info(
+            "Coimbra 007 road fingerprint before count=" + before[0] +
+            " checksum=" + before[1]
+        );
+
+        foreach (i, item in COIMBRA_TOWNS) {
+            local town_id = this.town_ids[i];
+            if (!GSTown.IsValidTown(town_id)) continue;
+
+            local center = GSTown.GetLocation(town_id);
+            local base_x = GSMap.GetTileX(center);
+            local base_y = GSMap.GetTileY(center);
+            local target_population = item[2];
+            local population_before = GSTown.GetPopulation(town_id);
+            local placed = 0;
+            local low_rise = 0;
+            local medium_rise = 0;
+            local attempts = 0;
+
+            for (local radius = 1; radius <= 52 && GSTown.GetPopulation(town_id) < target_population; radius++) {
+                for (local dx = -radius; dx <= radius && GSTown.GetPopulation(town_id) < target_population; dx++) {
+                    for (local dy = -radius; dy <= radius && GSTown.GetPopulation(town_id) < target_population; dy++) {
+                        if (dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
+
+                        local x = base_x + dx;
+                        local y = base_y + dy;
+                        if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
+
+                        // Deterministic gaps stop continuous apartment walls along roads.
+                        if (((x * 7 + y * 11 + i * 13) % 3) == 0) continue;
+
+                        local tile = GSMap.GetTileIndex(x, y);
+                        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+                        if (!this.HasAdjacentRoad(x, y)) continue;
+
+                        local remaining = target_population - GSTown.GetPopulation(town_id);
+                        local house_id = this.TryPlaceFabricHouse(tile, remaining, attempts, radius);
+                        attempts++;
+
+                        if (house_id >= 0) {
+                            placed++;
+                            this.density_house_ok++;
+                            if (house_id == 0x1B || house_id == 0x0E || house_id == 0x0F || house_id == 0x10) {
+                                medium_rise++;
+                            } else {
+                                low_rise++;
+                            }
+                            if (placed % 12 == 0) this.Sleep(1);
+                        } else {
+                            this.density_house_fail++;
+                        }
+                    }
+                }
+            }
+
+            local population_after = GSTown.GetPopulation(town_id);
+            GSLog.Info(
+                "Coimbra 007 urban fabric: " + item[4] +
+                " placed=" + placed +
+                " low_rise=" + low_rise +
+                " medium_rise=" + medium_rise +
+                " population_before=" + population_before +
+                " target=" + target_population +
+                " population_after=" + population_after
+            );
+
+            if (placed < 15 || low_rise < 5 || medium_rise < 2) {
+                GSLog.Error("Coimbra 007 urban fabric insufficient mix: " + item[4]);
+                return false;
+            }
+            if (population_after < target_population || population_after > target_population + 120) {
+                GSLog.Error(
+                    "Coimbra 007 population outside target band: " + item[4] +
+                    " target=" + target_population +
+                    " actual=" + population_after
+                );
+                return false;
+            }
+            GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
+        }
+
+        local after = this.RoadFingerprint();
+        GSLog.Info(
+            "Coimbra 007 road fingerprint after count=" + after[0] +
+            " checksum=" + after[1]
+        );
+        GSLog.Info(
+            "Coimbra 007 houses placed=" + this.density_house_ok +
+            " failed_attempts=" + this.density_house_fail
+        );
+
+        if (before[0] != after[0] || before[1] != after[1]) {
+            GSLog.Error(
+                "Coimbra 007 road fingerprint changed before=" + before[0] + "/" + before[1] +
+                " after=" + after[0] + "/" + after[1]
+            );
+            return false;
+        }
+
+        GSLog.Info("Coimbra 007 road fingerprint preserved.");
+        return true;
+    }
+
     function ValidateTowns() {
         local minimum_population = 1;
 
@@ -319,38 +530,89 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate Start() in generated GameScript")
     main = main.replace(marker, town_methods + marker, 1)
 
+    completed_marker = r'''        if (this.completed) {
+            GSLog.Info("Coimbra completed save loaded; network rebuild skipped.");
+            while (true) this.Sleep(740);
+        }
+
+'''
+    upgrade_block = r'''        if (this.density_upgrade) {
+            GSLog.Info("Coimbra 007 realistic urban fabric upgrade from verified 005 save started.");
+            if (!this.AttachExistingTowns()) return;
+            if (!this.PlaceRealisticUrbanFabricLocked()) return;
+            this.ValidateTowns();
+            if (this.town_fail != 0) {
+                GSLog.Error("Coimbra 007 source town validation failed.");
+                return;
+            }
+            this.density_upgrade = false;
+            this.completed = true;
+            GSLog.Info("Coimbra 007 realistic urban fabric upgrade complete.");
+            while (true) this.Sleep(740);
+        }
+
+        if (this.completed) {
+            GSLog.Info("Coimbra completed save loaded; network rebuild skipped.");
+            while (true) this.Sleep(740);
+        }
+
+'''
+    if completed_marker not in main:
+        raise RuntimeError("could not locate completed-save guard")
+    main = main.replace(completed_marker, upgrade_block, 1)
+
     road_marker = '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n'
     if road_marker not in main:
         raise RuntimeError("could not locate road initialization in generated GameScript")
     main = main.replace(
         road_marker,
-        '        // 005: build the OSM transport network before any town exists.\n'
+        '        // 006: preserve the accepted 005 OSM-first transport build.\n'
         '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n',
         1,
     )
 
-    completion_marker = '        this.completed = true;\n'
+    completion_marker = (
+        '        this.completed = true;\n'
+        '        GSLog.Info("Coimbra network build complete.");\n'
+    )
     if completion_marker not in main:
-        raise RuntimeError("could not locate network completion marker")
+        raise RuntimeError("could not locate unique network completion marker")
     main = main.replace(
         completion_marker,
-        '        // 005: found compact town anchors only after OSM transport is complete.\n'
+        '        // 006 fresh-map fallback; migration of verified 005 uses the one-shot block above.\n'
         '        this.FoundTowns();\n'
+        '        if (!this.PlaceRealisticUrbanFabricLocked()) return;\n'
         '        this.ValidateTowns();\n'
-        '        this.completed = true;\n',
+        '        this.completed = true;\n'
+        '        GSLog.Info("Coimbra network build complete.");\n',
         1,
     )
-
-    main_path.write_text(main, encoding="utf-8")
 
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Builds the real Coimbra OSM network first, then freezes compact towns beside existing roads."; }',
+        'function GetDescription() { return "Builds population-targeted mixed urban fabric beside the locked Coimbra 005 OSM roads using an editor-only API bridge."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 6; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 12; }", 1)
     info_path.write_text(info, encoding="utf-8")
+
+    load_marker = r'''    function Load(version, data) {
+        if ("completed" in data) this.completed = data.completed;
+    }
+'''
+    load_upgrade = r'''    function Load(version, data) {
+        if ("completed" in data) this.completed = data.completed;
+        if (version < 12 && this.completed) {
+            this.completed = false;
+            this.density_upgrade = true;
+        }
+    }
+'''
+    if load_marker not in main:
+        raise RuntimeError("could not locate GameScript Load()")
+    main = main.replace(load_marker, load_upgrade, 1)
+    main_path.write_text(main, encoding="utf-8")
 
 
 def main() -> None:
@@ -369,7 +631,10 @@ def main() -> None:
     augment_game(args.game_dir, plan)
     args.out_plan.parent.mkdir(parents=True, exist_ok=True)
     args.out_plan.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(json.dumps({"town_count": len(plan), "towns": plan}, indent=2, ensure_ascii=False))
+    print(json.dumps({
+        "town_count": len(plan),
+        "towns": plan,
+    }, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
