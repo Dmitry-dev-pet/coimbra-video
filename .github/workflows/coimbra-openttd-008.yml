@@ -13,6 +13,10 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: coimbra-openttd-008-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -323,7 +327,7 @@ jobs:
           fabric = re.findall(
               r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) civic=(\d+) "
               r"source_low_rise=(\d+) source_medium_rise=(\d+) source_civic=(\d+) mix_delta_pp=(\d+) "
-              r"sites_checked=(\d+) blocked=(\d+) wrong_town=(\d+) "
+              r"sites_checked=(\d+) blocked=(\d+) road_overlap=(\d+) wrong_town=(\d+) "
               r"population_before=(\d+) target=(\d+) population_after=(\d+)",
               log,
           )
@@ -332,7 +336,7 @@ jobs:
               (
                   name, placed, low_rise, medium_rise, civic,
                   source_low, source_medium, source_civic, mix_delta,
-                  sites_checked, blocked, wrong_town, before, target, after,
+                  sites_checked, blocked, road_overlap, wrong_town, before, target, after,
               ) = row
               placed = int(placed)
               low_rise = int(low_rise)
@@ -537,14 +541,14 @@ jobs:
           for row in re.findall(
               r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) civic=(\d+) "
               r"source_low_rise=(\d+) source_medium_rise=(\d+) source_civic=(\d+) mix_delta_pp=(\d+) "
-              r"sites_checked=(\d+) blocked=(\d+) wrong_town=(\d+) "
+              r"sites_checked=(\d+) blocked=(\d+) road_overlap=(\d+) wrong_town=(\d+) "
               r"population_before=(\d+) target=(\d+) population_after=(\d+)",
               build,
           ):
               (
                   name, placed, low_rise, medium_rise, civic,
                   source_low, source_medium, source_civic, mix_delta,
-                  sites_checked, blocked, wrong_town, before, target, after,
+                  sites_checked, blocked, road_overlap, wrong_town, before, target, after,
               ) = row
               fabric_results[name] = {
                   "houses_placed": int(placed),
@@ -557,6 +561,7 @@ jobs:
                   "mix_delta_pp": int(mix_delta),
                   "sites_checked": int(sites_checked),
                   "blocked": int(blocked),
+                  "road_overlap": int(road_overlap),
                   "wrong_town": int(wrong_town),
                   "population_before": int(before),
                   "target_population": int(target),
