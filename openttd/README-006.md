@@ -1,29 +1,34 @@
-# Coimbra OpenTTD 006 — urban density on locked OSM roads
+# Coimbra OpenTTD 006 — urban density on the exact verified 005 save
 
-006 stacks on the verified OpenTTD 005 road-fidelity baseline
-(run `37212552230`, commit `3f27c5a`).
+006 is no longer allowed to rebuild Coimbra under a different OpenTTD version.
+Its source of truth is the exact verified OpenTTD 005 save from run
+`37212552230`:
 
-The first 006 experiment on stable OpenTTD 15.3 used fast natural town growth.
-It preserved the 005 transport counters but produced almost no useful density
-(70 / 118 / 129 / 144 residents), so that path is rejected.
+- file: `coimbra-openttd-005.sav`;
+- SHA-256: `6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3`;
+- accepted 005 transport counters: roads `6229/1107`, bridges `44/19`,
+  tunnels `0/13`.
 
-The current review uses **OpenTTD 16.0-beta4**. OpenTTD 16 specifically changes
-`GSTown.ExpandTown` to respect `economy.allow_town_roads`. 006 therefore tests
-a bounded `ExpandTown(town, 60)` for each district while
-`allow_town_roads=false`.
+006 loads that binary save in pinned OpenTTD 16.0-beta4 and migrates the
+`Coimbra Builder` GameScript state from the completed 005 script to the 006
+density-upgrade path. It attaches the four already-existing towns by name; it
+does **not** refound them and it does **not** rebuild any OSM transport.
 
-Acceptance remains strict:
+Density review:
 
-1. rebuild the exact accepted 005 network counters: roads `6229/1107`, bridges
-   `44/19`, tunnels `0/13`;
-2. found the same four district anchors beside existing OSM roads;
-3. fingerprint all road tiles before density expansion;
-4. expand each town by at most 60 houses;
-5. freeze the town immediately afterwards;
-6. fingerprint all road tiles again and require count + checksum to match exactly;
-7. require each district to reach at least 300 residents;
-8. verify the real save and screenshots.
+1. fingerprint every road tile in the loaded 005 save;
+2. for each existing district, attempt up to eight batches of
+   `GSTown.ExpandTown(town_id, 100)`, stopping early at 600 residents;
+3. `economy.allow_town_roads=false` remains inherited from the verified 005 save;
+4. freeze each town again with `TOWN_GROWTH_NONE`;
+5. fingerprint roads again and reject the run on any count/checksum change;
+6. require all four districts to reach at least 300 residents;
+7. save, verify and render the upgraded real save.
 
-This is deliberately a **beta review lane**, not a replacement for the stable 005
-baseline. Promotion requires both an unchanged road fingerprint and a human visual
-comparison against 005.
+Rejected experiments are retained as evidence:
+- run `37220893049`: stable 15.3 natural growth was too weak;
+- run `37221497082`: beta4 expansion preserved its own fingerprint, but rebuilding
+  the map under beta4 changed the OSM construction result, so it was not a valid
+  continuation of 005.
+
+006 remains review-only until its screenshots are directly compared with 005.

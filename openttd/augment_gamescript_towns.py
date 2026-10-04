@@ -54,6 +54,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     main = main.replace(
         "    completed = false;\n",
         "    completed = false;\n"
+        "    density_upgrade = false;\n"
         "    town_ok = 0;\n"
         "    town_fail = 0;\n"
         "    town_ids = [];\n",
@@ -273,6 +274,40 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         GSLog.Info("Coimbra compact town anchors founded.");
     }
 
+    function AttachExistingTowns() {
+        require("towns.nut");
+        this.town_ids = [];
+        local towns = GSTownList();
+
+        foreach (item in COIMBRA_TOWNS) {
+            local wanted_name = item[4];
+            local found_id = -1;
+
+            for (local town_id = towns.Begin(); !towns.IsEnd(); town_id = towns.Next()) {
+                if (GSTown.GetName(town_id) == wanted_name) {
+                    found_id = town_id;
+                    break;
+                }
+            }
+
+            this.town_ids.append(found_id);
+            if (!GSTown.IsValidTown(found_id)) {
+                GSLog.Error("Coimbra 006 source town missing: " + wanted_name);
+                return false;
+            }
+
+            GSLog.Info(
+                "Coimbra 006 source town attached: " + wanted_name +
+                " population=" + GSTown.GetPopulation(found_id) +
+                " tile=" + GSMap.GetTileX(GSTown.GetLocation(found_id)) + "," +
+                GSMap.GetTileY(GSTown.GetLocation(found_id))
+            );
+        }
+
+        GSLog.Info("Coimbra 006 attached all four towns from verified 005 save.");
+        return true;
+    }
+
     function RoadFingerprint() {
         local count = 0;
         local checksum = 0;
@@ -305,23 +340,28 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
             local town_id = this.town_ids[i];
             if (!GSTown.IsValidTown(town_id)) continue;
             local before_population = GSTown.GetPopulation(town_id);
+            local rounds = 0;
             GSLog.Info(
                 "Coimbra 006 density start: " + item[4] +
                 " population=" + before_population
             );
 
             // OpenTTD 16.0-beta4 changed ExpandTown so it respects
-            // economy.allow_town_roads. With that setting false, this is a
-            // bounded buildings-only expansion over the existing road network.
-            if (!GSTown.ExpandTown(town_id, 60)) {
-                GSLog.Error("Coimbra 006 density expansion failed: " + item[4]);
-                return false;
+            // economy.allow_town_roads. The verified 005 save already has that
+            // setting disabled. Try bounded 100-house batches, stop early once
+            // the district is visibly denser, then freeze it again.
+            for (local round = 0; round < 8; round++) {
+                if (GSTown.GetPopulation(town_id) >= 600) break;
+                GSTown.ExpandTown(town_id, 100);
+                rounds++;
+                this.Sleep(1);
             }
             GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
 
             GSLog.Info(
                 "Coimbra 006 density end: " + item[4] +
-                " population=" + GSTown.GetPopulation(town_id)
+                " population=" + GSTown.GetPopulation(town_id) +
+                " rounds=" + rounds
             );
         }
 
@@ -389,6 +429,37 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate Start() in generated GameScript")
     main = main.replace(marker, town_methods + marker, 1)
 
+    completed_marker = r'''        if (this.completed) {
+            GSLog.Info("Coimbra completed save loaded; network rebuild skipped.");
+            while (true) this.Sleep(740);
+        }
+
+'''
+    upgrade_block = r'''        if (this.density_upgrade) {
+            GSLog.Info("Coimbra 006 density upgrade from verified 005 save started.");
+            if (!this.AttachExistingTowns()) return;
+            if (!this.GrowBuildingsOnly()) return;
+            this.ValidateTowns();
+            if (this.town_fail != 0) {
+                GSLog.Error("Coimbra 006 density minimum not reached.");
+                return;
+            }
+            this.density_upgrade = false;
+            this.completed = true;
+            GSLog.Info("Coimbra 006 density upgrade complete.");
+            while (true) this.Sleep(740);
+        }
+
+        if (this.completed) {
+            GSLog.Info("Coimbra completed save loaded; network rebuild skipped.");
+            while (true) this.Sleep(740);
+        }
+
+'''
+    if completed_marker not in main:
+        raise RuntimeError("could not locate completed-save guard")
+    main = main.replace(completed_marker, upgrade_block, 1)
+
     road_marker = '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n'
     if road_marker not in main:
         raise RuntimeError("could not locate road initialization in generated GameScript")
@@ -412,16 +483,31 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         1,
     )
 
-    main_path.write_text(main, encoding="utf-8")
-
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
         'function GetDescription() { return "Tests OpenTTD 16 beta buildings-only town expansion over the locked Coimbra 005 road network."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 8; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 9; }", 1)
     info_path.write_text(info, encoding="utf-8")
+
+    load_marker = r'''    function Load(version, data) {
+        if ("completed" in data) this.completed = data.completed;
+    }
+'''
+    load_upgrade = r'''    function Load(version, data) {
+        if ("completed" in data) this.completed = data.completed;
+        if (version < 9 && this.completed) {
+            this.completed = false;
+            this.density_upgrade = true;
+        }
+    }
+'''
+    if load_marker not in main:
+        raise RuntimeError("could not locate GameScript Load()")
+    main = main.replace(load_marker, load_upgrade, 1)
+    main_path.write_text(main, encoding="utf-8")
 
 
 def main() -> None:

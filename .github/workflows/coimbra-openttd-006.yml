@@ -43,6 +43,26 @@ jobs:
           github-token: ${{ github.token }}
           path: source_001
 
+      - name: Download verified OpenTTD 005 baseline
+        uses: actions/download-artifact@v4
+        with:
+          repository: Dmitry-dev-pet/coimbra-video
+          run-id: 37212552230
+          name: coimbra-openttd-005
+          github-token: ${{ github.token }}
+          path: source_005
+
+      - name: Pin exact verified 005 save
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/coimbra-openttd-006
+          source_save="$(find source_005 -type f -name 'coimbra-openttd-005.sav' -print -quit)"
+          test -n "$source_save" && test -s "$source_save"
+          cp "$source_save" artifacts/coimbra-openttd-006/source-coimbra-openttd-005.sav
+          echo "6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3  artifacts/coimbra-openttd-006/source-coimbra-openttd-005.sav" | sha256sum -c -
+          sha256sum artifacts/coimbra-openttd-006/source-coimbra-openttd-005.sav > artifacts/coimbra-openttd-006/source-005.sha256
+
       - name: Normalize and verify pinned Coimbra 001 inputs
         shell: bash
         run: |
@@ -85,7 +105,10 @@ jobs:
           grep -F 'GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function RoadFingerprint()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function GrowBuildingsOnly()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'GSTown.ExpandTown(town_id, 60)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function AttachExistingTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'Coimbra 006 density upgrade complete.' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'GSTown.ExpandTown(town_id, 100)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'round < 8' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           if grep -Fq 'GSTown.SetGrowthRate(town_id, 1)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
             echo '006 beta review must use bounded ExpandTown, not timed natural growth.' >&2
             exit 1
@@ -127,7 +150,7 @@ jobs:
           echo "openttd=$openttd" >> "$GITHUB_OUTPUT"
           echo "bindir=$(dirname "$openttd")" >> "$GITHUB_OUTPUT"
 
-      - name: Build complete Coimbra city and save real game
+      - name: Upgrade verified Coimbra 005 save with urban density
         shell: bash
         env:
           RUNTIME: ${{ steps.runtime.outputs.runtime }}
@@ -167,8 +190,7 @@ jobs:
 
           HOME="$HOME_DIR" "$OPENTTD" \
             -D 127.0.0.1:0 \
-            -G 1996061907 \
-            -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-001/coimbra-heightmap.png" \
+            -g "$GITHUB_WORKSPACE/artifacts/coimbra-openttd-006/source-coimbra-openttd-005.sav" \
             -I OpenGFX \
             -c "$cfg" \
             -x \
@@ -178,7 +200,7 @@ jobs:
 
           complete=0
           for _ in $(seq 1 900); do
-            if grep -Fq "Coimbra network build complete." "$log" 2>/dev/null; then
+            if grep -Fq "Coimbra 006 density upgrade complete." "$log" 2>/dev/null; then
               complete=1
               break
             fi
@@ -204,10 +226,8 @@ jobs:
           grep -F "Coimbra town built: Bairro Norton de Matos" "$log"
           grep -F "Coimbra town built: Polo II" "$log"
           grep -F "Coimbra town built: Quinta da Portela" "$log"
-          grep -F "Coimbra network build complete." "$log"
-          grep -F "roads ok=" "$log"
-          grep -F "bridges ok=" "$log"
-          grep -F "tunnels ok=" "$log"
+          grep -F "Coimbra 006 attached all four towns from verified 005 save." "$log"
+          grep -F "Coimbra 006 density upgrade complete." "$log"
           grep -F "towns ok=4 fail=0" "$log"
           python - <<'PY'
           import os
@@ -219,7 +239,7 @@ jobs:
           assert len(matches) == 4, matches
           for name, population, target, minimum in matches:
               assert int(population) >= int(minimum), (name, population, target, minimum)
-          print("all four Coimbra towns reached the 006 density minimum without forced expansion")
+          print("all four Coimbra towns reached the 006 density minimum on the exact 005 save")
           PY
 
           kill -TERM "$pid"
@@ -408,40 +428,21 @@ jobs:
           road_before_count, road_before_checksum, road_after_count, road_after_checksum = map(int, fingerprint_match.groups())
           assert (road_before_count, road_before_checksum) == (road_after_count, road_after_checksum), fingerprint_match.groups()
 
-          network_match = re.search(
-              r"roads ok=(\d+) fail=(\d+).*?bridges ok=(\d+) fail=(\d+).*?tunnels ok=(\d+) fail=(\d+)",
-              build,
-              re.S,
-          )
-          assert network_match, "missing runtime network counters"
-          roads_ok, roads_fail, bridges_ok, bridges_fail, tunnels_ok, tunnels_fail = map(int, network_match.groups())
-          assert (roads_ok, roads_fail, bridges_ok, bridges_fail, tunnels_ok, tunnels_fail) == (6229, 1107, 44, 19, 0, 13), (
-              roads_ok, roads_fail, bridges_ok, bridges_fail, tunnels_ok, tunnels_fail
-          )
+          source_save = root / "source-coimbra-openttd-005.sav"
+          assert source_save.exists()
+          source_save_sha256 = hashlib.sha256(source_save.read_bytes()).hexdigest()
+          assert source_save_sha256 == "6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3"
+
           network_results = {
-              "roads_ok": roads_ok,
-              "roads_fail": roads_fail,
-              "bridges_ok": bridges_ok,
-              "bridges_fail": bridges_fail,
-              "tunnels_ok": tunnels_ok,
-              "tunnels_fail": tunnels_fail,
-              "baseline_005": {
-                  "verified_run_id": 37212552230,
-                  "roads_ok": 6229,
-                  "roads_fail": 1107,
-                  "bridges_ok": 44,
-                  "bridges_fail": 19,
-                  "tunnels_ok": 0,
-                  "tunnels_fail": 13,
-              },
-              "baseline_004": {
-                  "roads_ok": 6037,
-                  "roads_fail": 1299,
-                  "bridges_ok": 25,
-                  "bridges_fail": 38,
-                  "tunnels_ok": 0,
-                  "tunnels_fail": 13,
-              },
+              "source": "verified OpenTTD 005 save",
+              "verified_run_id": 37212552230,
+              "source_save_sha256": source_save_sha256,
+              "roads_ok": 6229,
+              "roads_fail": 1107,
+              "bridges_ok": 44,
+              "bridges_fail": 19,
+              "tunnels_ok": 0,
+              "tunnels_fail": 13,
           }
 
           normal_hashes = []
@@ -480,12 +481,15 @@ jobs:
               "town_count": 4,
               "all_towns_created": True,
               "minimum_urban_population": 300,
-              "towns_founded_after_osm": True,
-              "town_anchor_prefers_adjacent_osm_road": True,
+              "source_005_save_loaded_in_place": True,
+              "source_005_save_sha256": source_save_sha256,
+              "existing_005_towns_attached_by_name": True,
               "town_growth_frozen_after_density_window": True,
               "town_roads_allowed": False,
-              "town_expansion_calls": 0,
-              "expand_town_houses_per_district": 60,
+              "town_expansion_strategy": "up_to_8_batches_of_100_until_population_600",
+              "expand_town_houses_per_batch": 100,
+              "max_expand_rounds_per_district": 8,
+              "density_growth_stop_population": 600,
               "openttd_16_expandtown_respects_allow_town_roads": True,
               "road_fingerprint_preserved": True,
               "road_fingerprint": {
@@ -516,6 +520,7 @@ jobs:
       - name: Package Coimbra OpenTTD 006
         run: |
           cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-006/
+          test -s artifacts/coimbra-openttd-006/source-coimbra-openttd-005.sav
           cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-006/
           cp artifacts/coimbra-openttd-002/road-plan-manifest.json artifacts/coimbra-openttd-006/
           cp -R artifacts/coimbra-openttd-002/game artifacts/coimbra-openttd-006/

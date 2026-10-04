@@ -122,28 +122,28 @@ Rules:
 
 ## COIMBRA-OPENTTD-006
 
-Goal: add visible urban density on top of the verified 005 OSM road-fidelity
-baseline without changing that road network.
+Goal: add visible urban density **in place** on the exact verified 005 save without
+changing any accepted road tile.
 
 Rules:
-- stack on verified 005 run `37212552230` / commit `3f27c5a`;
-- 005 remains the stable OpenTTD 15.3 baseline; current 006 density review uses
-  pinned OpenTTD 16.0-beta4 because its ExpandTown behavior was changed to respect
-  `allow_town_roads`;
-- preserve the exact 005 runtime network counters: roads 6229/1107, bridges 44/19,
-  tunnels 0/13;
-- keep `economy.allow_town_roads=false` from game start;
-- in the beta review, allow exactly one bounded `GSTown.ExpandTown(town_id, 60)`
-  per district while `economy.allow_town_roads=false`;
-- found the same four districts only after OSM transport is complete and prefer
-  buildable tiles adjacent to existing OSM roads;
-- compute a full-map road fingerprint before density growth and again afterwards;
-  both road-tile count and checksum must match exactly;
-- immediately freeze each district again with `TOWN_GROWTH_NONE` after the
-  bounded 60-house expansion;
-- each of the four districts must reach at least 300 residents;
-- any road fingerprint change rejects the candidate even if screenshots look better;
-- screenshots must come from the reloaded real 006 `.sav`;
-- run `37220893049` is rejected: the OpenTTD 15.3 natural-growth experiment
-  preserved transport counters but did not create useful density;
-- 006 is review-only until a human compares it directly with accepted 005.
+- source authority is verified 005 run `37212552230`, commit `3f27c5a`;
+- the exact source save SHA-256 is
+  `6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3`;
+- 006 must load that save; it must not rebuild OSM transport under beta4;
+- 005 remains the stable OpenTTD 15.3 baseline; 006 density review uses pinned
+  OpenTTD 16.0-beta4 only to perform the post-save density upgrade;
+- migrate the completed 005 GameScript state to a one-time 006 density upgrade;
+- attach the four existing 005 towns by their pinned names, never refound them;
+- preserve `economy.allow_town_roads=false`;
+- fingerprint all road tiles before and after density work; both count and checksum
+  must match exactly;
+- for each district, allow at most 8 calls to `GSTown.ExpandTown(town_id, 100)`,
+  stopping early at population 600;
+- immediately freeze each town with `TOWN_GROWTH_NONE` afterwards;
+- all four districts must reach at least 300 residents;
+- any road fingerprint change rejects the candidate;
+- the output save and screenshots must derive from the loaded verified 005 save;
+- run `37220893049` is rejected because stable 15.3 natural growth was too weak;
+- run `37221497082` is rejected because rebuilding the map under beta4 changed
+  transport construction counters even though its local road fingerprint survived;
+- 006 is review-only until a human comparison against accepted 005 promotes it.

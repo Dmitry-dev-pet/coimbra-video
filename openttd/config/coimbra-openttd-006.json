@@ -20,8 +20,19 @@
   },
   "terrain_mutation_allowed": false,
   "openttd_binary_sha256": "695fff1403d990bd2e0383962b42d2f82ed10decb41b5993d55f3eda36feedff",
-  "expand_town_houses_per_district": 60,
   "expandtown_requires_allow_town_roads_false": true,
   "first_006_rejected_run_id": 37220893049,
-  "first_006_rejected_reason": "OpenTTD 15.3 natural growth did not create useful density"
+  "first_006_rejected_reason": "OpenTTD 15.3 natural growth did not create useful density",
+  "base_005_save_sha256": "6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3",
+  "source_005_save_loaded_in_place": true,
+  "rebuild_osm_under_beta4": false,
+  "attach_existing_towns_by_name": true,
+  "expand_town_houses_per_batch": 100,
+  "max_expand_rounds_per_district": 8,
+  "density_growth_stop_population": 600,
+  "rejected_006_run_ids": [
+    37220893049,
+    37221497082
+  ],
+  "second_006_rejected_reason": "Beta4 rebuild changed OSM construction counters; 006 must load exact verified 005 save"
 }
