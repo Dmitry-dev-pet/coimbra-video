@@ -6,11 +6,15 @@ It keeps the pinned DGT-derived heightmap, OSM network, four district anchors an
 generation seed, but changes the build order:
 
 1. found four small town anchors;
-2. temporarily allow town roads only until each district reaches the 900-resident minimum;
-3. freeze `economy.allow_town_roads=false`;
-4. build the OSM bridge/tunnel candidates and surface-road network;
-5. perform only buildings-only post-growth toward aspirational populations;
+2. grow each compact town only until it reaches the 900-resident minimum;
+3. stop all further town expansion;
+4. build the OSM bridge/tunnel candidates and surface-road network over those capped anchors;
+5. validate final populations without any post-OSM expansion;
 6. allow only bounded local endpoint recovery for OSM grade-separated structures.
+
+OpenTTD 15.3 rejects changing `economy.allow_town_roads` at runtime in the
+dedicated build used here, so 005 limits invented roads by capping the entire
+autonomous-growth phase rather than relying on an unsafe dynamic setting toggle.
 
 No heightmap mutation and no demotion of failed bridge/tunnel candidates to ground
 roads is allowed.

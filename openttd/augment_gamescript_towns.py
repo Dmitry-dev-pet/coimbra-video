@@ -256,13 +256,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     function GrowTownsToMinimum() {
         local minimum_population = 900;
 
-        if (!GSGameSettings.SetValue("economy.allow_town_roads", 1)) {
-            GSLog.Error("Could not temporarily enable town roads for minimum urban growth.");
-            return false;
-        }
-
-        for (local i = 0; i < COIMBRA_TOWNS.len(); i++) {
-            local item = COIMBRA_TOWNS[i];
+        foreach (i, item in COIMBRA_TOWNS) {
             local town_name = item[4];
             local town_id = this.town_ids[i];
             if (!GSTown.IsValidTown(town_id)) continue;
@@ -273,59 +267,38 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                 this.Sleep(1);
             }
 
+            local population = GSTown.GetPopulation(town_id);
             GSLog.Info(
                 "Coimbra minimum town growth: " + town_name +
-                " population=" + GSTown.GetPopulation(town_id)
+                " population=" + population
             );
+            if (population < minimum_population) {
+                GSLog.Warning("Coimbra town failed minimum pre-OSM growth: " + town_name);
+            }
         }
 
-        if (!GSGameSettings.SetValue("economy.allow_town_roads", 0)) {
-            GSLog.Error("Could not freeze town road construction after minimum growth.");
-            return false;
-        }
-        GSLog.Info("Coimbra town roads frozen before OSM transport build.");
-        return true;
+        GSLog.Info("Coimbra minimum urban growth complete; no further town expansion will run.");
     }
 
     function GrowTowns() {
         local minimum_population = 900;
 
-        for (local i = 0; i < COIMBRA_TOWNS.len(); i++) {
-            local item = COIMBRA_TOWNS[i];
+        foreach (i, item in COIMBRA_TOWNS) {
             local target_population = item[2];
             local town_name = item[4];
             local town_id = this.town_ids[i];
 
             if (!GSTown.IsValidTown(town_id)) {
                 this.town_fail++;
-                GSLog.Warning("Coimbra town invalid before post-road growth: " + town_name);
+                GSLog.Warning("Coimbra town invalid after OSM transport build: " + town_name);
                 continue;
             }
 
-            for (local grow_round = 0; grow_round < 192; grow_round++) {
-                if (GSTown.GetPopulation(town_id) >= target_population) break;
-                GSTown.ExpandTown(town_id, 50);
-                this.Sleep(1);
-            }
-
             local final_population = GSTown.GetPopulation(town_id);
-            if (final_population < minimum_population) {
-                GSLog.Info(
-                    "Coimbra town growth rescue: " + town_name +
-                    " population=" + final_population +
-                    " minimum=" + minimum_population
-                );
-                for (local rescue_round = 0; rescue_round < 64; rescue_round++) {
-                    if (GSTown.GetPopulation(town_id) >= minimum_population) break;
-                    GSTown.ExpandTown(town_id, 50);
-                    this.Sleep(1);
-                }
-                final_population = GSTown.GetPopulation(town_id);
-            }
-
             local tile = GSTown.GetLocation(town_id);
             local x = GSMap.GetTileX(tile);
             local y = GSMap.GetTileY(tile);
+
             GSLog.Info(
                 "Coimbra town built: " + town_name +
                 " population=" + final_population +
@@ -339,9 +312,6 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                 GSLog.Warning("Coimbra town below minimum urban population: " + town_name);
             } else {
                 this.town_ok++;
-                if (final_population < target_population) {
-                    GSLog.Warning("Coimbra town below aspirational target: " + town_name);
-                }
             }
         }
 
@@ -361,9 +331,9 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate road initialization in generated GameScript")
     main = main.replace(
         road_marker,
-        '        // Found compact anchors, grow only to 900, then freeze town roads before OSM.\n'
+        '        // Found compact anchors and grow only to the 900-resident minimum before OSM.\n'
         '        this.FoundTowns();\n'
-        '        if (!this.GrowTownsToMinimum()) return;\n'
+        '        this.GrowTownsToMinimum();\n'
         '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n',
         1,
     )
@@ -373,7 +343,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate network completion marker")
     main = main.replace(
         completion_marker,
-        '        // 005: with town roads disabled, grow buildings only after OSM transport exists.\n'
+        '        // 005: validate the capped town population after OSM transport; do not expand again.\n'
         '        this.GrowTowns();\n'
         '        this.completed = true;\n',
         1,

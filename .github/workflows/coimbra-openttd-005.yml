@@ -144,7 +144,7 @@ jobs:
           industry_density = 0
 
           [economy]
-          allow_town_roads = false
+          allow_town_roads = true
 
           [gui]
           autosave_on_exit = true
@@ -447,7 +447,9 @@ jobs:
               "town_count": 4,
               "all_towns_created": True,
               "minimum_urban_population": 900,
-              "town_roads_allowed": False,
+              "town_roads_allowed_during_minimum_growth": True,
+              "town_growth_capped_before_osm": True,
+              "post_osm_town_expansion": False,
               "structure_endpoint_search_radius_tiles": 3,
               "source_004_verified_run_id": 37199363026,
               "network_results": network_results,
