@@ -246,15 +246,18 @@ jobs:
           from pathlib import Path
 
           build = Path("artifacts/coimbra-openttd-004/build.log").read_text(errors="replace")
-          rows = [("coimbra-openttd-004-overview", 256, 256, 3)]
+          map_size = 512
+          rows = [("coimbra-openttd-004-overview", 256 * map_size + 256, 3)]
           for name, population, target, minimum, x, y in re.findall(
               r"Coimbra town built: (.+?) population=(\d+) target=(\d+) minimum=(\d+) tile=(\d+),(\d+)",
               build,
           ):
               slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-              rows.append((f"coimbra-openttd-004-{slug}", int(x), int(y), 2))
+              tile = int(y) * map_size + int(x)
+              rows.append((f"coimbra-openttd-004-{slug}", tile, 2))
 
           assert len(rows) == 5, rows
+          assert len({row[1] for row in rows}) == 5, rows
           out = Path("artifacts/coimbra-openttd-004/capture-targets.tsv")
           out.write_text("\n".join(" ".join(map(str, row)) for row in rows) + "\n")
           print(out.read_text())
@@ -315,12 +318,12 @@ jobs:
             wait "$pid" || true
           }
 
-          while read -r name x y zoom; do
+          while read -r name tile zoom; do
             cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
           schedule on-next-calendar-month scripts/coimbra_capture.scr
           EOF
             cat > "$BINDIR/scripts/coimbra_capture.scr" <<EOF
-          scrollto instant $x $y
+          scrollto $tile
           zoomto $zoom
           screenshot normal size 1280 720 $name
           EOF
