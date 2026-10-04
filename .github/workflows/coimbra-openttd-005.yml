@@ -80,7 +80,11 @@ jobs:
 
           grep -F 'function TryFoundTown(item)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'GSTown.TOWN_SIZE_SMALL' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'function GrowTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function ValidateTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          if grep -Fq 'GSTown.ExpandTown' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
+            echo '005 must not expand towns; OSM must be built before town founding.' >&2
+            exit 1
+          fi
           grep -F 'function TryBridgeCandidate' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function TryTunnelPortal' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'Coimbra urban layer complete.' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
@@ -144,7 +148,7 @@ jobs:
           industry_density = 0
 
           [economy]
-          allow_town_roads = true
+          allow_town_roads = false
 
           [gui]
           autosave_on_exit = true
@@ -446,10 +450,11 @@ jobs:
               "town_results": town_results,
               "town_count": 4,
               "all_towns_created": True,
-              "minimum_urban_population": 900,
-              "town_roads_allowed_during_minimum_growth": True,
-              "town_growth_capped_before_osm": True,
-              "post_osm_town_expansion": False,
+              "minimum_urban_population": 1,
+              "towns_founded_after_osm": True,
+              "town_roads_allowed": False,
+              "town_expansion_calls": 0,
+              "road_fidelity_priority": True,
               "structure_endpoint_search_radius_tiles": 3,
               "source_004_verified_run_id": 37199363026,
               "network_results": network_results,
@@ -467,7 +472,7 @@ jobs:
           print(json.dumps(payload, indent=2, ensure_ascii=False))
           PY
 
-      - name: Package Coimbra OpenTTD 004
+      - name: Package Coimbra OpenTTD 005
         run: |
           cp artifacts/coimbra-openttd-001/coimbra-heightmap.png artifacts/coimbra-openttd-005/
           cp artifacts/coimbra-openttd-001/coimbra-towns.json artifacts/coimbra-openttd-005/

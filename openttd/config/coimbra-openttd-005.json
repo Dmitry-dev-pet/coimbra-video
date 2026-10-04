@@ -3,8 +3,11 @@
   "base_verified_run_id": 37199363026,
   "generation_seed": 1996061907,
   "town_anchor_size": "small",
-  "allow_town_roads": true,
-  "minimum_urban_population": 900,
+  "allow_town_roads": false,
+  "minimum_urban_population": 1,
+  "towns_founded_after_osm": true,
+  "town_expansion_calls": 0,
+  "road_fidelity_priority": true,
   "structure_endpoint_search_radius_tiles": 3,
   "bridge_trim_limit_tiles": 2,
   "bridge_parallel_shift_limit_tiles": 3,
@@ -17,9 +20,5 @@
     "tunnels_ok": 0,
     "tunnels_fail": 13
   },
-  "allow_town_roads_during_minimum_growth": true,
-  "minimum_growth_target_population": 900,
-  "pre_osm_growth_rounds": 512,
-  "dynamic_town_road_toggle": false,
-  "post_osm_town_expansion": false
+  "rejected_diagnostic_run_id": 37202300102
 }

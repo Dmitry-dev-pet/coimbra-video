@@ -98,13 +98,13 @@ Goal: improve real-world road fidelity over verified 004 without changing the pi
 
 Rules:
 - stack on verified OpenTTD 004 run `37199363026` and keep generation seed `1996061907`;
-- found only compact town anchors before transport construction;
-- compact towns may grow only during a bounded pre-OSM phase until each district
-  reaches the 900-resident minimum; runtime toggling of `economy.allow_town_roads`
-  is not relied upon because OpenTTD 15.3 rejects that change in this dedicated run;
-- after minimum pre-growth, no further `GSTown.ExpandTown` calls are allowed;
-  OSM transport is then built on top of the capped urban anchors;
-- all four required districts must still reach at least 900 residents;
+- build the OSM-derived transport network before any Coimbra town exists;
+- only after OSM transport completes, found the four pinned compact town anchors;
+- 005 must contain no `GSTown.ExpandTown` calls;
+- configure `economy.allow_town_roads=false` from game start; do not rely on runtime setting changes;
+- all four required districts must be created successfully with non-zero population;
+- the 900-resident minimum belongs to 004 and is deliberately not an acceptance condition for 005;
+- after founding the four anchors, mark the GameScript complete and save immediately;
 - bridge/tunnel recovery may search only within 3 tiles of OSM-derived endpoints;
 - bridge recovery may trim heads by at most 2 tiles or shift the whole span
   parallel by at most 3 tiles;
@@ -112,4 +112,6 @@ Rules:
 - the pinned 001 heightmap is immutable in 005;
 - compare runtime counts against verified 004: roads 6037/1299, bridges 25/38,
   tunnels 0/13;
-- screenshots must come from the reloaded real 005 `.sav`.
+- screenshots must come from the reloaded real 005 `.sav`;
+- run `37202300102` is a rejected diagnostic run because autonomous town growth
+  created a large invented road grid despite green CI.

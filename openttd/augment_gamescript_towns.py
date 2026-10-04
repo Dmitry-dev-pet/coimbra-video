@@ -253,35 +253,8 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         GSLog.Info("Coimbra compact town anchors founded.");
     }
 
-    function GrowTownsToMinimum() {
-        local minimum_population = 900;
-
-        foreach (i, item in COIMBRA_TOWNS) {
-            local town_name = item[4];
-            local town_id = this.town_ids[i];
-            if (!GSTown.IsValidTown(town_id)) continue;
-
-            for (local grow_round = 0; grow_round < 512; grow_round++) {
-                if (GSTown.GetPopulation(town_id) >= minimum_population) break;
-                GSTown.ExpandTown(town_id, 50);
-                this.Sleep(1);
-            }
-
-            local population = GSTown.GetPopulation(town_id);
-            GSLog.Info(
-                "Coimbra minimum town growth: " + town_name +
-                " population=" + population
-            );
-            if (population < minimum_population) {
-                GSLog.Warning("Coimbra town failed minimum pre-OSM growth: " + town_name);
-            }
-        }
-
-        GSLog.Info("Coimbra minimum urban growth complete; no further town expansion will run.");
-    }
-
-    function GrowTowns() {
-        local minimum_population = 900;
+    function ValidateTowns() {
+        local minimum_population = 1;
 
         foreach (i, item in COIMBRA_TOWNS) {
             local target_population = item[2];
@@ -331,9 +304,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate road initialization in generated GameScript")
     main = main.replace(
         road_marker,
-        '        // Found compact anchors and grow only to the 900-resident minimum before OSM.\n'
-        '        this.FoundTowns();\n'
-        '        this.GrowTownsToMinimum();\n'
+        '        // 005: build the OSM transport network before any town exists.\n'
         '        GSRoad.SetCurrentRoadType(GSRoad.ROADTYPE_ROAD);\n',
         1,
     )
@@ -343,8 +314,9 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         raise RuntimeError("could not locate network completion marker")
     main = main.replace(
         completion_marker,
-        '        // 005: validate the capped town population after OSM transport; do not expand again.\n'
-        '        this.GrowTowns();\n'
+        '        // 005: found compact town anchors only after OSM transport is complete.\n'
+        '        this.FoundTowns();\n'
+        '        this.ValidateTowns();\n'
         '        this.completed = true;\n',
         1,
     )
@@ -354,10 +326,10 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Builds Coimbra from the real OSM network with compact towns and bounded grade-separated recovery."; }',
+        'function GetDescription() { return "Builds the real Coimbra OSM network first, then adds compact town anchors without expansion."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 4; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 5; }", 1)
     info_path.write_text(info, encoding="utf-8")
 
 
