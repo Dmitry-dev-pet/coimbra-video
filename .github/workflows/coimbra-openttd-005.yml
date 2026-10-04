@@ -338,8 +338,12 @@ jobs:
 
           while read -r name tile zoom; do
             cat > "$BINDIR/scripts/game_start.scr" <<EOF
+          unpause
           scrollto instant $tile
           zoomto $zoom
+          schedule on-next-calendar-month scripts/coimbra_capture.scr
+          EOF
+            cat > "$BINDIR/scripts/coimbra_capture.scr" <<EOF
           screenshot normal size 1280 720 $name
           EOF
             launch_capture "$name"
