@@ -321,11 +321,14 @@ jobs:
 
           while read -r name tile zoom; do
             cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          schedule on-next-calendar-month scripts/coimbra_position.scr
+          EOF
+            cat > "$BINDIR/scripts/coimbra_position.scr" <<EOF
+          scrollto instant $tile
+          zoomto $zoom
           schedule on-next-calendar-month scripts/coimbra_capture.scr
           EOF
             cat > "$BINDIR/scripts/coimbra_capture.scr" <<EOF
-          scrollto $tile
-          zoomto $zoom
           screenshot normal size 1280 720 $name
           EOF
             launch_capture "$name"
@@ -383,11 +386,17 @@ jobs:
                       assert im.size == (512, 512), (path, im.size)
                   else:
                       assert im.size == (1280, 720), (path, im.size)
-                      normal_hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
-                  shot_meta[path.name] = {"size": size, "mode": im.mode}
+                      digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                      normal_hashes.append(digest)
+                  shot_meta[path.name] = {
+                      "size": size,
+                      "mode": im.mode,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  }
 
           assert len(screenshots) == 6, [p.name for p in screenshots]
           assert len(normal_hashes) == 5, normal_hashes
+          print(json.dumps(shot_meta, indent=2, ensure_ascii=False))
           assert len(set(normal_hashes)) == 5, "normal screenshots are not distinct viewport captures"
 
           def sha(path):
