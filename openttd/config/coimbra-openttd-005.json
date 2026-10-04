@@ -20,5 +20,11 @@
     "tunnels_ok": 0,
     "tunnels_fail": 13
   },
-  "rejected_diagnostic_run_id": 37202300102
+  "town_anchor_prefers_adjacent_osm_road": true,
+  "town_anchor_road_search_radius_tiles": 24,
+  "town_growth_frozen_after_founding": true,
+  "rejected_diagnostic_run_ids": [
+    37202300102,
+    37210983009
+  ]
 }

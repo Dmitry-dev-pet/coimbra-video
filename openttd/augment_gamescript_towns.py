@@ -199,6 +199,16 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     main = main.replace(old_tunnel, new_tunnel, 1)
 
     town_methods = r'''
+    function HasAdjacentRoad(x, y) {
+        local neighbours = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+        foreach (p in neighbours) {
+            if (p[0] <= 0 || p[1] <= 0 || p[0] >= GSMap.GetMapSizeX() - 1 || p[1] >= GSMap.GetMapSizeY() - 1) continue;
+            local road_tile = GSMap.GetTileIndex(p[0], p[1]);
+            if (GSMap.IsValidTile(road_tile) && GSRoad.IsRoadTile(road_tile)) return true;
+        }
+        return false;
+    }
+
     function TryFoundTown(item) {
         local edge_margin = 40;
         local base_x = max(edge_margin, min(GSMap.GetMapSizeX() - edge_margin - 1, item[0]));
@@ -206,34 +216,44 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         local is_city = item[3];
         local town_name = item[4];
 
-        for (local radius = 0; radius <= 12; radius++) {
-            for (local dx = -radius; dx <= radius; dx++) {
-                for (local dy = -radius; dy <= radius; dy++) {
-                    if (radius > 0 && dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
+        for (local pass = 0; pass < 2; pass++) {
+            local require_road = pass == 0;
+            local max_radius = require_road ? 24 : 12;
 
-                    local x = base_x + dx;
-                    local y = base_y + dy;
-                    if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
+            for (local radius = 0; radius <= max_radius; radius++) {
+                for (local dx = -radius; dx <= radius; dx++) {
+                    for (local dy = -radius; dy <= radius; dy++) {
+                        if (radius > 0 && dx != -radius && dx != radius && dy != -radius && dy != radius) continue;
 
-                    local tile = GSMap.GetTileIndex(x, y);
-                    if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+                        local x = base_x + dx;
+                        local y = base_y + dy;
+                        if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
 
-                    if (GSTown.FoundTown(
-                        tile,
-                        GSTown.TOWN_SIZE_SMALL,
-                        is_city,
-                        GSTown.ROAD_LAYOUT_ORIGINAL,
-                        town_name
-                    )) {
-                        local town_id = GSTile.GetClosestTown(tile);
-                        if (!GSTown.IsValidTown(town_id)) break;
-                        this.town_ids.append(town_id);
-                        GSLog.Info(
-                            "Coimbra town founded: " + town_name +
-                            " population=" + GSTown.GetPopulation(town_id) +
-                            " tile=" + x + "," + y
-                        );
-                        return true;
+                        local tile = GSMap.GetTileIndex(x, y);
+                        if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) continue;
+                        if (require_road && !this.HasAdjacentRoad(x, y)) continue;
+
+                        if (GSTown.FoundTown(
+                            tile,
+                            GSTown.TOWN_SIZE_SMALL,
+                            is_city,
+                            GSTown.ROAD_LAYOUT_ORIGINAL,
+                            town_name
+                        )) {
+                            local town_id = GSTile.GetClosestTown(tile);
+                            if (!GSTown.IsValidTown(town_id)) break;
+
+                            GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE);
+
+                            this.town_ids.append(town_id);
+                            GSLog.Info(
+                                "Coimbra town founded: " + town_name +
+                                " population=" + GSTown.GetPopulation(town_id) +
+                                " tile=" + x + "," + y +
+                                " adjacent_osm_road=" + (require_road ? "yes" : "fallback")
+                            );
+                            return true;
+                        }
                     }
                 }
             }
@@ -326,10 +346,10 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
     info = info_path.read_text(encoding="utf-8")
     info = info.replace(
         'function GetDescription() { return "Builds the quantized real Coimbra road, bridge and tunnel network."; }',
-        'function GetDescription() { return "Builds the real Coimbra OSM network first, then adds compact town anchors without expansion."; }',
+        'function GetDescription() { return "Builds the real Coimbra OSM network first, then freezes compact towns beside existing roads."; }',
         1,
     )
-    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 5; }", 1)
+    info = info.replace("function GetVersion() { return 2; }", "function GetVersion() { return 6; }", 1)
     info_path.write_text(info, encoding="utf-8")
 
 

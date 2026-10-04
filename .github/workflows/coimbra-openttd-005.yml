@@ -81,6 +81,8 @@ jobs:
           grep -F 'function TryFoundTown(item)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'GSTown.TOWN_SIZE_SMALL' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function ValidateTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function HasAdjacentRoad(x, y)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           if grep -Fq 'GSTown.ExpandTown' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut; then
             echo '005 must not expand towns; OSM must be built before town founding.' >&2
             exit 1
@@ -452,6 +454,8 @@ jobs:
               "all_towns_created": True,
               "minimum_urban_population": 1,
               "towns_founded_after_osm": True,
+              "town_anchor_prefers_adjacent_osm_road": True,
+              "town_growth_frozen_after_founding": True,
               "town_roads_allowed": False,
               "town_expansion_calls": 0,
               "road_fidelity_priority": True,

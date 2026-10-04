@@ -100,6 +100,8 @@ Rules:
 - stack on verified OpenTTD 004 run `37199363026` and keep generation seed `1996061907`;
 - build the OSM-derived transport network before any Coimbra town exists;
 - only after OSM transport completes, found the four pinned compact town anchors;
+- first search for a buildable founding tile directly adjacent to an already-built OSM road, with only a bounded fallback around the pinned anchor;
+- freeze every successfully founded town with `GSTown.SetGrowthRate(..., TOWN_GROWTH_NONE)`;
 - 005 must contain no `GSTown.ExpandTown` calls;
 - configure `economy.allow_town_roads=false` from game start; do not rely on runtime setting changes;
 - all four required districts must be created successfully with non-zero population;
@@ -114,4 +116,6 @@ Rules:
   tunnels 0/13;
 - screenshots must come from the reloaded real 005 `.sav`;
 - run `37202300102` is a rejected diagnostic run because autonomous town growth
-  created a large invented road grid despite green CI.
+  created a large invented road grid despite green CI;
+- run `37210983009` is a rejected diagnostic run because the OSM-first order worked
+  but Bairro Norton de Matos was founded with population 0.
