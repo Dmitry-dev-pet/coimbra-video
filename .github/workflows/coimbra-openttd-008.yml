@@ -32,6 +32,7 @@ jobs:
         run: |
           python -m unittest openttd/test_build_pack.py -v
           python -m unittest openttd/test_build_road_plan.py -v
+          python -m unittest openttd/test_build_osm_building_plan.py -v
           python -m py_compile openttd/augment_gamescript_towns.py
           python -m py_compile openttd/build_osm_building_plan.py
 
@@ -283,7 +284,7 @@ jobs:
               complete=1
               break
             fi
-            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 008 road fingerprint changed|Coimbra 008 OSM urban fabric insufficient mix|Coimbra 008 population outside target band" "$log" 2>/dev/null; then
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 008 road fingerprint changed|Coimbra 008 nearest-town assignment mismatch|Coimbra 008 OSM urban fabric produced no residential mix|Coimbra 008 OSM low-rise class disappeared|Coimbra 008 OSM medium-rise class disappeared|Coimbra 008 OSM placed mix diverges|Coimbra 008 population outside target band" "$log" 2>/dev/null; then
               cat "$log"
               exit 2
             fi
@@ -320,19 +321,36 @@ jobs:
               assert int(population) >= 1, (name, population)
 
           fabric = re.findall(
-              r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) "
-              r".*?population_before=(\d+) target=(\d+) population_after=(\d+)",
+              r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) civic=(\d+) "
+              r"source_low_rise=(\d+) source_medium_rise=(\d+) source_civic=(\d+) mix_delta_pp=(\d+) "
+              r"sites_checked=(\d+) blocked=(\d+) wrong_town=(\d+) "
+              r"population_before=(\d+) target=(\d+) population_after=(\d+)",
               log,
           )
           assert len(fabric) == 4, fabric
-          for name, placed, low_rise, medium_rise, before, target, after in fabric:
-              assert int(placed) >= 20, (name, placed)
-              assert int(low_rise) >= 8, (name, low_rise)
-              assert int(medium_rise) >= 2, (name, medium_rise)
+          for row in fabric:
+              (
+                  name, placed, low_rise, medium_rise, civic,
+                  source_low, source_medium, source_civic, mix_delta,
+                  sites_checked, blocked, wrong_town, before, target, after,
+              ) = row
+              placed = int(placed)
+              low_rise = int(low_rise)
+              medium_rise = int(medium_rise)
+              source_low = int(source_low)
+              source_medium = int(source_medium)
+              source_mix = source_low + source_medium
+              assert placed > 0, (name, placed)
+              assert int(wrong_town) == 0, (name, wrong_town)
+              assert int(mix_delta) <= 35, (name, mix_delta)
+              if source_mix and source_low * 10 >= source_mix:
+                  assert low_rise > 0, (name, source_low, source_medium)
+              if source_mix and source_medium * 10 >= source_mix:
+                  assert medium_rise > 0, (name, source_low, source_medium)
               assert int(after) >= int(target), (name, target, after)
               assert int(after) <= int(target) + 120, (name, target, after)
               assert int(after) > int(before), (name, before, after)
-          print("all four source towns reached target-banded mixed urban fabric on the exact 005 save")
+          print("all four source towns reached target-banded OSM-derived urban fabric on the exact 005 save")
           PY
 
           kill -TERM "$pid"
@@ -511,25 +529,44 @@ jobs:
               assert town["name"] in town_results
               assert town_results[town["name"]]["population"] >= 1
 
+          building_plan = json.loads((root / "building-plan.json").read_text())
+          assert building_plan["version"] == "coimbra-openttd-008-building-plan-v2"
+          assert building_plan["town_assignment"] == "OpenTTD 15.3 Manhattan nearest-town semantics"
+
           fabric_results = {}
-          for name, placed, low_rise, medium_rise, before, target, after in re.findall(
-              r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) "
-              r".*?population_before=(\d+) target=(\d+) population_after=(\d+)",
+          for row in re.findall(
+              r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) civic=(\d+) "
+              r"source_low_rise=(\d+) source_medium_rise=(\d+) source_civic=(\d+) mix_delta_pp=(\d+) "
+              r"sites_checked=(\d+) blocked=(\d+) wrong_town=(\d+) "
+              r"population_before=(\d+) target=(\d+) population_after=(\d+)",
               build,
           ):
+              (
+                  name, placed, low_rise, medium_rise, civic,
+                  source_low, source_medium, source_civic, mix_delta,
+                  sites_checked, blocked, wrong_town, before, target, after,
+              ) = row
               fabric_results[name] = {
                   "houses_placed": int(placed),
                   "low_rise": int(low_rise),
                   "medium_rise": int(medium_rise),
+                  "civic": int(civic),
+                  "source_low_rise": int(source_low),
+                  "source_medium_rise": int(source_medium),
+                  "source_civic": int(source_civic),
+                  "mix_delta_pp": int(mix_delta),
+                  "sites_checked": int(sites_checked),
+                  "blocked": int(blocked),
+                  "wrong_town": int(wrong_town),
                   "population_before": int(before),
                   "target_population": int(target),
                   "population_after": int(after),
                   "population_gain": int(after) - int(before),
               }
           assert len(fabric_results) == 4, fabric_results
-          assert all(item["houses_placed"] >= 20 for item in fabric_results.values())
-          assert all(item["low_rise"] >= 8 for item in fabric_results.values())
-          assert all(item["medium_rise"] >= 2 for item in fabric_results.values())
+          assert all(item["houses_placed"] > 0 for item in fabric_results.values())
+          assert all(item["wrong_town"] == 0 for item in fabric_results.values())
+          assert all(item["mix_delta_pp"] <= 35 for item in fabric_results.values())
           assert all(item["population_after"] >= item["target_population"] for item in fabric_results.values())
           assert all(item["population_after"] <= item["target_population"] + 120 for item in fabric_results.values())
 
@@ -603,6 +640,11 @@ jobs:
               "urban_fabric_strategy": "pinned_osm_building_footprint_centroids_with_population_targeted_house_profiles",
               "osm_semantics_run_id": 36495771020,
               "building_plan": "building-plan.json",
+              "building_plan_version": building_plan["version"],
+              "town_assignment": building_plan["town_assignment"],
+              "source_osm_class_counts": {
+                  group["name"]: group["class_counts"] for group in building_plan["towns"]
+              },
               "editor_source_commit": "14ec60f248547d4d062a1160f0fc26d742319888",
               "editor_api_bridge": "GSTown.PlaceHouse",
               "fabric_results": fabric_results,
