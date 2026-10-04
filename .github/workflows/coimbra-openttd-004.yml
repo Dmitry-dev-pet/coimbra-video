@@ -292,7 +292,7 @@ jobs:
             pid=$!
 
             found=""
-            for _ in $(seq 1 90); do
+            for _ in $(seq 1 120); do
               found="$(find "$RUNTIME" "$HOME_DIR" -type f -name "$expected.png" -print -quit 2>/dev/null || true)"
               if [ -n "$found" ]; then
                 break
@@ -316,7 +316,10 @@ jobs:
           }
 
           while read -r name x y zoom; do
-            cat > "$BINDIR/scripts/game_start.scr" <<EOF
+            cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          schedule on-next-calendar-month scripts/coimbra_capture.scr
+          EOF
+            cat > "$BINDIR/scripts/coimbra_capture.scr" <<EOF
           scrollto instant $x $y
           zoomto $zoom
           screenshot normal size 1280 720 $name
@@ -325,6 +328,9 @@ jobs:
           done < artifacts/coimbra-openttd-004/capture-targets.tsv
 
           cat > "$BINDIR/scripts/game_start.scr" <<'EOF'
+          schedule on-next-calendar-month scripts/coimbra_capture.scr
+          EOF
+          cat > "$BINDIR/scripts/coimbra_capture.scr" <<'EOF'
           screenshot minimap coimbra-openttd-004-minimap
           EOF
           launch_capture "coimbra-openttd-004-minimap"
