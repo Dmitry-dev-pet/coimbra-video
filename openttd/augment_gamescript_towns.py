@@ -375,6 +375,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
             local source_civic = 0;
             local source_sites_checked = 0;
             local wrong_town = 0;
+            local road_overlap = 0;
             local blocked = 0;
 
             foreach (site in sites) {
@@ -387,7 +388,17 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
 
                 if (x <= 0 || y <= 0 || x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1) continue;
                 local tile = GSMap.GetTileIndex(x, y);
-                if (!GSMap.IsValidTile(tile) || !GSTile.IsBuildable(tile)) {
+                if (!GSMap.IsValidTile(tile)) {
+                    blocked++;
+                    continue;
+                }
+                // ScriptTile::IsBuildable considers some road tiles buildable.
+                // 008 must never consume a locked 005 road tile.
+                if (GSRoad.IsRoadTile(tile)) {
+                    road_overlap++;
+                    continue;
+                }
+                if (!GSTile.IsBuildable(tile)) {
                     blocked++;
                     continue;
                 }
@@ -468,6 +479,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                 " mix_delta_pp=" + mix_delta_pp +
                 " sites_checked=" + source_sites_checked +
                 " blocked=" + blocked +
+                " road_overlap=" + road_overlap +
                 " wrong_town=" + wrong_town +
                 " population_before=" + population_before +
                 " target=" + target_population +
