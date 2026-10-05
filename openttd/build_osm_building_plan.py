@@ -122,11 +122,12 @@ def spread_key(candidate: dict) -> tuple[int, int]:
 
 
 def closest_town_name(candidate: dict, exact_towns: dict[str, dict[str, int]]) -> str:
-    """Match OpenTTD 15.3 CalcClosestTownFromTile / Kdtree::FindNearest.
+    """Partition candidates among the four tracked Coimbra anchors.
 
-    OpenTTD's town k-d tree uses Manhattan distance, not Euclidean distance.
-    Equal distances are resolved by the smaller TownID. The source 005 build log
-    is emitted in the same creation order, recorded as source_order below.
+    This is only a deterministic preprocessing partition used to keep the serialized
+    plan compact and spatially balanced. OpenTTD runtime GSTile.GetClosestTown is
+    authoritative for the final footprint -> town assignment because the source
+    save may contain additional towns that are intentionally outside this plan.
     """
     return min(
         exact_towns,
@@ -253,9 +254,9 @@ def build_plan(
             )
 
     return {
-        "version": "coimbra-openttd-008-building-plan-v2",
+        "version": "coimbra-openttd-008-building-plan-v3",
         "source": "pinned bridge_osm_oss_local.json from Coimbra 009A",
-        "town_assignment": "OpenTTD 15.3 Manhattan nearest-town semantics",
+        "town_assignment": "four tracked-town Manhattan preprocessing partition; OpenTTD runtime GetClosestTown authoritative",
         "map_size": map_size,
         "radius_tiles": radius_tiles,
         "center_epsg3763": list(center),
