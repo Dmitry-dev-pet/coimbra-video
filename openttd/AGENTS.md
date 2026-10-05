@@ -146,3 +146,52 @@ Rules:
 - rejected evidence includes runs `37220893049`, `37221497082`,
   `37222115679`, and `37222874353`;
 - 006 remains review-only until screenshots are materially better than 005.
+
+
+## COIMBRA-OPENTTD-007
+
+Goal: replace the rejected 006 fixed-house experiment with population-targeted,
+mixed low-/medium-rise urban fabric while preserving the exact verified 005 roads.
+
+Rules:
+- source authority is verified 005 run `37212552230`, save SHA-256
+  `6e650c35125eef7c53f5eceec5782200f9936c233489756a1729d828453984e3`;
+- attach the four existing 005 towns by name; never refound them;
+- target the pinned populations: Vale das Flores 2200, Bairro Norton de Matos 2600,
+  Polo II 1800, Quinta da Portela 1800;
+- place only completed houses adjacent to an already-existing road;
+- use a deterministic mixed palette and explicit gaps; do not repeat the rejected
+  HouseID 0 wall/tower pattern from 006;
+- require at least 15 placed houses, 5 low-rise houses, and 2 medium-rise houses
+  for every district;
+- final population must reach its target but may overshoot by at most 120;
+- no `GSTown.ExpandTown` calls and no autonomous town-road growth;
+- road fingerprint before and after must match exactly;
+- final output must load successfully in official unmodified OpenTTD 15.3;
+- screenshots must be rendered with official unmodified OpenTTD 15.3;
+- verified reference run is `37232609341`, with road fingerprint
+  `13767 / 1811156236` preserved.
+
+## COIMBRA-OPENTTD-008
+
+Goal: reduce the large empty gaps visible in 007 by adding low-rise fabric around
+five real OSM-sourced secondary Coimbra neighborhood anchors, without inventing
+roads or creating new towns.
+
+Rules:
+- source authority is verified 007 run `37232609341`, save SHA-256
+  `3e4e67971511bd083c6c9b3e4981acb55fba6ff428d9f7a969561fe8ca2cc041`;
+- use only anchors from `openttd/config/coimbra-openttd-006-density-towns.json`;
+- do not found or rename towns and do not change the four existing 007 town anchors;
+- place houses only on buildable tiles directly adjacent to an existing road;
+- the 008 palette is low-rise only: HouseID `0x1A`, `0x18`, `0x19`, or `0x06`;
+- preserve deterministic gaps so the result does not become a continuous roadside wall;
+- target at most 24 houses per secondary anchor and require at least 8 successful
+  houses for every anchor;
+- no `GSTown.ExpandTown` calls and no autonomous town-road growth;
+- road fingerprint before and after must remain exactly `13767 / 1811156236`;
+- the temporary editor bridge remains limited to the existing `GSTown.PlaceHouse`
+  mechanism from 006/007; do not alter save serialization or growth algorithms;
+- final output must load successfully in official unmodified OpenTTD 15.3;
+- review screenshots must be captured from the reloaded 008 save with official
+  unmodified OpenTTD 15.3.
