@@ -143,7 +143,7 @@ jobs:
           grep -F 'GSTown.SetGrowthRate(town_id, GSTown.TOWN_GROWTH_NONE)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function RoadFingerprint()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function AttachExistingTowns()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
-          grep -F 'function FindBuildingSites(town_name)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
+          grep -F 'function AllBuildingSites()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'function PlaceOsmFootprintFabricLocked()' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'require("building-sites.nut")' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
           grep -F 'GSTown.PlaceHouse(tile, house_id)' artifacts/coimbra-openttd-002/game/CoimbraBuilder/main.nut
