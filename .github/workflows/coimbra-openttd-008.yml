@@ -288,7 +288,7 @@ jobs:
               complete=1
               break
             fi
-            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 008 road fingerprint changed|Coimbra 008 nearest-town assignment mismatch|Coimbra 008 OSM urban fabric produced no residential mix|Coimbra 008 OSM low-rise class disappeared|Coimbra 008 OSM medium-rise class disappeared|Coimbra 008 OSM placed mix diverges|Coimbra 008 population outside target band" "$log" 2>/dev/null; then
+            if grep -Eq "script died unexpectedly|Your script made an error|too long to load script|Coimbra Builder requires|Coimbra 008 road fingerprint changed|Coimbra 008 OSM urban fabric produced no residential mix|Coimbra 008 OSM low-rise class disappeared|Coimbra 008 OSM medium-rise class disappeared|Coimbra 008 OSM placed mix diverges|Coimbra 008 population outside target band" "$log" 2>/dev/null; then
               cat "$log"
               exit 2
             fi
@@ -327,16 +327,18 @@ jobs:
           fabric = re.findall(
               r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) civic=(\d+) "
               r"source_low_rise=(\d+) source_medium_rise=(\d+) source_civic=(\d+) mix_delta_pp=(\d+) "
-              r"sites_checked=(\d+) blocked=(\d+) road_overlap=(\d+) wrong_town=(\d+) "
+              r"sites_checked=(\d+) blocked=(\d+) road_overlap=(\d+) other_town=(\d+) "
               r"population_before=(\d+) target=(\d+) population_after=(\d+)",
               log,
           )
           assert len(fabric) == 4, fabric
+          building_plan = __import__("json").loads(Path("artifacts/coimbra-openttd-008/building-plan.json").read_text())
+          expected_sites = int(building_plan["unique_candidate_tiles"])
           for row in fabric:
               (
                   name, placed, low_rise, medium_rise, civic,
                   source_low, source_medium, source_civic, mix_delta,
-                  sites_checked, blocked, road_overlap, wrong_town, before, target, after,
+                  sites_checked, blocked, road_overlap, other_town, before, target, after,
               ) = row
               placed = int(placed)
               low_rise = int(low_rise)
@@ -345,7 +347,7 @@ jobs:
               source_medium = int(source_medium)
               source_mix = source_low + source_medium
               assert placed > 0, (name, placed)
-              assert int(wrong_town) == 0, (name, wrong_town)
+              assert int(sites_checked) == expected_sites, (name, sites_checked, expected_sites)
               assert int(mix_delta) <= 35, (name, mix_delta)
               if source_mix and source_low * 10 >= source_mix:
                   assert low_rise > 0, (name, source_low, source_medium)
@@ -534,21 +536,21 @@ jobs:
               assert town_results[town["name"]]["population"] >= 1
 
           building_plan = json.loads((root / "building-plan.json").read_text())
-          assert building_plan["version"] == "coimbra-openttd-008-building-plan-v2"
-          assert building_plan["town_assignment"] == "OpenTTD 15.3 Manhattan nearest-town semantics"
+          assert building_plan["version"] == "coimbra-openttd-008-building-plan-v3"
+          assert building_plan["town_assignment"] == "four tracked-town Manhattan preprocessing partition; OpenTTD runtime GetClosestTown authoritative"
 
           fabric_results = {}
           for row in re.findall(
               r"Coimbra 008 OSM fabric: (.+?) placed=(\d+) low_rise=(\d+) medium_rise=(\d+) civic=(\d+) "
               r"source_low_rise=(\d+) source_medium_rise=(\d+) source_civic=(\d+) mix_delta_pp=(\d+) "
-              r"sites_checked=(\d+) blocked=(\d+) road_overlap=(\d+) wrong_town=(\d+) "
+              r"sites_checked=(\d+) blocked=(\d+) road_overlap=(\d+) other_town=(\d+) "
               r"population_before=(\d+) target=(\d+) population_after=(\d+)",
               build,
           ):
               (
                   name, placed, low_rise, medium_rise, civic,
                   source_low, source_medium, source_civic, mix_delta,
-                  sites_checked, blocked, road_overlap, wrong_town, before, target, after,
+                  sites_checked, blocked, road_overlap, other_town, before, target, after,
               ) = row
               fabric_results[name] = {
                   "houses_placed": int(placed),
@@ -562,7 +564,7 @@ jobs:
                   "sites_checked": int(sites_checked),
                   "blocked": int(blocked),
                   "road_overlap": int(road_overlap),
-                  "wrong_town": int(wrong_town),
+                  "other_town": int(other_town),
                   "population_before": int(before),
                   "target_population": int(target),
                   "population_after": int(after),
@@ -570,7 +572,7 @@ jobs:
               }
           assert len(fabric_results) == 4, fabric_results
           assert all(item["houses_placed"] > 0 for item in fabric_results.values())
-          assert all(item["wrong_town"] == 0 for item in fabric_results.values())
+          assert all(item["sites_checked"] == building_plan["unique_candidate_tiles"] for item in fabric_results.values())
           assert all(item["mix_delta_pp"] <= 35 for item in fabric_results.values())
           assert all(item["population_after"] >= item["target_population"] for item in fabric_results.values())
           assert all(item["population_after"] <= item["target_population"] + 120 for item in fabric_results.values())
