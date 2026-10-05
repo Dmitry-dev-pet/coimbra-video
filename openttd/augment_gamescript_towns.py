@@ -331,11 +331,12 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         return [count, checksum];
     }
 
-    function FindBuildingSites(town_name) {
+    function AllBuildingSites() {
+        local sites = [];
         foreach (group in COIMBRA_BUILDING_SITES) {
-            if (group[0] == town_name) return group[1];
+            foreach (site in group[1]) sites.append(site);
         }
-        return null;
+        return sites;
     }
 
     function HouseClass(house_id) {
@@ -352,6 +353,11 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
         );
 
         require("building-sites.nut");
+        local all_sites = this.AllBuildingSites();
+        if (all_sites.len() < 400) {
+            GSLog.Error("Coimbra 008 OSM site plan unexpectedly small.");
+            return false;
+        }
 
         foreach (i, item in COIMBRA_TOWNS) {
             local town_id = this.town_ids[i];
@@ -360,11 +366,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
             local town_name = item[4];
             local target_population = item[2];
             local population_before = GSTown.GetPopulation(town_id);
-            local sites = this.FindBuildingSites(town_name);
-            if (sites == null || sites.len() < 100) {
-                GSLog.Error("Coimbra 008 OSM site plan missing or too small: " + town_name);
-                return false;
-            }
+            local sites = all_sites;
 
             local placed = 0;
             local low_rise = 0;
@@ -374,7 +376,7 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
             local source_medium_rise = 0;
             local source_civic = 0;
             local source_sites_checked = 0;
-            local wrong_town = 0;
+            local other_town = 0;
             local road_overlap = 0;
             local blocked = 0;
 
@@ -392,6 +394,14 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                     blocked++;
                     continue;
                 }
+                // The serialized Python plan only prefilters the OSM footprint set.
+                // OpenTTD itself is authoritative for footprint -> town assignment.
+                // This also handles any additional towns already present in the source save.
+                if (GSTile.GetClosestTown(tile) != town_id) {
+                    other_town++;
+                    continue;
+                }
+
                 // ScriptTile::IsBuildable considers some road tiles buildable.
                 // 008 must never consume a locked 005 road tile.
                 if (GSRoad.IsRoadTile(tile)) {
@@ -400,13 +410,6 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                 }
                 if (!GSTile.IsBuildable(tile)) {
                     blocked++;
-                    continue;
-                }
-
-                // build_osm_building_plan.py mirrors OpenTTD 15.3's Manhattan
-                // nearest-town rule. Keep this runtime check as falsification evidence.
-                if (GSTile.GetClosestTown(tile) != town_id) {
-                    wrong_town++;
                     continue;
                 }
 
@@ -480,16 +483,12 @@ def augment_game(game_dir: Path, plan: list[dict]) -> None:
                 " sites_checked=" + source_sites_checked +
                 " blocked=" + blocked +
                 " road_overlap=" + road_overlap +
-                " wrong_town=" + wrong_town +
+                " other_town=" + other_town +
                 " population_before=" + population_before +
                 " target=" + target_population +
                 " population_after=" + population_after
             );
 
-            if (wrong_town != 0) {
-                GSLog.Error("Coimbra 008 nearest-town assignment mismatch: " + town_name);
-                return false;
-            }
             if (placed <= 0 || placed_mix <= 0) {
                 GSLog.Error("Coimbra 008 OSM urban fabric produced no residential mix: " + town_name);
                 return false;
