@@ -1,2 +1,124 @@
 name: Coimbra 031 approved render
- description: invalid
+description: Project-owned rendering, verification and artifacts for the fixed 031 lane.
+outputs:
+  result:
+    description: Sanitized operation evidence, not a new production approval.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra 031 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download accepted Coimbra 030 production look
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_030_RUN_ID }}
+        name: coimbra-030-production-look-review
+        github-token: ${{ github.token }}
+        path: source_030_download
+
+    - name: Download accepted Coimbra 026 prepare evidence
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_026_RUN_ID }}
+        name: coimbra-026-prepared
+        github-token: ${{ github.token }}
+        path: source_026_download
+
+    - name: Normalize and verify pinned Coimbra sources
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p source_030 source_026
+        blend="$(find source_030_download -type f -name 'coimbra-production-look.blend' -print -quit)"
+        review="$(find source_030_download -type f -name 'production-look-review.json' -print -quit)"
+        prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+        test -n "$blend"
+        test -n "$review"
+        test -n "$prepare"
+        cp "$blend" source_030/coimbra-production-look.blend
+        cp "$review" source_030/production-look-review.json
+        cp "$prepare" source_026/prepare.json
+        test "$(shasum -a 256 source_030/coimbra-production-look.blend | awk '{print $1}')" = "$COIMBRA_030_BLEND_SHA256"
+
+    - name: Resolve fixed Blender executable
+      id: blender031
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Render and verify accepted 031 production delivery
+      shell: bash
+      env:
+        BLENDER_PATH: ${{ steps.blender031.outputs.path }}
+      run: bash scripts/run_coimbra_031.sh
+
+    - name: Prepare sanitized 031 result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        v = json.loads(Path("artifacts/coimbra-031/verification.json").read_text())
+        safe = {
+            "verified": v.get("verified"),
+            "frame_count": v.get("frame_count"),
+            "fps": v.get("fps"),
+            "duration_seconds": v.get("duration_seconds"),
+            "resolution": v.get("resolution"),
+            "metal_total_seconds": v.get("metal_total_seconds"),
+            "metal_devices": v.get("metal_devices"),
+            "video_sha256": v.get("video_sha256"),
+            "source_030_blend_sha256": v.get("source_030_blend_sha256"),
+            "source_030_structure_sha256": v.get("source_030_structure_sha256"),
+            "source_030_protected_sha256": v.get("source_030_protected_sha256"),
+            "coimbra_source_sha": "f950651ab0d891dfed871d7b799d1691c173fa69",
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-031-production-look-metal-full-route
+        path: |
+          artifacts/coimbra-031/coimbra-production-look-metal-12s.mp4
+          artifacts/coimbra-031/review/
+          artifacts/coimbra-031/render-receipt.json
+          artifacts/coimbra-031/ffprobe.json
+          artifacts/coimbra-031/verification.json
+          artifacts/coimbra-031/attribution.txt
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
