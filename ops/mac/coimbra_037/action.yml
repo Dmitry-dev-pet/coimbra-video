@@ -1,0 +1,170 @@
+name: Coimbra 037 geometry review
+description: Fixed before-after stills, without changing accepted scene or camera.
+outputs:
+  result:
+    description: Sanitized review evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra 037 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download accepted Coimbra 030 production look
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_030_RUN_ID }}
+        name: coimbra-030-production-look-review
+        github-token: ${{ github.token }}
+        path: source_030_download
+
+    - name: Download accepted Coimbra 026 prepare evidence
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_026_RUN_ID }}
+        name: coimbra-026-prepared
+        github-token: ${{ github.token }}
+        path: source_026_download
+
+    - name: Normalize and verify pinned Coimbra sources
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p source_030 source_026 artifacts/coimbra-037
+        blend="$(find source_030_download -type f -name 'coimbra-production-look.blend' -print -quit)"
+        review="$(find source_030_download -type f -name 'production-look-review.json' -print -quit)"
+        prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+        test -n "$blend"
+        test -n "$review"
+        test -n "$prepare"
+        cp "$blend" source_030/coimbra-production-look.blend
+        cp "$review" source_030/production-look-review.json
+        cp "$prepare" source_026/prepare.json
+        test "$(shasum -a 256 source_030/coimbra-production-look.blend | awk '{print $1}')" = "$COIMBRA_030_BLEND_SHA256"
+
+    - name: Resolve fixed Blender executable
+      id: blender037
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Render Coimbra 037 before-after infrastructure stills
+      shell: bash
+      env:
+        BLENDER_PATH: ${{ steps.blender037.outputs.path }}
+        GH_TOKEN: ${{ github.token }}
+        PROGRESS_REPO: ${{ github.repository }}
+        PROGRESS_ISSUE: ${{ github.event.issue.number }}
+      run: |
+        set -euo pipefail
+        "$BLENDER_PATH" --background --factory-startup --python-exit-code 1             --python scripts/render_coimbra_037_infrastructure_stills.py --             --blend source_030/coimbra-production-look.blend             --review source_030/production-look-review.json             --prepare source_026/prepare.json             --out artifacts/coimbra-037
+
+    - name: Build the two before-after comparison frames
+      shell: bash
+      run: |
+        set -euo pipefail
+        command -v ffmpeg >/dev/null
+        for label in a b; do
+          ffmpeg -y               -i "artifacts/coimbra-037/baseline-${label}.png"               -i "artifacts/coimbra-037/infrastructure-${label}.png"               -filter_complex "hstack=inputs=2" -frames:v 1               "artifacts/coimbra-037/comparison-${label}.png"
+        done
+
+    - name: Verify Coimbra 037 evidence
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        root = Path("artifacts/coimbra-037")
+        r = json.loads((root / "receipt.json").read_text())
+        assert r["version"] == "coimbra-037-infrastructure-stills-v1"
+        assert r["verified"] is True
+        assert r["review_only"] is True
+        assert r["scene_structure_unchanged"] is True
+        assert r["native_camera_animation_unchanged"] is True
+        assert r["camera_motion"] == "accepted Coimbra 033 smooth path"
+        assert r["resolution"] == [960, 600]
+        assert r["cycles_samples"] == 16
+        assert len(r["review_output_frames"]) == 2
+        assert len(r["baseline"]) == 2
+        assert len(r["infrastructure"]) == 2
+        for name in (
+            "baseline-a.png", "baseline-b.png",
+            "infrastructure-a.png", "infrastructure-b.png",
+            "comparison-a.png", "comparison-b.png",
+        ):
+            path = root / name
+            assert path.is_file() and path.stat().st_size > 0, name
+        print("verified Coimbra 037 two-frame infrastructure review")
+        PY
+
+    - name: Prepare sanitized 037 result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        r = json.loads(Path("artifacts/coimbra-037/receipt.json").read_text())
+        safe = {
+            "verified": r.get("verified"),
+            "review_only": r.get("review_only"),
+            "review_output_frames": r.get("review_output_frames"),
+            "nearest_route_output_frame": r.get("nearest_route_output_frame"),
+            "resolution": r.get("resolution"),
+            "cycles_samples": r.get("cycles_samples"),
+            "adaptive_threshold": r.get("adaptive_threshold"),
+            "metal_devices": r.get("metal_devices"),
+            "bridge": r.get("bridge"),
+            "total_seconds": r.get("total_seconds"),
+            "coimbra_source_sha": r.get("source_code_commit"),
+            "comparison_frames": ["comparison-a.png", "comparison-b.png"],
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-037-infrastructure-stills
+        path: |
+          artifacts/coimbra-037/baseline-a.png
+          artifacts/coimbra-037/baseline-b.png
+          artifacts/coimbra-037/infrastructure-a.png
+          artifacts/coimbra-037/infrastructure-b.png
+          artifacts/coimbra-037/comparison-a.png
+          artifacts/coimbra-037/comparison-b.png
+          artifacts/coimbra-037/receipt.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
