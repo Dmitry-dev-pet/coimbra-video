@@ -1,0 +1,94 @@
+name: Recover fixed Coimbra preview
+description: Verify and upload the existing preview without checkout or rerendering.
+runs:
+  using: composite
+  steps:
+    - name: Recover verified 512x320 preview from preserved workspace
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ISSUE: ${{ github.event.issue.number }}
+      run: |
+        set -euo pipefail
+        root="$GITHUB_WORKSPACE/artifacts/coimbra-036-preview"
+        video="$root/coimbra-036-preview-512x320-24s.mp4"
+        receipt="$root/render-receipt.json"
+
+        test -s "$video"
+        test -s "$receipt"
+
+        ffprobe -v error -count_frames -select_streams v:0 \
+          -show_entries stream=codec_name,pix_fmt,width,height,r_frame_rate,nb_read_frames:format=duration \
+          -of json "$video" > "$root/recovered-ffprobe.json"
+
+        python3 - <<'PY'
+        import hashlib, json
+        from pathlib import Path
+
+        root = Path("artifacts/coimbra-036-preview")
+        video = root / "coimbra-036-preview-512x320-24s.mp4"
+        probe = json.loads((root / "recovered-ffprobe.json").read_text())
+        receipt = json.loads((root / "render-receipt.json").read_text())
+        stream = probe["streams"][0]
+
+        width = int(stream["width"])
+        height = int(stream["height"])
+        fps = stream["r_frame_rate"]
+        frames = int(stream["nb_read_frames"])
+        duration = float(probe["format"]["duration"])
+
+        assert [width, height] == [512, 320], [width, height]
+        assert fps == "10/1", fps
+        assert frames == 240, frames
+        assert abs(duration - 24.0) < 0.2, duration
+        assert receipt["resolution"] == [512, 320], receipt["resolution"]
+        assert receipt["render_frame_count"] == 240
+        assert receipt["output_frame_count"] == 240
+        assert receipt["fps"] == 10
+        assert receipt["samples"] == 4
+        assert abs(float(receipt["adaptive_threshold"]) - 0.15) < 1e-9
+        assert receipt["repeated_frames"] is False
+
+        out = {
+            "verified": True,
+            "recovered_from_run": 37139087928,
+            "preview_only": True,
+            "render_frame_count": 240,
+            "output_frame_count": 240,
+            "fps": 10,
+            "duration_seconds": duration,
+            "resolution": [width, height],
+            "samples": 4,
+            "adaptive_threshold": 0.15,
+            "repeated_frames": False,
+            "repeat_factor": 1,
+            "render_seconds": float(receipt["total_seconds"]),
+            "video_sha256": hashlib.sha256(video.read_bytes()).hexdigest(),
+        }
+        (root / "recovered-verification.json").write_text(json.dumps(out, indent=2) + "\n")
+        print(json.dumps(out, indent=2))
+        PY
+
+    - name: Upload recovered preview
+      uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-036-preview-512x320-recovered
+        path: |
+          artifacts/coimbra-036-preview/coimbra-036-preview-512x320-24s.mp4
+          artifacts/coimbra-036-preview/render-receipt.json
+          artifacts/coimbra-036-preview/recovered-ffprobe.json
+          artifacts/coimbra-036-preview/recovered-verification.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 14
+
+    - name: Report recovery
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ISSUE: ${{ github.event.issue.number }}
+      run: |
+        set -euo pipefail
+        gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" \
+          --body "Recovered and independently verified Coimbra preview from preserved Mac workspace without rerender. Artifact: **coimbra-036-preview-512x320-recovered**. Source run: https://github.com/$GITHUB_REPOSITORY/actions/runs/37139087928. Recovery run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+        gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --reason completed
