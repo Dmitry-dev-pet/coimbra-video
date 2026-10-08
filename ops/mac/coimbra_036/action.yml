@@ -1,0 +1,167 @@
+name: Coimbra 036 approved preview
+description: Fixed 640x480 native60 smooth-camera preview; no quality64 promotion.
+outputs:
+  result:
+    description: Sanitized preview evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra 036 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download verified Coimbra 035 visual-polish review
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/mac-access
+        run-id: ${{ env.COIMBRA_035_RUN_ID }}
+        name: coimbra-035-visual-polish-review
+        github-token: ${{ github.token }}
+        path: source_035_download
+
+    - name: Verify selected Coimbra 035 quality64 treatment
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        root = Path("source_035_download")
+        verification = json.loads(next(root.rglob("verification.json")).read_text())
+        review = json.loads(next(root.rglob("visual-polish-review.json")).read_text())
+        assert verification["verified"] is True
+        assert verification["accepted_lane"] == "Coimbra 032"
+        quality = review["variants"]["quality64"]["settings"]
+        assert quality["samples"] == 64
+        assert abs(float(quality["adaptive_threshold"]) - 0.03) <= 1e-9
+        assert quality["motion_blur"] is False
+        assert float(quality["atmosphere_density"]) == 0.0
+        print("verified Coimbra 035 quality64 promotion source")
+        PY
+
+    - name: Download accepted Coimbra 030 production look
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_030_RUN_ID }}
+        name: coimbra-030-production-look-review
+        github-token: ${{ github.token }}
+        path: source_030_download
+
+    - name: Download accepted Coimbra 026 prepare evidence
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_026_RUN_ID }}
+        name: coimbra-026-prepared
+        github-token: ${{ github.token }}
+        path: source_026_download
+
+    - name: Normalize and verify pinned Coimbra sources
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p source_030 source_026
+        blend="$(find source_030_download -type f -name 'coimbra-production-look.blend' -print -quit)"
+        review="$(find source_030_download -type f -name 'production-look-review.json' -print -quit)"
+        prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+        test -n "$blend"
+        test -n "$review"
+        test -n "$prepare"
+        cp "$blend" source_030/coimbra-production-look.blend
+        cp "$review" source_030/production-look-review.json
+        cp "$prepare" source_026/prepare.json
+        test "$(shasum -a 256 source_030/coimbra-production-look.blend | awk '{print $1}')" = "$COIMBRA_030_BLEND_SHA256"
+
+    - name: Resolve fixed Blender executable
+      id: blender036
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Render and verify Coimbra 036 033-smooth-camera 640x480 60 fps preview
+      shell: bash
+      env:
+        BLENDER_PATH: ${{ steps.blender036.outputs.path }}
+        GH_TOKEN: ${{ github.token }}
+        PROGRESS_REPO: ${{ github.repository }}
+        PROGRESS_ISSUE: ${{ github.event.issue.number }}
+      run: bash scripts/run_coimbra_036_preview.sh
+
+    - name: Prepare sanitized 036 result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        v = json.loads(Path("artifacts/coimbra-036-preview/verification.json").read_text())
+        safe = {
+            "verified": v.get("verified"),
+            "frame_count": v.get("frame_count"),
+            "fps": v.get("fps"),
+            "duration_seconds": v.get("duration_seconds"),
+            "speed_ratio_vs_031": v.get("speed_ratio_vs_031"),
+            "source_frame_step": v.get("source_frame_step"),
+            "sampling": v.get("sampling"),
+            "camera_motion_model": v.get("camera_motion_model"),
+            "current_linear_cv": v.get("current_linear_cv"),
+            "smooth_linear_cv": v.get("smooth_linear_cv"),
+            "current_angular_change_p95": v.get("current_angular_change_p95"),
+            "smooth_angular_change_p95": v.get("smooth_angular_change_p95"),
+            "samples": v.get("samples"),
+            "adaptive_threshold": v.get("adaptive_threshold"),
+            "source_035_review_run": v.get("source_035_review_run"),
+            "quality64_promoted": v.get("quality64_promoted"),
+            "resolution": v.get("resolution"),
+            "metal_total_seconds": v.get("metal_total_seconds"),
+            "metal_devices": v.get("metal_devices"),
+            "video_sha256": v.get("video_sha256"),
+            "source_030_blend_sha256": v.get("source_030_blend_sha256"),
+            "source_030_structure_sha256": v.get("source_030_structure_sha256"),
+            "source_030_protected_sha256": v.get("source_030_protected_sha256"),
+            "coimbra_source_sha": "561e8aa7c7b4faa5a887af619d141fa9a45c655f",
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-036-preview-640x480-60fps-smoothcam
+        path: |
+          artifacts/coimbra-036-preview/coimbra-036-preview-640x480-60fps-smoothcam-24s.mp4
+          artifacts/coimbra-036-preview/render-receipt.json
+          artifacts/coimbra-036-preview/ffprobe.json
+          artifacts/coimbra-036-preview/verification.json
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
