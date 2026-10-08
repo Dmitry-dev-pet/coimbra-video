@@ -1,0 +1,170 @@
+name: Coimbra 029 renderer benchmark
+description: Fixed benchmark modes and range, with unchanged verification and outputs.
+outputs:
+  result:
+    description: Sanitized benchmark evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra 029 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download accepted Coimbra 026 frozen scene
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_026_RUN_ID }}
+        name: coimbra-026-prepared
+        github-token: ${{ github.token }}
+        path: source_026_download
+
+    - name: Normalize and verify frozen source files
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p source_026 artifacts/coimbra-029
+        blend="$(find source_026_download -type f -name 'coimbra-cycles-full-route.blend' -print -quit)"
+        prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+        test -n "$blend"
+        test -n "$prepare"
+        cp "$blend" source_026/coimbra-cycles-full-route.blend
+        cp "$prepare" source_026/prepare.json
+        test "$(shasum -a 256 source_026/coimbra-cycles-full-route.blend | awk '{print $1}')" =             "5eed3da289693015ed6b491eb26f992f0c579a1625540f1f4acc13155860a590"
+
+    - name: Resolve fixed Blender executable
+      id: blender029
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Benchmark M4 CPU
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${{ steps.blender029.outputs.path }}"             --background --factory-startup --python-exit-code 1             --python coimbra/blender/render_cycles_benchmark_segment.py --             --blend "$GITHUB_WORKSPACE/source_026/coimbra-cycles-full-route.blend"             --prepare "$GITHUB_WORKSPACE/source_026/prepare.json"             --out "$GITHUB_WORKSPACE/artifacts/coimbra-029/mac-cpu"             --device cpu --start 181 --end 210
+
+    - name: Benchmark M4 Metal x1
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${{ steps.blender029.outputs.path }}"             --background --factory-startup --python-exit-code 1             --python coimbra/blender/render_cycles_benchmark_segment.py --             --blend "$GITHUB_WORKSPACE/source_026/coimbra-cycles-full-route.blend"             --prepare "$GITHUB_WORKSPACE/source_026/prepare.json"             --out "$GITHUB_WORKSPACE/artifacts/coimbra-029/metal-1x"             --device metal --start 181 --end 210
+
+    - name: Benchmark M4 Metal plus CPU
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${{ steps.blender029.outputs.path }}"             --background --factory-startup --python-exit-code 1             --python coimbra/blender/render_cycles_benchmark_segment.py --             --blend "$GITHUB_WORKSPACE/source_026/coimbra-cycles-full-route.blend"             --prepare "$GITHUB_WORKSPACE/source_026/prepare.json"             --out "$GITHUB_WORKSPACE/artifacts/coimbra-029/metal-cpu"             --device metal-cpu --start 181 --end 210
+
+    - name: Benchmark two concurrent M4 Metal processes
+      shell: bash
+      run: |
+        set -euo pipefail
+        started="$(python3 -c 'import time; print(time.monotonic())')"
+        set +e
+        "${{ steps.blender029.outputs.path }}"             --background --factory-startup --python-exit-code 1             --python coimbra/blender/render_cycles_benchmark_segment.py --             --blend "$GITHUB_WORKSPACE/source_026/coimbra-cycles-full-route.blend"             --prepare "$GITHUB_WORKSPACE/source_026/prepare.json"             --out "$GITHUB_WORKSPACE/artifacts/coimbra-029/metal-2x-a"             --device metal --start 181 --end 195             > artifacts/coimbra-029/metal-2x-a.log 2>&1 &
+        pid_a=$!
+
+        "${{ steps.blender029.outputs.path }}"             --background --factory-startup --python-exit-code 1             --python coimbra/blender/render_cycles_benchmark_segment.py --             --blend "$GITHUB_WORKSPACE/source_026/coimbra-cycles-full-route.blend"             --prepare "$GITHUB_WORKSPACE/source_026/prepare.json"             --out "$GITHUB_WORKSPACE/artifacts/coimbra-029/metal-2x-b"             --device metal --start 196 --end 210             > artifacts/coimbra-029/metal-2x-b.log 2>&1 &
+        pid_b=$!
+
+        wait "$pid_a"; status_a=$?
+        wait "$pid_b"; status_b=$?
+        set -e
+        ended="$(python3 -c 'import time; print(time.monotonic())')"
+
+        STARTED="$started" ENDED="$ended" STATUS_A="$status_a" STATUS_B="$status_b" python3 - <<'PY'
+        import json, os
+        from pathlib import Path
+        result = {
+            "wall_seconds": float(os.environ["ENDED"]) - float(os.environ["STARTED"]),
+            "status_a": int(os.environ["STATUS_A"]),
+            "status_b": int(os.environ["STATUS_B"]),
+        }
+        Path("artifacts/coimbra-029/metal-2x-wall.json").write_text(
+            json.dumps(result, indent=2) + "\n"
+        )
+        print(json.dumps(result, indent=2))
+        if result["status_a"] or result["status_b"]:
+            raise SystemExit(1)
+        PY
+
+    - name: Summarize benchmark against accepted GitHub Actions CPU
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 coimbra/scripts/summarize_cycles_render_benchmark.py artifacts/coimbra-029
+        test -s artifacts/coimbra-029/summary.json
+
+    - name: Remove benchmark PNGs and transient logs
+      shell: bash
+      run: |
+        set -euo pipefail
+        find artifacts/coimbra-029 -type d -name frames -prune -exec rm -rf {} +
+        rm -f artifacts/coimbra-029/metal-2x-a.log artifacts/coimbra-029/metal-2x-b.log
+
+    - name: Prepare sanitized benchmark result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+        s = json.loads(Path("artifacts/coimbra-029/summary.json").read_text())
+        safe = {
+            "verified": True,
+            "frames": s.get("frames"),
+            "frame_count": s.get("frame_count"),
+            "github_actions_baseline": s.get("github_actions_baseline"),
+            "modes": s.get("modes"),
+            "fastest_mac_mode": s.get("fastest_mac_mode"),
+            "fastest_mac_wall_seconds": s.get("fastest_mac_wall_seconds"),
+            "mac_speedup_vs_gha_single_cpu": s.get("mac_speedup_vs_gha_single_cpu"),
+            "metal_2x_speedup_vs_metal_1x": s.get("metal_2x_speedup_vs_metal_1x"),
+            "metal_cpu_speedup_vs_metal_1x": s.get("metal_cpu_speedup_vs_metal_1x"),
+            "mac_cpu_speedup_vs_gha_single_cpu": s.get("mac_cpu_speedup_vs_gha_single_cpu"),
+            "coimbra_source_sha": "d6cc6b030282442de1a968eff6d3a565152ce099",
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-029-render-benchmark
+        path: |
+          artifacts/coimbra-029/summary.json
+          artifacts/coimbra-029/metal-2x-wall.json
+          artifacts/coimbra-029/mac-cpu/receipt.json
+          artifacts/coimbra-029/metal-1x/receipt.json
+          artifacts/coimbra-029/metal-cpu/receipt.json
+          artifacts/coimbra-029/metal-2x-a/receipt.json
+          artifacts/coimbra-029/metal-2x-b/receipt.json
+        if-no-files-found: error
+        retention-days: 30

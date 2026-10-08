@@ -1,0 +1,85 @@
+name: Coimbra 034 WebGPU preflight
+description: Fixed loopback-only browser preflight, not visual production acceptance.
+outputs:
+  result:
+    description: Sanitized benchmark evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Download pinned Coimbra 034 WebGPU dist
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_034_RUN_ID }}
+        name: coimbra-034-webgpu-dist
+        github-token: ${{ github.token }}
+        path: site
+
+    - name: Verify pinned Coimbra 034 static input
+      shell: bash
+      run: |
+        set -euo pipefail
+        test -s site/index.html
+        test -s site/data/coimbra/index.json
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        index = json.loads(Path("site/data/coimbra/index.json").read_text())
+        assert index["lane"] == "coimbra-034-webgpu-feasibility"
+        assert index["route"]["source_contract"] == "COIMBRA-BRIDGE-003-SLOW"
+        assert len(index["route"]["anchors"]) == 7
+        assert len(index["tiles"]) == 96
+        print(json.dumps({
+            "lane": index["lane"],
+            "route_contract": index["route"]["source_contract"],
+            "route_anchors": len(index["route"]["anchors"]),
+            "tiles": len(index["tiles"]),
+        }, indent=2))
+        PY
+
+    - name: Run fixed Apple M4 WebGPU headless preflight
+      shell: bash
+      run: python3 scripts/run_coimbra_034_webgpu_benchmark.py
+
+    - name: Prepare sanitized 034 result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        payload = json.loads(Path("artifacts/coimbra-034/benchmark.json").read_text())
+        safe = {
+            "verified": True,
+            "source_sha": "32424271aaf0baddeabc5e757ef0881dbc08490c",
+            "source_run_id": 36891736084,
+            "source_artifact_id": 11175802942,
+            "source_artifact_digest": "sha256:d45558dcabe551f8ffc222af5d7c05f01503ee58c47cc51aabe1ee02a9bce30c",
+            "route_contract": payload.get("route_contract"),
+            "route_anchors": payload.get("route_anchors"),
+            "adapter": payload.get("adapter"),
+            "benchmark": payload.get("benchmark"),
+            "mac_preflight": payload.get("mac_preflight"),
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-034-webgpu-benchmark
+        path: artifacts/coimbra-034/benchmark.json
+        if-no-files-found: error
+        retention-days: 30

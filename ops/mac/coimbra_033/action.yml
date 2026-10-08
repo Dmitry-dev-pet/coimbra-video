@@ -1,0 +1,149 @@
+name: Coimbra 033 camera review
+description: Fixed camera-motion comparison, without production promotion.
+outputs:
+  result:
+    description: Sanitized review evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra 033 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download accepted Coimbra 030 production look
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_030_RUN_ID }}
+        name: coimbra-030-production-look-review
+        github-token: ${{ github.token }}
+        path: source_030_download
+
+    - name: Download accepted Coimbra 026 prepare evidence
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_026_RUN_ID }}
+        name: coimbra-026-prepared
+        github-token: ${{ github.token }}
+        path: source_026_download
+
+    - name: Download accepted Coimbra 032 baseline video
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/mac-access
+        run-id: ${{ env.COIMBRA_032_RUN_ID }}
+        name: coimbra-032-slow60-production-look
+        github-token: ${{ github.token }}
+        path: source_032_download
+
+    - name: Normalize and verify pinned Coimbra 033 sources
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p source_030 source_026 source_032
+
+        blend="$(find source_030_download -type f -name 'coimbra-production-look.blend' -print -quit)"
+        review="$(find source_030_download -type f -name 'production-look-review.json' -print -quit)"
+        prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+        baseline="$(find source_032_download -type f -name 'coimbra-production-look-slow60-metal-24s.mp4' -print -quit)"
+
+        test -n "$blend"
+        test -n "$review"
+        test -n "$prepare"
+        test -n "$baseline"
+
+        cp "$blend" source_030/coimbra-production-look.blend
+        cp "$review" source_030/production-look-review.json
+        cp "$prepare" source_026/prepare.json
+        cp "$baseline" source_032/coimbra-production-look-slow60-metal-24s.mp4
+
+        test "$(shasum -a 256 source_030/coimbra-production-look.blend | awk '{print $1}')" = "$COIMBRA_030_BLEND_SHA256"
+        test "$(shasum -a 256 source_032/coimbra-production-look-slow60-metal-24s.mp4 | awk '{print $1}')" = "$COIMBRA_032_VIDEO_SHA256"
+
+    - name: Resolve fixed Blender executable
+      id: blender033
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Render and verify Coimbra 033 camera-motion review
+      shell: bash
+      env:
+        BLENDER_PATH: ${{ steps.blender033.outputs.path }}
+      run: bash scripts/run_coimbra_033.sh
+
+    - name: Prepare sanitized 033 result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        v = json.loads(Path("artifacts/coimbra-033/verification.json").read_text())
+        review = json.loads(Path("artifacts/coimbra-033/camera-motion-review.json").read_text())
+        safe = {
+            "verified": v.get("verified"),
+            "frame_count": v.get("frame_count"),
+            "fps": v.get("fps"),
+            "duration_seconds": v.get("duration_seconds"),
+            "proxy_resolution": v.get("proxy_resolution"),
+            "current_linear_cv": v.get("current_linear_cv"),
+            "smooth_linear_cv": v.get("smooth_linear_cv"),
+            "current_angular_change_p95": v.get("current_angular_change_p95"),
+            "smooth_angular_change_p95": v.get("smooth_angular_change_p95"),
+            "current_angular_step_p95": v.get("current_angular_step_p95"),
+            "smooth_angular_step_p95": v.get("smooth_angular_step_p95"),
+            "proxy_render_seconds": (review.get("proxy") or {}).get("total_seconds"),
+            "proxy_sha256": v.get("proxy_sha256"),
+            "comparison_sha256": v.get("comparison_sha256"),
+            "review_required": v.get("review_required"),
+            "production_acceptance": v.get("production_acceptance"),
+            "coimbra_source_sha": "ec91929b28581e2ef4ceb51ebe3f05451e5aea9d",
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-033-camera-motion-review
+        path: |
+          artifacts/coimbra-033/coimbra-033-smooth-camera-proxy-24s.mp4
+          artifacts/coimbra-033/coimbra-033-vs-032-side-by-side.mp4
+          artifacts/coimbra-033/review/
+          artifacts/coimbra-033/camera-motion-review.json
+          artifacts/coimbra-033/proxy-ffprobe.json
+          artifacts/coimbra-033/comparison-ffprobe.json
+          artifacts/coimbra-033/verification.json
+          artifacts/coimbra-033/attribution.txt
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30

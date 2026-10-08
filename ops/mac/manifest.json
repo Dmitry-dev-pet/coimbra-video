@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "files": {
+    "render_coimbra_036_preview.py": "35787e3c0dea8decb64292043960a8d3666019c3",
+    "render_coimbra_037_infrastructure_stills.py": "c2c3bafa7354a691f4f24744dd27d5fa6aedc0ae",
+    "run_coimbra_031.sh": "dfe89d482949d5b33234b872bcc7dc46731ee5eb",
+    "run_coimbra_032.sh": "b0d55b7749a592678202c7c48efbb47cf66d8b69",
+    "run_coimbra_033.sh": "e4f0ba2d38cdbe167ac3f54529f10a731a809afa",
+    "run_coimbra_034_webgpu_benchmark.py": "7d8efbbff0919b36510fd6b5d0e51824e6a0a661",
+    "run_coimbra_035.sh": "1a90b0b1828a4bc4a3d167e595f1d36bb51fd099",
+    "run_coimbra_036.sh": "1215ebee577c7068f8d0f6a8ee55c4a0bd26d9fd",
+    "run_coimbra_036_preview.sh": "bc7f468d6663e47d2995ce47ba1d5d1fc4cacc20"
+  },
+  "relocation_changes": {
+    "run_coimbra_034_webgpu_benchmark.py": {
+      "original_blob": "67449c938757ad9905535b58ade78a622c70f76c",
+      "reason": "Resolve site and artifacts relative to the execution workspace, not the action package installation directory."
+    }
+  }
+}

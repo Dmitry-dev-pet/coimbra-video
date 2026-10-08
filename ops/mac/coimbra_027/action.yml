@@ -1,0 +1,115 @@
+name: Coimbra 027 Metal checkpoints
+description: Fixed CPU-Metal comparison using the accepted frozen scene.
+outputs:
+  result:
+    description: Sanitized comparison evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra 027 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download accepted Coimbra 026 frozen scene
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_026_RUN_ID }}
+        name: coimbra-026-prepared
+        github-token: ${{ github.token }}
+        path: source_026_download
+
+    - name: Normalize and verify frozen source files
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p source_026 artifacts/coimbra-027
+        blend="$(find source_026_download -type f -name 'coimbra-cycles-full-route.blend' -print -quit)"
+        prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+        test -n "$blend"
+        test -n "$prepare"
+        cp "$blend" source_026/coimbra-cycles-full-route.blend
+        cp "$prepare" source_026/prepare.json
+        test "$(shasum -a 256 source_026/coimbra-cycles-full-route.blend | awk '{print $1}')" =             "5eed3da289693015ed6b491eb26f992f0c579a1625540f1f4acc13155860a590"
+
+    - name: Resolve fixed Blender executable
+      id: blender027
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Render identical CPU and Metal checkpoints
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${{ steps.blender027.outputs.path }}"             --background             --factory-startup             --python-exit-code 1             --python coimbra/blender/render_cycles_metal_checkpoints.py --             --blend "$GITHUB_WORKSPACE/source_026/coimbra-cycles-full-route.blend"             --prepare "$GITHUB_WORKSPACE/source_026/prepare.json"             --out "$GITHUB_WORKSPACE/artifacts/coimbra-027"
+
+    - name: Compare raw CPU and Metal PNGs
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 -m venv .venv-coimbra-027
+        .venv-coimbra-027/bin/python -m pip install --upgrade pip
+        .venv-coimbra-027/bin/python -m pip install "Pillow>=11,<13"
+        .venv-coimbra-027/bin/python coimbra/scripts/compare_cycles_metal_images.py             artifacts/coimbra-027
+        .venv-coimbra-027/bin/python coimbra/scripts/verify_cycles_metal_checkpoints.py             artifacts/coimbra-027
+
+    - name: Prepare sanitized result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        v = json.loads(Path("artifacts/coimbra-027/verification.json").read_text())
+        safe = {
+            "verified": v.get("verified"),
+            "frames": v.get("frames"),
+            "resolution": v.get("resolution"),
+            "cpu_total_seconds": v.get("cpu_total_seconds"),
+            "metal_total_seconds": v.get("metal_total_seconds"),
+            "speedup_cpu_over_metal": v.get("speedup_cpu_over_metal"),
+            "metal_devices": v.get("metal_devices"),
+            "comparison": v.get("comparison"),
+            "blend_sha256": v.get("blend_sha256"),
+            "protected_sha256": v.get("protected_sha256"),
+            "coimbra_source_sha": "f24b1515da6f820ddb395e81d862b58d40b651c6",
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-027-metal-checkpoints
+        path: |
+          artifacts/coimbra-027/
+        if-no-files-found: error
+        retention-days: 30

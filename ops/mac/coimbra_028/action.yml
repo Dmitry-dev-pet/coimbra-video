@@ -1,0 +1,178 @@
+name: Coimbra 028 Metal full route
+description: Fixed full-route render, attribution, encoding and independent verification.
+outputs:
+  result:
+    description: Sanitized delivery evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra 028 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download accepted Coimbra 026 frozen scene
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.COIMBRA_026_RUN_ID }}
+        name: coimbra-026-prepared
+        github-token: ${{ github.token }}
+        path: source_026_download
+
+    - name: Normalize and verify frozen source files
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p source_026 artifacts/coimbra-028
+        blend="$(find source_026_download -type f -name 'coimbra-cycles-full-route.blend' -print -quit)"
+        prepare="$(find source_026_download -type f -name 'prepare.json' -print -quit)"
+        test -n "$blend"
+        test -n "$prepare"
+        cp "$blend" source_026/coimbra-cycles-full-route.blend
+        cp "$prepare" source_026/prepare.json
+        test "$(shasum -a 256 source_026/coimbra-cycles-full-route.blend | awk '{print $1}')" =             "5eed3da289693015ed6b491eb26f992f0c579a1625540f1f4acc13155860a590"
+
+    - name: Resolve fixed Blender executable
+      id: blender028
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Render all 360 native frames on Apple Metal
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${{ steps.blender028.outputs.path }}"             --background             --factory-startup             --python-exit-code 1             --python coimbra/blender/render_cycles_metal_full_route.py --             --blend "$GITHUB_WORKSPACE/source_026/coimbra-cycles-full-route.blend"             --prepare "$GITHUB_WORKSPACE/source_026/prepare.json"             --out "$GITHUB_WORKSPACE/artifacts/coimbra-028"
+        test "$(find artifacts/coimbra-028/frames -name 'frame_*.png' | wc -l | tr -d ' ')" = "360"
+        test -s artifacts/coimbra-028/render-receipt.json
+
+    - name: Encode verified H.264 delivery with source attribution
+      shell: bash
+      run: |
+        set -euo pipefail
+        command -v ffmpeg >/dev/null
+        command -v ffprobe >/dev/null
+        ffmpeg -hide_banner -encoders 2>/dev/null | grep -q 'libx264'
+        ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' overlay '
+
+        printf '%s\n'             'Terrain / Ortho © DGT · Open data / CC BY 4.0 | Map data © OpenStreetMap contributors · ODbL'             > artifacts/coimbra-028/attribution.txt
+
+        python3 -m venv .venv-coimbra-028-encode
+        .venv-coimbra-028-encode/bin/python -m pip install --quiet --upgrade pip
+        .venv-coimbra-028-encode/bin/python -m pip install --quiet "Pillow>=11,<13"
+
+        .venv-coimbra-028-encode/bin/python - <<'PY'
+        from pathlib import Path
+        from PIL import Image, ImageDraw, ImageFont
+
+        text = Path("artifacts/coimbra-028/attribution.txt").read_text().strip()
+        font_path = None
+        for candidate in (
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/System/Library/Fonts/Supplemental/Helvetica.ttf",
+        ):
+            if Path(candidate).is_file():
+                font_path = candidate
+                break
+        if font_path is None:
+            raise SystemExit("No approved macOS attribution font found")
+
+        font = ImageFont.truetype(font_path, 18)
+        bar = Image.new("RGBA", (1600, 44), (0, 0, 0, 100))
+        draw = ImageDraw.Draw(bar)
+        draw.text((14, 10), text, font=font, fill=(255, 255, 255, 255))
+        bar.save("artifacts/coimbra-028/attribution-overlay.png")
+        PY
+
+        ffmpeg -y             -framerate 30             -start_number 1             -i artifacts/coimbra-028/frames/frame_%04d.png             -loop 1             -i artifacts/coimbra-028/attribution-overlay.png             -filter_complex "[0:v][1:v]overlay=0:H-h:shortest=1"             -frames:v 360             -c:v libx264             -pix_fmt yuv420p             -crf 18             -preset medium             -g 30             -keyint_min 30             -sc_threshold 0             -movflags +faststart             artifacts/coimbra-028/coimbra-metal-full-route-12s.mp4
+
+        ffprobe -v error             -count_frames             -select_streams v:0             -show_entries stream=codec_name,pix_fmt,width,height,r_frame_rate,nb_read_frames:format=duration             -of json             artifacts/coimbra-028/coimbra-metal-full-route-12s.mp4             > artifacts/coimbra-028/ffprobe.json
+
+    - name: Decode review frames from final video
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p artifacts/coimbra-028/review
+        for pair in '0:001' '180:181' '359:360'; do
+          ffmpeg -y               -i artifacts/coimbra-028/coimbra-metal-full-route-12s.mp4               -vf "select=eq(n\,${pair%%:*})"               -fps_mode vfr               -frames:v 1               "artifacts/coimbra-028/review/frame-${pair##*:}.png"
+        done
+
+    - name: Independently verify complete Metal delivery
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 coimbra/scripts/verify_cycles_metal_full_route.py artifacts/coimbra-028
+        test -s artifacts/coimbra-028/verification.json
+
+    - name: Remove intermediate frame PNGs after verification
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf artifacts/coimbra-028/frames
+
+    - name: Prepare sanitized result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        v = json.loads(Path("artifacts/coimbra-028/verification.json").read_text())
+        safe = {
+            "verified": v.get("verified"),
+            "frame_count": v.get("frame_count"),
+            "fps": v.get("fps"),
+            "duration_seconds": v.get("duration_seconds"),
+            "resolution": v.get("resolution"),
+            "metal_total_seconds": v.get("metal_total_seconds"),
+            "metal_devices": v.get("metal_devices"),
+            "video_sha256": v.get("video_sha256"),
+            "blend_sha256": v.get("blend_sha256"),
+            "protected_sha256": v.get("protected_sha256"),
+            "coimbra_source_sha": "ad76d80802dba0b7c52320c0653886592e9aa3dc",
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-028-metal-full-route
+        path: |
+          artifacts/coimbra-028/coimbra-metal-full-route-12s.mp4
+          artifacts/coimbra-028/review/
+          artifacts/coimbra-028/render-receipt.json
+          artifacts/coimbra-028/ffprobe.json
+          artifacts/coimbra-028/verification.json
+          artifacts/coimbra-028/attribution.txt
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30

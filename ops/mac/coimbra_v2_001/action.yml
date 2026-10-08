@@ -1,0 +1,199 @@
+name: Coimbra V2-001 hero frame
+description: Fixed source registration and neutral still, without production promotion.
+outputs:
+  result:
+    description: Sanitized still-image evidence.
+    value: ${{ steps.result.outputs.result }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare project package
+      shell: bash
+      env:
+        COIMBRA_ACTION_DIR: ${{ github.action_path }}
+      run: python3 "$COIMBRA_ACTION_DIR/../prepare.py"
+
+    - name: Checkout fixed Coimbra V2-001 source
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra
+        git init coimbra
+        git -C coimbra remote add origin https://github.com/Dmitry-dev-pet/coimbra-video.git
+        git -C coimbra fetch --depth=1 origin "$COIMBRA_SOURCE_SHA"
+        git -C coimbra checkout --detach FETCH_HEAD
+        test "$(git -C coimbra rev-parse HEAD)" = "$COIMBRA_SOURCE_SHA"
+
+    - name: Download fixed V2 photogrammetry source
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.V2_SOURCE_RUN_ID }}
+        name: coimbra-v2-001-photogrammetry
+        github-token: ${{ github.token }}
+        path: source_photo_download
+
+    - name: Download fixed V2 DGT source
+      uses: actions/download-artifact@v4
+      with:
+        repository: Dmitry-dev-pet/coimbra-video
+        run-id: ${{ env.V2_SOURCE_RUN_ID }}
+        name: coimbra-v2-001-dgt
+        github-token: ${{ github.token }}
+        path: source_dgt_download
+
+    - name: Normalize and verify fixed V2 sources
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf coimbra/bridge_output_v2_001
+        mkdir -p             coimbra/bridge_output_v2_001/photogrammetry             coimbra/bridge_output_v2_001/dgt             coimbra/bridge_output_v2_001/registration             artifacts/coimbra-v2-001
+        cp -R source_photo_download/. coimbra/bridge_output_v2_001/photogrammetry/
+        cp -R source_dgt_download/. coimbra/bridge_output_v2_001/dgt/
+
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        root = Path("coimbra/bridge_output_v2_001")
+        source = json.loads((root / "photogrammetry/source-manifest.json").read_text())
+        assert source["model_uid"] == "4175f64513a44546b65a119af5aacdff"
+        assert source["license"] == "CC Attribution"
+        assert (root / "dgt/prepared/coimbra-v2-001-terrain-2m.npz").is_file()
+        assert (root / "dgt/prepared/coimbra-v2-001-mds-50cm.tif").is_file()
+        assert (root / "dgt/ortho/coimbra-v2-001-ortho-2025.jpg").is_file()
+        print("verified fixed V2-001 source artifacts")
+        PY
+
+    - name: Resolve fixed Blender executable
+      id: blenderv2
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v blender >/dev/null 2>&1; then
+          path="$(command -v blender)"
+        elif [[ -x /Applications/Blender.app/Contents/MacOS/Blender ]]; then
+          path=/Applications/Blender.app/Contents/MacOS/Blender
+        else
+          echo "::error::Blender is not installed in an approved location"
+          exit 2
+        fi
+        echo "path=$path" >> "$GITHUB_OUTPUT"
+
+    - name: Inspect fixed photogrammetry in Blender
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd coimbra
+        "${{ steps.blenderv2.outputs.path }}"             --background             --factory-startup             --python-exit-code 1             --python blender/inspect_v2_001_photogrammetry.py
+
+    - name: Register photogrammetry to DGT
+      shell: bash
+      run: |
+        set -euo pipefail
+        command -v python3 >/dev/null
+        python3 -m venv .venv-coimbra-v2
+        .venv-coimbra-v2/bin/python -m pip install --quiet --upgrade pip
+        .venv-coimbra-v2/bin/python -m pip install --quiet             "numpy==2.2.6"             "opencv-python-headless==4.12.0.88"             "pyproj==3.7.2"
+        (
+          cd coimbra
+          ../.venv-coimbra-v2/bin/python scripts/register_v2_001_photogrammetry.py
+        )
+
+    - name: Verify automatic registration
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        root = Path("coimbra/bridge_output_v2_001/registration")
+        r = json.loads((root / "registration.json").read_text())
+        assert r["version"] == "coimbra-v2-001-registration-v1"
+        assert int(r["inliers"]) >= 24
+        assert float(r["inlier_ratio"]) >= 0.15
+        assert (root / "registration-matches.jpg").is_file()
+        print(
+            "registration:",
+            r["inliers"],
+            "inliers; ratio=",
+            r["inlier_ratio"],
+            "scale=",
+            r["scale"],
+        )
+        PY
+
+    - name: Render neutral Coimbra V2-001 hero frame on Metal
+      shell: bash
+      run: |
+        set -euo pipefail
+        (
+          cd coimbra
+          "${{ steps.blenderv2.outputs.path }}"               --background               --factory-startup               --python-exit-code 1               --python blender/render_v2_001_hero.py
+        )
+
+    - name: Verify V2-001 hero receipt
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        root = Path("coimbra/bridge_output_v2_001/hero")
+        receipt = json.loads((root / "hero-manifest.json").read_text())
+        assert receipt["version"] == "coimbra-v2-001-hero-v1"
+        assert receipt["resolution"] == [1600, 1000]
+        assert receipt["cycles_samples"] == 16
+        assert receipt["motion_blur"] is False
+        assert receipt["depth_of_field"] is False
+        assert receipt["cinematic_grade"] is False
+        assert receipt["metal_devices"]
+        assert (root / "coimbra-v2-001-hero.png").is_file()
+        assert (root / "ATTRIBUTION.txt").is_file()
+        print("verified neutral V2-001 hero still")
+        PY
+
+        cp coimbra/bridge_output_v2_001/hero/* artifacts/coimbra-v2-001/
+        cp coimbra/bridge_output_v2_001/registration/registration.json artifacts/coimbra-v2-001/
+        cp coimbra/bridge_output_v2_001/registration/registration-matches.jpg artifacts/coimbra-v2-001/
+        cp coimbra/bridge_output_v2_001/registration/photogrammetry-topdown.png artifacts/coimbra-v2-001/
+
+    - name: Prepare sanitized V2-001 result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        result="$(
+          python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        h = json.loads(Path("artifacts/coimbra-v2-001/hero-manifest.json").read_text())
+        r = json.loads(Path("artifacts/coimbra-v2-001/registration.json").read_text())
+        safe = {
+            "verified": True,
+            "resolution": h.get("resolution"),
+            "lens_mm": h.get("lens_mm"),
+            "cycles_samples": h.get("cycles_samples"),
+            "metal_devices": h.get("metal_devices"),
+            "render_seconds": h.get("render_seconds"),
+            "image_sha256": h.get("image_sha256"),
+            "registration_inliers": r.get("inliers"),
+            "registration_inlier_ratio": r.get("inlier_ratio"),
+            "photogrammetry_transform": h.get("photogrammetry_transform"),
+            "coimbra_source_sha": "93a80205677bf4d850bbf80a56c09222838788b0",
+        }
+        print(json.dumps(safe, separators=(",", ":"), sort_keys=True))
+        PY
+        )"
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coimbra-v2-001-hero-frame
+        path: artifacts/coimbra-v2-001/
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 30
