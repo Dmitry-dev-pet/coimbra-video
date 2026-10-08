@@ -28,17 +28,36 @@ PREPARE_STEP = {
 
 
 class MacActionsTests(unittest.TestCase):
+    def check_syntax(self, action, label):
+        self.assertNotIn("inputs", action)
+        self.assertEqual(action["runs"]["using"], "composite")
+        for step in action["runs"]["steps"]:
+            if "uses" in step:
+                self.assertIn(step["uses"], {
+                    "actions/download-artifact@v4", "actions/upload-artifact@v4"})
+            if "run" in step:
+                self.assertEqual(step["shell"], "bash")
+                script = re.sub(r"\$\{\{.*?\}\}", "/expression", step["run"])
+                subprocess.run(["bash", "-n"], input=script, text=True, check=True)
+                for code in re.findall(r"<<'PY'\n(.*?)^PY\s*$", script,
+                                       flags=re.MULTILINE | re.DOTALL):
+                    ast.parse(code, filename=f"{label}:{step.get('name', 'step')}")
+        serialized = json.dumps(action)
+        self.assertNotIn("github.event.issue.body", serialized)
+        self.assertNotIn("inputs.command", serialized)
+        self.assertNotIn("secrets.", serialized)
+
     def test_action_inventory_is_complete_and_closed(self):
         lanes = json.loads((PACKAGE / "lanes.json").read_text())["lanes"]
         self.assertEqual(set(lanes), EXPECTED)
-        self.assertEqual({p.parent.name for p in PACKAGE.glob("*/action.yml")}, EXPECTED)
+        self.assertEqual({p.parent.name for p in PACKAGE.glob("*/action.yml")},
+                         EXPECTED | {"recover_036"})
 
     def test_composite_contract_and_shell_syntax(self):
         for lane in sorted(EXPECTED):
             with self.subTest(lane=lane):
                 action = yaml.safe_load((PACKAGE / lane / "action.yml").read_text())
-                self.assertNotIn("inputs", action)
-                self.assertEqual(action["runs"]["using"], "composite")
+                self.check_syntax(action, lane)
                 steps = action["runs"]["steps"]
                 self.assertEqual(steps[0], PREPARE_STEP)
                 self.assertEqual(action["outputs"]["result"]["value"],
@@ -46,21 +65,19 @@ class MacActionsTests(unittest.TestCase):
                 self.assertEqual(sum(s.get("id") == "result" for s in steps), 1)
                 self.assertEqual(steps[-1]["uses"], "actions/upload-artifact@v4")
                 self.assertEqual(steps[-1]["with"]["if-no-files-found"], "error")
-                for step in steps:
-                    if "uses" in step:
-                        self.assertIn(step["uses"], {
-                            "actions/download-artifact@v4", "actions/upload-artifact@v4"})
-                    if "run" in step:
-                        self.assertEqual(step["shell"], "bash")
-                        script = re.sub(r"\$\{\{.*?\}\}", "/expression", step["run"])
-                        subprocess.run(["bash", "-n"], input=script, text=True, check=True)
-                        for code in re.findall(r"<<'PY'\n(.*?)^PY\s*$", script,
-                                               flags=re.MULTILINE | re.DOTALL):
-                            ast.parse(code, filename=f"{lane}:{step.get('name', 'step')}")
-                serialized = json.dumps(action)
-                self.assertNotIn("github.event.issue.body", serialized)
-                self.assertNotIn("inputs.command", serialized)
-                self.assertNotIn("secrets.", serialized)
+
+    def test_auxiliary_actions_preserve_scope(self):
+        recovery = yaml.safe_load((PACKAGE / "recover_036" / "action.yml").read_text())
+        self.check_syntax(recovery, "recovery")
+        self.assertEqual(len(recovery["runs"]["steps"]), 3)
+        self.assertNotIn("actions/checkout", json.dumps(recovery))
+        self.assertNotIn("prepare.py", json.dumps(recovery))
+        preflight = yaml.safe_load((PACKAGE / "action.yml").read_text())
+        self.check_syntax(preflight, "preflight")
+        self.assertEqual(len(preflight["runs"]["steps"]), 2)
+        self.assertEqual(preflight["outputs"]["ready"]["value"],
+                         "${{ steps.check.outputs.ready }}")
+        self.assertNotIn("blender --", json.dumps(preflight))
 
     def test_each_action_prepares_only_helpers_and_fixed_environment(self):
         for lane in sorted(EXPECTED):
