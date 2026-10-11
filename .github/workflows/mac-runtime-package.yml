@@ -1,17 +1,11 @@
 name: Mac runtime package
 
+# Unfiltered PR CI is required so a single stable check can be made mandatory.
+# This workflow never runs code on a self-hosted Mac.
 on:
   pull_request:
-    paths:
-      - 'ops/mac/**'
-      - 'tests/test_mac_*.py'
-      - '.github/workflows/mac-runtime-package.yml'
   push:
     branches: [main]
-    paths:
-      - 'ops/mac/**'
-      - 'tests/test_mac_*.py'
-      - '.github/workflows/mac-runtime-package.yml'
 
 permissions:
   contents: read
