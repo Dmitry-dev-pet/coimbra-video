@@ -188,50 +188,61 @@ function analyseMesh(mesh: THREE.Mesh, material: string): VegetationSource {
   };
 }
 
-function palette(name: string): { color: number; emissive: number } {
-  if (name.startsWith("Semantic_Forest")) return { color: 0x456d52, emissive: 0x15291b };
-  if (name.startsWith("Semantic_Scrub")) return { color: 0x54765b, emissive: 0x1a291c };
-  if (name.includes("Undergrowth_Dry")) return { color: 0x747957, emissive: 0x262818 };
-  if (name.includes("Undergrowth")) return { color: 0x536f49, emissive: 0x172719 };
-  return { color: 0x56835a, emissive: 0x18301b };
+function palette(name: string): number {
+  if (name.startsWith("Semantic_Forest")) return 0x335c3e;
+  if (name.startsWith("Semantic_Scrub")) return 0x4a6b41;
+  if (name.includes("Undergrowth_Dry")) return 0x686d41;
+  if (name.includes("Undergrowth")) return 0x47653b;
+  return 0x3c6745;
 }
 
 function createLobes(source: VegetationSource): THREE.InstancedMesh | null {
   if (source.crowns.length === 0) return null;
-  const p = palette(source.crowns[0].material);
-  const material = new THREE.MeshStandardMaterial({
-    color: p.color, emissive: p.emissive, emissiveIntensity: 0.12,
-    roughness: 0.97, metalness: 0, flatShading: false,
-  });
-  const geometry = new THREE.SphereGeometry(1, 12, 9);
-  const mesh = new THREE.InstancedMesh(geometry, material, source.crowns.length * 3);
-  mesh.name = "Coimbra041_Smoothed_" + source.mesh.name;
+  const tint = palette(source.crowns[0].material);
+  // This is an illustrative, intentionally UNLIT vegetation colour swatch:
+  // the accepted 032/040 lights blow physically lit greens almost white in
+  // this diagnostic renderer. Keep tone mapping off for the foliage layer
+  // rather than altering any accepted source or global scene lighting.
+  const material = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  const geometry = new THREE.SphereGeometry(1, 11, 8);
+  const mesh = new THREE.InstancedMesh(geometry, material, source.crowns.length * 5);
+  mesh.name = "Coimbra041_FoliageClusters_" + source.mesh.name;
   mesh.frustumCulled = false;
   mesh.castShadow = false;
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = false;
   const transform = new THREE.Object3D();
   let instance = 0;
   for (const crown of source.crowns) {
-    const r = crown.radii;
+    const radii = crown.radii;
     const seed = Math.sin(crown.centre.x * 12.9898 + crown.centre.z * 78.233) * 43758.5453;
     const phase = seed - Math.floor(seed);
     const angle = phase * Math.PI * 2;
-    const dx = Math.cos(angle), dz = Math.sin(angle);
-    const variants = [
-      [0, 0, 0, 1.02, 0.98, 1.02],
-      [dx * 0.23, 0.20, dz * 0.23, 0.73, 0.68, 0.73],
-      [-dz * 0.22, -0.13, dx * 0.22, 0.70, 0.72, 0.70],
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    // Five small overlapping crowns give scalloped foliage rather than one
+    // giant white ellipsoid. All shapes derive from the accepted crown bbox.
+    const variants: [number, number, number, number, number, number, number][] = [
+      [-0.30, -0.18,  0.03, 0.73, 0.78, 0.74, 0.83],
+      [ 0.27, -0.12,  0.17, 0.70, 0.67, 0.72, 1.00],
+      [-0.04,  0.30, -0.10, 0.75, 0.66, 0.73, 0.92],
+      [-0.27,  0.26,  0.26, 0.56, 0.56, 0.60, 1.08],
+      [ 0.30,  0.22,  0.29, 0.54, 0.59, 0.56, 0.90],
     ];
-    for (const [offsetX, offsetY, offsetZ, scaleX, scaleY, scaleZ] of variants) {
-      transform.position.set(crown.centre.x + offsetX * r.x,
-        crown.centre.y + offsetY * r.y, crown.centre.z + offsetZ * r.z);
-      transform.scale.set(r.x * scaleX, r.y * scaleY, r.z * scaleZ);
+    for (const [ox, oz, oy, sx, sy, sz, shade] of variants) {
+      const dx = ox * ca - oz * sa;
+      const dz = ox * sa + oz * ca;
+      transform.position.set(crown.centre.x + dx * radii.x,
+        crown.centre.y + oy * radii.y, crown.centre.z + dz * radii.z);
+      transform.scale.set(radii.x * sx, radii.y * sy, radii.z * sz);
       transform.rotation.set(0, 0, 0);
       transform.updateMatrix();
-      mesh.setMatrixAt(instance++, transform.matrix);
+      mesh.setMatrixAt(instance, transform.matrix);
+      const color = new THREE.Color(tint).multiplyScalar(shade * (0.96 + phase * 0.08));
+      mesh.setColorAt(instance, color);
+      instance++;
     }
   }
   mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   mesh.count = instance;
   return mesh;
 }
