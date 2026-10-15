@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { StreetQA } from "./street-qa";
+import { fitStreetQATextures } from "./street-qa-textures";
 
 const app = document.getElementById("app")!;
 const stage = document.getElementById("stage")!;
@@ -37,6 +38,9 @@ async function main() {
   const modelUrl = new URL("data/coimbra-032-frame181.glb", document.baseURI);
   status.textContent = "Loading accepted 032 scene…";
   const gltf = await loader.loadAsync(modelUrl.href);
+  const streetTextureQA = new URLSearchParams(location.search).has("streetQA")
+    ? fitStreetQATextures(gltf.scene)
+    : null;
   scene.add(gltf.scene);
 
   const importedCamera = gltf.cameras.find(
@@ -77,7 +81,8 @@ async function main() {
   status.textContent =
     "032 source loaded · " +
     Math.round(size.x) + "×" + Math.round(size.y) + "×" + Math.round(size.z) +
-    " scene units · frame 181";
+    " scene units · frame 181" +
+    (streetTextureQA?.resized ? " · QA texture reduced for 8192px adapter" : "");
 
   function resize() {
     const width = stage.clientWidth;
