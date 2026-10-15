@@ -189,6 +189,9 @@ export class StreetQA {
       p95_frame_ms: quantile(sorted, 0.95),
       fps_from_mean: mean && mean > 0 ? 1000 / mean : null,
       renderer: "three.js WebGPURenderer",
+      backend: (this.renderer as unknown as {
+        backend?: { constructor?: { name?: string } };
+      }).backend?.constructor?.name ?? "unknown",
       accepted_scene: "Coimbra 032 frame 181 GLB",
       qa_runtime_texture_adaptation: this.source.userData.coimbra039TextureQA ?? null,
     };
