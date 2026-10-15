@@ -8,6 +8,7 @@ Test a bounded, temporary look improvement on the accepted Coimbra 032/037 GLB f
 - Use accepted source GLB SHA-256 c02e245f6c59e5f3ec7999b00c8bfb7acc4f96cc8a6d893f708c060757bb8dfd; no regeneration or mutation of its geometry/materials.
 - Temporary facade overlay: original near-vertical City_Buildings triangles whose vertices are all inside the bounding square, muted plaster colors. These colors are illustrative, not surveyed real façade materials.
 - Temporary road strips: existing published Coimbra 034 OSM road data, with every vertex snapped to original imported City_Terrain. Drop segments lacking valid ground or with steep discontinuities. Widths are illustrative, not a real surveyed boundary.
+- Where available, overlay only the original accepted City_Roads_* mesh triangles whose three vertices lie within the same patch, with a constant shaded-asphalt swatch. This sits above existing road faces and corrects the visual problem where terrain-grounded strips could be occluded. Its geometry is copied in memory; the accepted road mesh and GLB remain untouched.
 - Temporary balanced sky fill, lower exposure, less severe inherited directional lighting and light fog. Original lights, fog, background and exposure restored on exiting the patch.
 
 ## Interaction
