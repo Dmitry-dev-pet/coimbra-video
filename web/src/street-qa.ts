@@ -190,6 +190,7 @@ export class StreetQA {
       fps_from_mean: mean && mean > 0 ? 1000 / mean : null,
       renderer: "three.js WebGPURenderer",
       accepted_scene: "Coimbra 032 frame 181 GLB",
+      qa_runtime_texture_adaptation: this.source.userData.coimbra039TextureQA ?? null,
     };
   }
 
