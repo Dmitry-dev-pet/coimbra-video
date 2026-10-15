@@ -56,7 +56,8 @@ try {
   await page.waitForFunction(() => {
     const metrics = globalThis.coimbra037?.poloVisual?.metrics();
     return metrics && !metrics.pending && metrics.active &&
-      metrics.facadeTriangles >= 10 && metrics.roadStrips >= 1;
+      metrics.facadeTriangles >= 10 && metrics.roadStrips >= 1 &&
+      metrics.acceptedRoadTriangles > 0;
   }, undefined, { timeout: 120000, polling: 300 });
 
   const after = await page.evaluate(() => ({
@@ -108,6 +109,7 @@ try {
     baselineBytes: beforeBuffer.length, candidateBytes: afterBuffer.length,
     facadeTriangles: after.visual.facadeTriangles,
     roadStrips: after.visual.roadStrips,
+    acceptedRoadTriangles: after.visual.acceptedRoadTriangles,
     backend: before.qa.backend,
     cameraEyeM: before.qa.measured_eye_height_m,
     reportedFps: before.qa.fps_from_mean ?? null,
