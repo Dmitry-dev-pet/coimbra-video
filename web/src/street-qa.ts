@@ -92,6 +92,7 @@ export class StreetQA {
   private readonly pressed = new Set<string>();
   private readonly times: number[] = [];
   private active = false;
+  private currentSpotId: string | null = null;
   private pending = false;
   private epoch = 0;
   private lastTime = 0;
@@ -181,6 +182,8 @@ export class StreetQA {
     const epoch = ++this.epoch;
     this.pending = true;
     this.toggle.disabled = true;
+    this.select.disabled = true;
+    this.capture.disabled = true;
     this.message.textContent = "Finding OSM road and accepted-scene ground at " + spot.label + "…";
     try {
       const location = await loadStreetRoads(spot);
@@ -202,6 +205,7 @@ export class StreetQA {
       this.active = true;
       this.controls.enabled = false;
       this.location = location;
+      this.currentSpotId = spot.id;
       this.groundHeight = ground;
       this.camera.fov = 68;
       this.camera.near = 0.12;
@@ -229,10 +233,14 @@ export class StreetQA {
       this.message.textContent = spot.label + " · camera 1.7 m above City_Terrain · " +
         location.roadDistance.toFixed(1) + " m from 010 anchor · drag to look · WASD to walk";
     } catch (error) {
+      // Keep an older working view selected if a different street fails to load.
+      if (this.currentSpotId) this.select.value = this.currentSpotId;
       this.message.textContent = "Street QA unavailable: " + String(error);
     } finally {
       this.pending = false;
       this.toggle.disabled = false;
+      this.select.disabled = false;
+      this.capture.disabled = !this.active;
     }
   }
 
@@ -244,6 +252,7 @@ export class StreetQA {
     this.capture.disabled = true;
     this.toggle.textContent = "Enter Street QA";
     this.location = null;
+    this.currentSpotId = null;
     this.groundHeight = null;
     this.origin = null;
     this.lastGroundPoint = null;
@@ -310,7 +319,7 @@ export class StreetQA {
       if (!blob || blob.size < 1024) throw new Error("Canvas PNG capture not supported by this graphics backend");
       const sorted = [...this.times].sort((a, b) => a - b);
       const avg = this.times.reduce((sum, t) => sum + t, 0) / Math.max(1, this.times.length);
-      const spot = STREET_QA_SPOTS.find((item) => item.id === this.select.value)!;
+      const spot = STREET_QA_SPOTS.find((item) => item.id === this.currentSpotId)!;
       const filename = "coimbra-037-street-" + spot.id + "-" + new Date().toISOString().replace(/[:.]/g, "-");
       const world = this.camera.getWorldPosition(new THREE.Vector3());
       const receipt = {
