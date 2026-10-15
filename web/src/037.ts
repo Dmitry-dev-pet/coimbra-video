@@ -2,6 +2,8 @@ import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { StreetQA } from "./street-qa";
+import { fitStreetQATextures } from "./street-qa-textures";
 
 const app = document.getElementById("app")!;
 const stage = document.getElementById("stage")!;
@@ -17,9 +19,14 @@ function fail(error: unknown) {
 }
 
 async function main() {
+  // Explicit QA-only fallback for software GPUs. The normal 037 viewer
+  // continues to use WebGPU; 039 can compare the same GLB under WebGL2.
+  const params = new URLSearchParams(location.search);
+  const qaWebGL = params.has("streetQA") && params.get("qaBackend") === "webgl";
   const renderer = new THREE.WebGPURenderer({
     antialias: true,
     powerPreference: "high-performance",
+    forceWebGL: qaWebGL,
   });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
   renderer.setSize(stage.clientWidth, stage.clientHeight, false);
@@ -36,6 +43,9 @@ async function main() {
   const modelUrl = new URL("data/coimbra-032-frame181.glb", document.baseURI);
   status.textContent = "Loading accepted 032 scene…";
   const gltf = await loader.loadAsync(modelUrl.href);
+  const streetTextureQA = new URLSearchParams(location.search).has("streetQA")
+    ? fitStreetQATextures(gltf.scene)
+    : null;
   scene.add(gltf.scene);
 
   const importedCamera = gltf.cameras.find(
@@ -58,6 +68,8 @@ async function main() {
   controls.dampingFactor = 0.07;
   controls.update();
 
+  const streetQA = new StreetQA(renderer, gltf.scene, camera, controls);
+
   let hasLight = false;
   gltf.scene.traverse((object) => {
     if ((object as THREE.Light).isLight) hasLight = true;
@@ -74,7 +86,8 @@ async function main() {
   status.textContent =
     "032 source loaded · " +
     Math.round(size.x) + "×" + Math.round(size.y) + "×" + Math.round(size.z) +
-    " scene units · frame 181";
+    " scene units · frame 181" +
+    (streetTextureQA?.resized ? " · QA texture reduced for 8192px adapter" : "");
 
   function resize() {
     const width = stage.clientWidth;
@@ -86,24 +99,27 @@ async function main() {
   addEventListener("resize", resize);
 
   toggleReference.addEventListener("click", () => {
+    if (streetQA.isActive()) return;
     const shown = reference.classList.toggle("shown");
     toggleReference.textContent = shown ? "Hide 032 reference" : "Show 032 reference";
   });
 
   resetCamera.addEventListener("click", () => {
+    streetQA.exit();
     camera.position.copy(initialPosition);
     camera.quaternion.copy(initialQuaternion);
     controls.target.copy(initialTarget);
     controls.update();
   });
 
-  renderer.setAnimationLoop(() => {
-    controls.update();
+  renderer.setAnimationLoop((now) => {
+    streetQA.update(now);
+    if (!streetQA.isActive()) controls.update();
     renderer.render(scene, camera);
   });
 
   Object.assign(window, {
-    coimbra037: { renderer, scene, camera, controls, gltf },
+    coimbra037: { renderer, scene, camera, controls, gltf, streetQA },
   });
 }
 

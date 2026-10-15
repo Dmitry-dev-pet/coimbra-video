@@ -57,7 +57,7 @@
       #hud strong { font-size: 14px; }
       #status { margin-top: 7px; color: #c7d2da; }
       .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-      button, a {
+      button, a, select {
         padding: 7px 10px;
         border: 1px solid rgba(255,255,255,.16);
         border-radius: 8px;
@@ -67,6 +67,9 @@
         cursor: pointer;
       }
       button:hover, a:hover { background: rgba(255,255,255,.14); }
+      button:disabled { opacity: .48; cursor: not-allowed; }
+      select { max-width: 100%; }
+      #qa-status { color: #b8cbd8; font-size: 12px; margin-top: 8px; }
       #credit {
         position: absolute;
         right: 10px;
@@ -93,6 +96,16 @@
           <button id="reset-camera" type="button">Reset frame 181 camera</button>
           <a href="../">Open 034 prototype</a>
         </div>
+        <div class="buttons" role="group" aria-label="Street QA controls">
+          <select id="qa-location" aria-label="Street QA location">
+            <option value="sanches-brasil">Sanches / Brasil</option>
+            <option value="polo-ii">Polo II</option>
+            <option value="portela">Portela</option>
+          </select>
+          <button id="qa-toggle" type="button">Enter Street QA</button>
+          <button id="qa-capture" type="button" disabled>Save PNG + JSON</button>
+        </div>
+        <div id="qa-status" aria-live="polite">Street QA: 1.7 m eye height · choose a location · drag to look · WASD to walk</div>
       </aside>
       <div id="credit">Accepted Coimbra production scene · DGT · © OpenStreetMap contributors · ODbL</div>
     </main>
