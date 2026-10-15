@@ -59,7 +59,7 @@ export class PoloIIVisualPass {
   private original: {
     exposure: number;
     background: THREE.Color | THREE.Texture | null;
-    fog: THREE.FogBase | null;
+    fog: THREE.Scene["fog"];
     lights: { light: THREE.Light; intensity: number }[];
   } | null = null;
   private readonly fill = new THREE.HemisphereLight(0xd7e6ef, 0x8a8277, 1.7);
