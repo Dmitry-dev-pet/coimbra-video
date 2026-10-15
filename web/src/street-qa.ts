@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { CityIndex, RoadSegment, TileData } from "./types";
+import { projectToRoad, type StreetLocation } from "./street-qa-road";
 
 // The same three inspection anchors and intended directions as Coimbra 010.
 // Coordinates are local EPSG:3763 (Blender X/Y); glTF uses (X, Z, -Y).
@@ -14,60 +15,6 @@ const EYE_HEIGHT = 1.7;
 const WALK_SPEED = 2.2;
 const MAX_WALK_RADIUS = 45;
 type Spot = (typeof STREET_QA_SPOTS)[number];
-
-type StreetLocation = {
-  x: number;
-  north: number;
-  forwardX: number;
-  forwardNorth: number;
-  roadDistance: number;
-  roadKind: string;
-};
-
-type SavedView = {
-  position: THREE.Vector3;
-  quaternion: THREE.Quaternion;
-  target: THREE.Vector3;
-  fov: number;
-  near: number;
-};
-
-function projectToRoad(spot: Spot, roads: RoadSegment[]): StreetLocation {
-  const ax = spot.anchor[0], ay = spot.anchor[1];
-  let best: StreetLocation | null = null;
-  for (const road of roads) {
-    if (road.kind === "paths") continue; // vehicle street centreline, as in 010
-    const [x0, y0] = road.a, [x1, y1] = road.b;
-    const dx = x1 - x0, dy = y1 - y0;
-    const len2 = dx * dx + dy * dy;
-    if (len2 < 0.01) continue;
-    const u = THREE.MathUtils.clamp(((ax - x0) * dx + (ay - y0) * dy) / len2, 0, 1);
-    const px = x0 + dx * u, py = y0 + dy * u;
-    const roadDistance = Math.hypot(px - ax, py - ay);
-    if (best && roadDistance >= best.roadDistance) continue;
-
-    const inv = 1 / Math.sqrt(len2);
-    let forwardX = dx * inv, forwardNorth = dy * inv;
-    const desiredX = spot.toward[0] - ax, desiredY = spot.toward[1] - ay;
-    if (forwardX * desiredX + forwardNorth * desiredY < 0) {
-      forwardX = -forwardX;
-      forwardNorth = -forwardNorth;
-    }
-    // Coimbra 010 shifts the inspection camera 0.85 m off the road centreline.
-    best = {
-      x: px - forwardNorth * 0.85,
-      north: py + forwardX * 0.85,
-      forwardX,
-      forwardNorth,
-      roadDistance,
-      roadKind: road.kind,
-    };
-  }
-  if (!best || best.roadDistance > 80) {
-    throw new Error("No verified OSM road within 80 m of " + spot.label);
-  }
-  return best;
-}
 
 class GroundSampler {
   private readonly terrain: THREE.Object3D;
