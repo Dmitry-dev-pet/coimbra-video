@@ -35,6 +35,7 @@ export type PoloIIMetrics = {
   facadeTriangles: number;
   roadStrips: number;
   roadTriangles: number;
+  acceptedRoadTriangles: number;
   originalSceneGeometryChanged: false;
   reusedAcceptedScene: true;
   cameraUnchanged: true;
@@ -55,6 +56,7 @@ export class PoloIIVisualPass {
   private facadeTriangles = 0;
   private roadStrips = 0;
   private roadTriangles = 0;
+  private acceptedRoadTriangles = 0;
   private warning: string | undefined;
   private original: {
     exposure: number;
@@ -93,6 +95,7 @@ export class PoloIIVisualPass {
       facadeTriangles: this.facadeTriangles,
       roadStrips: this.roadStrips,
       roadTriangles: this.roadTriangles,
+      acceptedRoadTriangles: this.acceptedRoadTriangles,
       originalSceneGeometryChanged: false,
       reusedAcceptedScene: true,
       cameraUnchanged: true,
@@ -118,7 +121,8 @@ export class PoloIIVisualPass {
       this.message.textContent = "Visual comparison is available only at Polo II";
     } else if (this.active) {
       this.message.textContent = "040 candidate · " + this.facadeTriangles +
-        " facade triangles · " + this.roadStrips + " OSM street strips · source GLB unchanged";
+        " facade triangles · " + this.roadStrips + " OSM street strips · " +
+        this.acceptedRoadTriangles + " accepted road triangles · source GLB unchanged";
     } else {
       this.message.textContent = "039 baseline · same camera, no additional 040 visuals";
     }
@@ -203,6 +207,7 @@ export class PoloIIVisualPass {
     if (!groundRoot) throw new Error("Accepted City_Terrain unavailable");
     const roads = await this.fetchRoads();
     this.buildRoadSurface(groundRoot, roads);
+    this.buildAcceptedRoadMaterial();
 
     if (this.roadStrips < 1) {
       throw new Error("No accepted-terrain-grounded OSM road strips inside Polo II");
@@ -387,4 +392,64 @@ export class PoloIIVisualPass {
     this.roadStrips = strips;
     this.roadTriangles = triangles;
   }
+  /**
+   * Re-color only triangles from the actual accepted GLB's OSM road ribbons
+   * inside Polo II. This resolves the observed nearly-white street where an
+   * extra thin DGT-draped OSM strip could remain beneath an accepted road mesh.
+   * Never alter original road mesh data; temporary overlay is a separate object.
+   */
+  private buildAcceptedRoadMaterial() {
+    const originals: THREE.Mesh[] = [];
+    this.source.traverse((obj) => {
+      if (!obj.name.startsWith("City_Roads_")) return;
+      originals.push(...getMeshChildren(obj));
+    });
+    const coords: number[] = [];
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+    const cap = 25000;
+
+    for (const mesh of originals) {
+      const geometry = mesh.geometry;
+      const pos = geometry.getAttribute("position");
+      const indices = geometry.getIndex();
+      const faces = Math.floor((indices?.count ?? pos.count) / 3);
+      for (let k = 0; k < faces && coords.length / 9 < cap; k++) {
+        const i = indices ? indices.getX(k * 3) : k * 3;
+        const j = indices ? indices.getX(k * 3 + 1) : k * 3 + 1;
+        const l = indices ? indices.getX(k * 3 + 2) : k * 3 + 2;
+        a.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+        b.fromBufferAttribute(pos, j).applyMatrix4(mesh.matrixWorld);
+        c.fromBufferAttribute(pos, l).applyMatrix4(mesh.matrixWorld);
+        if (!insidePatch(a.x, a.z) || !insidePatch(b.x, b.z) || !insidePatch(c.x, c.z)) continue;
+
+        ab.subVectors(b, a); ac.subVectors(c, a);
+        n.crossVectors(ab, ac);
+        if (n.lengthSq() < 0.00001) continue;
+        n.normalize();
+        if (Math.abs(n.y) < 0.3) continue;
+        for (const p of [a, b, c]) coords.push(p.x, p.y + 0.025, p.z);
+      }
+      if (coords.length / 9 >= cap) break;
+    }
+
+    this.acceptedRoadTriangles = coords.length / 9;
+    if (!coords.length) return;
+    const mesh = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({
+        color: 0x636d70,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }),
+    );
+    mesh.geometry.setAttribute("position", new THREE.Float32BufferAttribute(coords, 3));
+    mesh.geometry.computeVertexNormals();
+    mesh.name = "Coimbra040_OriginalAcceptedRoads_TonalOverlay";
+    mesh.frustumCulled = false;
+    this.group.add(mesh);
+  }
+
 }
