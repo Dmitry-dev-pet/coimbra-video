@@ -40,3 +40,7 @@ Visual review must check facades/windows, road-to-sidewalk edges, floating/inter
 - Keep human review gating. Street QA is diagnostic only, not a promotion of browser parity.
 - Run the lightweight road projection tests locally or on the existing self-hosted Mac (Node 22). Do not run the heavy hosted-Linux 038 Pages job merely to validate this change.
 - The historical 010 screenshots existed in run 36543166578 but were not available from current Actions artifact queries after storage cleanup. New PNG evidence must be captured against the current deployed or locally served accepted GLB before any visual verdict.
+
+## Hosted Chromium GPU limitation (verified 2026-10-15)
+
+The accepted source GLB contains the packed `bridge_ortho_2025` image at 7351×8949 px. A GitHub-hosted Chrome 154 SwiftShader adapter exposes `maxTextureDimension2D=8192`; uploading the unmodified decoded image fails GPU validation and yields a blank canvas. For URLs explicitly containing `?streetQA=...`, Coimbra 039 fits only over-limit in-memory textures inside 8192×8192 before first render. The GLB hash and source remain identical. Receipts must declare this QA texture adaptation; those screenshots are **not** evidence of pixel-exact accepted source material parity. The 037 aerial/default view is unchanged.
