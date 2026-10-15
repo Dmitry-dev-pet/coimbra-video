@@ -44,4 +44,7 @@ Visual review must check facades/windows, road-to-sidewalk edges, floating/inter
 ## Hosted Chromium GPU limitation (verified 2026-10-15)
 
 The accepted source GLB contains the packed `bridge_ortho_2025` image at 7351×8949 px. A GitHub-hosted Chrome 154 SwiftShader adapter exposes `maxTextureDimension2D=8192`; uploading the unmodified decoded image fails GPU validation and yields a blank canvas. For URLs explicitly containing `?streetQA=...`, Coimbra 039 fits only over-limit in-memory textures inside 8192×8192 before first render. The GLB hash and source remain identical. Receipts must declare this QA texture adaptation; those screenshots are **not** evidence of pixel-exact accepted source material parity. The 037 aerial/default view is unchanged.
-\n## Headless WebGL2 visual cross-check\n\nIf Chrome SwiftShader cannot produce frames with the WebGPU backend, the diagnostic URL may explicitly set `&qaBackend=webgl`. This passes `forceWebGL: true` to three.js `WebGPURenderer` (which uses its supported WebGL2 backend); it does **not** modify GLB assets or the production renderer. Screenshots must record the actual backend and cannot be described as WebGPU parity evidence.\n
+
+## Headless WebGL2 visual cross-check
+
+If Chrome SwiftShader cannot produce frames with the WebGPU backend, the diagnostic URL may explicitly set `&qaBackend=webgl`. This passes `forceWebGL: true` to three.js `WebGPURenderer` (which uses its supported WebGL2 backend); it does **not** modify GLB assets or the production renderer. Screenshots must record the actual backend and cannot be described as WebGPU parity evidence.
