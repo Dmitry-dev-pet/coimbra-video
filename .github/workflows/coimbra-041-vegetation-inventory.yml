@@ -7,6 +7,12 @@ on:
     paths:
       - "scripts/coimbra_041_source_inventory.mjs"
       - ".github/workflows/coimbra-041-vegetation-inventory.yml"
+  pull_request:
+    branches:
+      - feature/coimbra-040-polo-ii-visual-ab
+    paths:
+      - "scripts/coimbra_041_source_inventory.mjs"
+      - ".github/workflows/coimbra-041-vegetation-inventory.yml"
   workflow_dispatch:
 
 permissions:
