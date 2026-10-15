@@ -246,6 +246,7 @@ export class PoloIIVegetationPass {
   private loading = false;
   private built = false;
   private spot: string | null = null;
+  private lastAllowed = false;
   private warning: string | undefined;
   private sources: VegetationSource[] = [];
   private lobeInstances = 0;
@@ -270,6 +271,11 @@ export class PoloIIVegetationPass {
   }
 
   update() {
+    const allowed = this.spot === "polo-ii" && this.is040Active();
+    if (allowed !== this.lastAllowed) {
+      this.lastAllowed = allowed;
+      this.updateUI();
+    }
     if (!this.is040Active() && this.active) this.disable();
     if (this.spot === "polo-ii" && this.is040Active() && this.requested &&
         !this.active && !this.loading && !this.warning) void this.refresh();
