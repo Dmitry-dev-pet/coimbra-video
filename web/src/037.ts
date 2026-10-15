@@ -5,6 +5,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { StreetQA } from "./street-qa";
 import { fitStreetQATextures } from "./street-qa-textures";
 import { PoloIIVisualPass } from "./polo-ii-visual";
+import { PoloIIVegetationPass } from "./polo-ii-vegetation";
 
 const app = document.getElementById("app")!;
 const stage = document.getElementById("stage")!;
@@ -70,7 +71,11 @@ async function main() {
   controls.update();
 
   const poloVisual = new PoloIIVisualPass(scene, gltf.scene, renderer);
-  const streetQA = new StreetQA(renderer, gltf.scene, camera, controls, (id) => poloVisual.setSpot(id));
+  const vegetation = new PoloIIVegetationPass(scene, gltf.scene, () => poloVisual.metrics().active);
+  const streetQA = new StreetQA(renderer, gltf.scene, camera, controls, (id) => {
+    poloVisual.setSpot(id);
+    vegetation.setSpot(id);
+  });
 
   let hasLight = false;
   gltf.scene.traverse((object) => {
@@ -116,12 +121,13 @@ async function main() {
 
   renderer.setAnimationLoop((now) => {
     streetQA.update(now);
+    vegetation.update();
     if (!streetQA.isActive()) controls.update();
     renderer.render(scene, camera);
   });
 
   Object.assign(window, {
-    coimbra037: { renderer, scene, camera, controls, gltf, streetQA, poloVisual },
+    coimbra037: { renderer, scene, camera, controls, gltf, streetQA, poloVisual, vegetation },
   });
 }
 

@@ -1,0 +1,86 @@
+name: Coimbra 041 bounded vegetation A-B-A
+
+on:
+  pull_request:
+    branches:
+      - feature/coimbra-040-polo-ii-visual-ab
+    paths:
+      - "web/src/polo-ii-vegetation.ts"
+      - "web/src/037.ts"
+      - "web/037/index.html"
+      - "scripts/coimbra_041_vegetation_ab.mjs"
+      - "scripts/verify_coimbra_041_ab.py"
+      - ".github/workflows/coimbra-041-vegetation-ab.yml"
+  push:
+    branches:
+      - feature/coimbra-041-polo-ii-vegetation-ab
+    paths:
+      - "web/src/polo-ii-vegetation.ts"
+      - "web/src/037.ts"
+      - "web/037/index.html"
+      - "scripts/coimbra_041_vegetation_ab.mjs"
+      - "scripts/verify_coimbra_041_ab.py"
+      - ".github/workflows/coimbra-041-vegetation-ab.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vegetation-ab:
+    # Public hosted run, read-only original GLB; screenshots are review-only.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser dependencies and run existing road QA unit tests
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run test:street-qa
+      - name: Stage previously verified original GLB and 034 tiles
+        run: python scripts/prepare_coimbra_039_preview.py
+      - name: Typecheck and build candidate 041 browser without Blender
+        working-directory: web
+        run: npm run build
+      - name: Install headless Chrome harness
+        working-directory: web
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          google-chrome --version
+      - name: Same-camera vegetation A/B/A and restoration outside Polo II
+        working-directory: web
+        run: |
+          set -euo pipefail
+          cp ../scripts/coimbra_041_vegetation_ab.mjs tests/coimbra-041-vegetation-ab.mjs
+          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort > /tmp/coimbra-041-ab-vite.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:4173/037/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:4173/037/ >/dev/null
+          node tests/coimbra-041-vegetation-ab.mjs
+      - name: Verify independent PNG pixels and A/B/A restoration
+        run: |
+          python -m pip install --disable-pip-version-check --quiet Pillow==11.3.0
+          python scripts/verify_coimbra_041_ab.py
+      - name: Publish small visual evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-041-vegetation-ab
+          path: |
+            web/polo-ii-041-evidence/*.json
+            web/polo-ii-041-evidence/*.png
+            web/polo-ii-041-evidence/*.jpg
+          if-no-files-found: warn
+          retention-days: 2
+          compression-level: 6
