@@ -120,6 +120,7 @@ export class StreetQA {
     private readonly source: THREE.Object3D,
     private readonly camera: THREE.PerspectiveCamera,
     private readonly controls: OrbitControls,
+    private readonly onSpotChanged?: (spot: string | null) => void,
   ) {
     this.toggle.addEventListener("click", () => {
       if (this.active) this.exit();
@@ -266,6 +267,7 @@ export class StreetQA {
       this.lastTime = 0;
       this.capture.disabled = false;
       this.toggle.textContent = "Return to aerial";
+      this.onSpotChanged?.(spot.id);
       this.message.textContent = spot.label + " · camera 1.7 m above City_Terrain · " +
         location.roadDistance.toFixed(1) + " m from 010 anchor · drag to look · WASD to walk";
     } catch (error) {
@@ -289,6 +291,7 @@ export class StreetQA {
     this.toggle.textContent = "Enter Street QA";
     this.location = null;
     this.currentSpotId = null;
+    this.onSpotChanged?.(null);
     this.groundHeight = null;
     this.origin = null;
     this.lastGroundPoint = null;
