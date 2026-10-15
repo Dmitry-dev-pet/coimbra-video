@@ -104,7 +104,7 @@ async function main() {
 
   renderer.setAnimationLoop((now) => {
     streetQA.update(now);
-    controls.update();
+    if (!streetQA.isActive()) controls.update();
     renderer.render(scene, camera);
   });
 
