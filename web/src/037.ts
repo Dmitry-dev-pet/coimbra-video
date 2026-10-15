@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+import { StreetQA } from "./street-qa";
 
 const app = document.getElementById("app")!;
 const stage = document.getElementById("stage")!;
@@ -58,6 +59,8 @@ async function main() {
   controls.dampingFactor = 0.07;
   controls.update();
 
+  const streetQA = new StreetQA(renderer, gltf.scene, camera, controls);
+
   let hasLight = false;
   gltf.scene.traverse((object) => {
     if ((object as THREE.Light).isLight) hasLight = true;
@@ -86,24 +89,27 @@ async function main() {
   addEventListener("resize", resize);
 
   toggleReference.addEventListener("click", () => {
+    if (streetQA.isActive()) return;
     const shown = reference.classList.toggle("shown");
     toggleReference.textContent = shown ? "Hide 032 reference" : "Show 032 reference";
   });
 
   resetCamera.addEventListener("click", () => {
+    streetQA.exit();
     camera.position.copy(initialPosition);
     camera.quaternion.copy(initialQuaternion);
     controls.target.copy(initialTarget);
     controls.update();
   });
 
-  renderer.setAnimationLoop(() => {
+  renderer.setAnimationLoop((now) => {
+    streetQA.update(now);
     controls.update();
     renderer.render(scene, camera);
   });
 
   Object.assign(window, {
-    coimbra037: { renderer, scene, camera, controls, gltf },
+    coimbra037: { renderer, scene, camera, controls, gltf, streetQA },
   });
 }
 
