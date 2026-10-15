@@ -19,9 +19,14 @@ function fail(error: unknown) {
 }
 
 async function main() {
+  // Explicit QA-only fallback for software GPUs. The normal 037 viewer
+  // continues to use WebGPU; 039 can compare the same GLB under WebGL2.
+  const params = new URLSearchParams(location.search);
+  const qaWebGL = params.has("streetQA") && params.get("qaBackend") === "webgl";
   const renderer = new THREE.WebGPURenderer({
     antialias: true,
     powerPreference: "high-performance",
+    forceWebGL: qaWebGL,
   });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
   renderer.setSize(stage.clientWidth, stage.clientHeight, false);
