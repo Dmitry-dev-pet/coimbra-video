@@ -141,7 +141,7 @@ export class StreetQA {
   private readonly toggle = document.getElementById("qa-toggle") as HTMLButtonElement;
   private readonly capture = document.getElementById("qa-capture") as HTMLButtonElement;
   private readonly message = document.getElementById("qa-status")!;
-  private readonly sampler: GroundSampler;
+  private sampler: GroundSampler | null = null;
   private readonly pressed = new Set<string>();
   private readonly times: number[] = [];
   private active = false;
@@ -165,7 +165,6 @@ export class StreetQA {
     private readonly camera: THREE.PerspectiveCamera,
     private readonly controls: OrbitControls,
   ) {
-    this.sampler = new GroundSampler(source);
     this.toggle.addEventListener("click", () => {
       if (this.active) this.exit();
       else void this.enter(this.select.value);
@@ -238,6 +237,8 @@ export class StreetQA {
     this.message.textContent = "Finding OSM road and accepted-scene ground at " + spot.label + "…";
     try {
       const location = await loadStreetRoads(spot);
+      // Resolve lazily so a missing ground mesh never breaks aerial 037.
+      this.sampler ??= new GroundSampler(this.source);
       const ground = this.sampler.height(location.x, location.north);
       if (ground === null) throw new Error("City_Terrain does not cover " + spot.label);
       if (epoch !== this.epoch) return;
@@ -296,6 +297,7 @@ export class StreetQA {
     this.capture.disabled = true;
     this.toggle.textContent = "Enter Street QA";
     this.location = null;
+    this.groundHeight = null;
     this.origin = null;
     this.lastGroundPoint = null;
     if (this.previousView) {
@@ -313,10 +315,11 @@ export class StreetQA {
   }
 
   update(now: number) {
-    const dt = this.lastTime ? Math.min(0.05, Math.max(0, (now - this.lastTime) / 1000)) : 0;
+    const frameMs = this.lastTime ? Math.max(0, now - this.lastTime) : 0;
+    const dt = Math.min(0.05, frameMs / 1000);
     this.lastTime = now;
     if (!this.active || dt === 0) return;
-    this.times.push(dt * 1000);
+    this.times.push(frameMs);
     if (this.times.length > 240) this.times.shift();
 
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
@@ -339,7 +342,7 @@ export class StreetQA {
 
     // Limit expensive terrain raycasts to roughly twice per metre of travel.
     if (Math.hypot(world.x - this.lastGroundPoint.x, world.z - this.lastGroundPoint.z) >= 0.5) {
-      const ground = this.sampler.height(world.x, -world.z);
+      const ground = this.sampler!.height(world.x, -world.z);
       if (ground === null || this.groundHeight === null || Math.abs(ground - this.groundHeight) > 2) return;
       this.groundHeight = ground;
       this.lastGroundPoint.copy(world);
