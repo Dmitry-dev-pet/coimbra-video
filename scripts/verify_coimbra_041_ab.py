@@ -27,7 +27,7 @@ def main():
     assert before["visual040"]["active"] and after["visual040"]["active"]
     v=after["vegetation041"]
     assert v["active"] and v["selectedCrowns"] >= 15
-    assert v["lobeInstances"] == 3 * v["selectedCrowns"]
+    assert v["lobeInstances"] == 5 * v["selectedCrowns"]
     assert v["hiddenSourceTriangles"] > 200
     assert v["retainedSourceTriangles"] > v["hiddenSourceTriangles"]
     assert v["originalGeometryRestored"]
