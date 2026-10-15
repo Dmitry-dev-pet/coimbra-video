@@ -1,0 +1,95 @@
+name: Coimbra 040 bounded Polo II visual A-B
+
+on:
+  push:
+    branches:
+      - feature/coimbra-040-polo-ii-visual-ab
+    paths:
+      - "web/src/037.ts"
+      - "web/src/street-qa.ts"
+      - "web/src/polo-ii-visual.ts"
+      - "web/037/index.html"
+      - "web/tests/polo-ii-visual-browser.mjs"
+      - "scripts/verify_coimbra_040_ab.py"
+      - ".github/workflows/coimbra-040-polo-ii-visual-ab.yml"
+  pull_request:
+    branches:
+      - feature/coimbra-039-street-qa
+    paths:
+      - "web/src/037.ts"
+      - "web/src/street-qa.ts"
+      - "web/src/polo-ii-visual.ts"
+      - "web/037/index.html"
+      - "web/tests/polo-ii-visual-browser.mjs"
+      - "scripts/verify_coimbra_040_ab.py"
+      - ".github/workflows/coimbra-040-polo-ii-visual-ab.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  polo-ii-compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build toolchain and road projection checks
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run test:street-qa
+
+      - name: Stage SHA-256-pinned public Coimbra 032 GLB + 034 OSM tiles
+        run: python scripts/prepare_coimbra_039_preview.py
+
+      - name: Type-check and build three browser views
+        working-directory: web
+        run: npm run build
+
+      - name: Set up system Chrome browser QA
+        working-directory: web
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          google-chrome --version
+
+      - name: Capture same-camera baseline and Polo II candidate
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort > /tmp/coimbra-040-vite.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:4173/037/ >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:4173/037/ >/dev/null
+          node tests/polo-ii-visual-browser.mjs
+
+      - name: Verify nonblank differentiated 3D crop and render A-B contact sheet
+        run: |
+          python -m pip install --quiet --disable-pip-version-check Pillow==11.3.0
+          python scripts/verify_coimbra_040_ab.py
+
+      - name: Upload only 040 visual A-B review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-040-polo-ii-ab
+          path: |
+            web/polo-ii-040-evidence/*.json
+            web/polo-ii-040-evidence/*.png
+            web/polo-ii-040-evidence/*.jpg
+          if-no-files-found: warn
+          retention-days: 2
+          compression-level: 6

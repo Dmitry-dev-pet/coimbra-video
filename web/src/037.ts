@@ -4,6 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { StreetQA } from "./street-qa";
 import { fitStreetQATextures } from "./street-qa-textures";
+import { PoloIIVisualPass } from "./polo-ii-visual";
 
 const app = document.getElementById("app")!;
 const stage = document.getElementById("stage")!;
@@ -68,7 +69,8 @@ async function main() {
   controls.dampingFactor = 0.07;
   controls.update();
 
-  const streetQA = new StreetQA(renderer, gltf.scene, camera, controls);
+  const poloVisual = new PoloIIVisualPass(scene, gltf.scene, renderer);
+  const streetQA = new StreetQA(renderer, gltf.scene, camera, controls, (id) => poloVisual.setSpot(id));
 
   let hasLight = false;
   gltf.scene.traverse((object) => {
@@ -119,7 +121,7 @@ async function main() {
   });
 
   Object.assign(window, {
-    coimbra037: { renderer, scene, camera, controls, gltf, streetQA },
+    coimbra037: { renderer, scene, camera, controls, gltf, streetQA, poloVisual },
   });
 }
 
