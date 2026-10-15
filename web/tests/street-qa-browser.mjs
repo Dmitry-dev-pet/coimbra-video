@@ -75,6 +75,8 @@ try {
     const metrics = await page.evaluate(() => globalThis.coimbra037.streetQA.diagnostics());
     assert.equal(metrics.spot, spot);
     assert.equal(metrics.active, true);
+    assert.ok(metrics.qa_runtime_texture_adaptation?.resized >= 1,
+      "Software-GPU Street QA should disclose its runtime orthophoto resize");
     assert.ok(metrics.road?.roadDistance >= 0 && metrics.road.roadDistance < 80,
       "An actual nearby OSM road must be used");
     assert.ok(metrics.measured_eye_height_m != null &&
@@ -129,6 +131,8 @@ try {
   await writeFile(path.join(outDir, "coimbra-039-failure.json"),
     JSON.stringify(failure, null, 2) + "\n");
   console.error("Coimbra 039 browser smoke FAILED:", error);
+  console.error("Page errors (first 5):", seenErrors.slice(0, 5));
+  console.error("Console errors (first 5):", consoleErrors.slice(0, 5));
   process.exitCode = 1;
 } finally {
   await browser.close();
