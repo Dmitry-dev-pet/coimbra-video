@@ -1,0 +1,89 @@
+name: Coimbra 039 street-level browser QA
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/src/037.ts"
+      - "web/src/street-qa.ts"
+      - "web/src/street-qa-road.ts"
+      - "web/037/index.html"
+      - "web/tests/street-qa-road.test.mjs"
+      - "web/tests/street-qa-browser.mjs"
+      - "web/package.json"
+      - "scripts/prepare_coimbra_039_preview.py"
+      - "scripts/verify_coimbra_039_images.py"
+      - ".github/workflows/coimbra-039-street-qa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-street-qa:
+    # Public repository: standard GitHub-hosted Actions are free. Never
+    # call mac-access, fetch expired Actions artifacts, or render Blender.
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install normal web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      - name: Verify road math without a rendering engine
+        working-directory: web
+        run: npm run test:street-qa
+
+      - name: Download integrity-pinned public scene and 034 street tiles
+        run: python scripts/prepare_coimbra_039_preview.py
+
+      - name: Build full multi-page Vite app including 037 Street QA
+        working-directory: web
+        run: npm run build
+
+      - name: Install pinned Chromium browser test runtime
+        working-directory: web
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Start local preview and render three real street views
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 --strictPort > /tmp/coimbra-039-vite.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl --silent --show-error --fail http://127.0.0.1:4173/037/ > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:4173/037/ > /dev/null
+          node tests/street-qa-browser.mjs
+
+      - name: Verify screenshot files contain independently rendered scenes
+        run: |
+          python -m pip install --disable-pip-version-check --quiet Pillow==11.3.0
+          python scripts/verify_coimbra_039_images.py
+
+      - name: Upload small inspection receipts and screenshots only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coimbra-039-street-qa-evidence
+          path: |
+            web/street-qa-evidence/*.json
+            web/street-qa-evidence/*.png
+          if-no-files-found: warn
+          retention-days: 2
+          compression-level: 6
