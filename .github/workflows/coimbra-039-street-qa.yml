@@ -7,6 +7,7 @@ on:
       - "web/src/037.ts"
       - "web/src/street-qa.ts"
       - "web/src/street-qa-road.ts"
+      - "web/src/street-qa-textures.ts"
       - "web/037/index.html"
       - "web/tests/street-qa-road.test.mjs"
       - "web/tests/street-qa-browser.mjs"
