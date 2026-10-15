@@ -16,6 +16,14 @@ const WALK_SPEED = 2.2;
 const MAX_WALK_RADIUS = 45;
 type Spot = (typeof STREET_QA_SPOTS)[number];
 
+type SavedView = {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  target: THREE.Vector3;
+  fov: number;
+  near: number;
+};
+
 class GroundSampler {
   private readonly terrain: THREE.Object3D;
   private readonly top: number;
