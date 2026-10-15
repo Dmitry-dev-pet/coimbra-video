@@ -15,6 +15,9 @@ const MAX_RENDER_WAIT = 120_000;
 await mkdir(outDir, { recursive: true });
 const browser = await chromium.launch({
   headless: true,
+  // Use the GitHub runner's current Chrome rather than Playwright 1.56's
+  // year-old bundled Chromium: Three.js r186 relies on modern texture swizzles.
+  channel: "chrome",
   args: [
     "--enable-unsafe-swiftshader",
     "--enable-unsafe-webgpu",
@@ -31,6 +34,7 @@ try {
     acceptDownloads: true,
     reducedMotion: "reduce",
   });
+  console.log("Running browser version:", browser.version());
   const page = await context.newPage();
   page.on("pageerror", (err) => seenErrors.push(String(err)));
   page.on("console", (msg) => {
