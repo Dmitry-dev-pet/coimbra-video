@@ -53,11 +53,13 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Install pinned Chromium browser test runtime
+      - name: Install Playwright harness and select current Google Chrome
         working-directory: web
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.56.1
-          npx playwright install --with-deps chromium
+          google-chrome --version
+          # Chrome is preinstalled on ubuntu-latest, and tracks the newer WebGPU API.
+          # Playwright's bundled Chromium 1.56 did not support texture swizzles.
 
       - name: Start local preview and render three real street views
         working-directory: web
