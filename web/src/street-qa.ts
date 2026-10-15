@@ -161,6 +161,30 @@ export class StreetQA {
 
   isActive() { return this.active; }
 
+  // Read-only browser diagnostic surface for 039 screenshot CI.
+  diagnostics() {
+    const world = this.camera.getWorldPosition(new THREE.Vector3());
+    const sorted = [...this.times].sort((a, b) => a - b);
+    const mean = this.times.length
+      ? this.times.reduce((sum, value) => sum + value, 0) / this.times.length
+      : null;
+    return {
+      active: this.active,
+      pending: this.pending,
+      spot: this.currentSpotId,
+      camera_world_xyz: world.toArray(),
+      ground_y: this.groundHeight,
+      measured_eye_height_m: this.groundHeight === null ? null : world.y - this.groundHeight,
+      road: this.location,
+      frame_sample_count: this.times.length,
+      mean_frame_ms: mean,
+      p95_frame_ms: quantile(sorted, 0.95),
+      fps_from_mean: mean && mean > 0 ? 1000 / mean : null,
+      renderer: "three.js WebGPURenderer",
+      accepted_scene: "Coimbra 032 frame 181 GLB",
+    };
+  }
+
   private setWorldPosition(world: THREE.Vector3) {
     this.camera.position.copy(this.camera.parent ? this.camera.parent.worldToLocal(world.clone()) : world);
     this.camera.updateMatrixWorld(true);
