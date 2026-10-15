@@ -45,7 +45,7 @@ try {
   ));
 
   const response = await page.goto(
-    base.replace(/\/$/, "") + "/037/?streetQA=sanches-brasil",
+    base.replace(/\/$/, "") + "/037/?streetQA=sanches-brasil&qaBackend=webgl",
     { waitUntil: "domcontentloaded", timeout: MAX_RENDER_WAIT },
   );
   assert.equal(response?.status(), 200, "037 preview page must exist");
@@ -82,7 +82,7 @@ try {
     assert.ok(metrics.measured_eye_height_m != null &&
       Math.abs(metrics.measured_eye_height_m - 1.7) < 0.12,
       "Actual camera must be 1.7 m above accepted City_Terrain");
-    assert.ok(metrics.frame_sample_count >= 2, "Need actual requestAnimationFrame measurements");
+    // Frame count is checked after capturing visual failure evidence.
 
     const pngFile = path.join(outDir, "coimbra-039-" + spot + ".png");
     const png = await page.locator("#stage").screenshot({
@@ -101,6 +101,7 @@ try {
       metrics,
     });
     console.log(JSON.stringify({ spot, screenshot_bytes: png.length, metrics }));
+    assert.ok(metrics.frame_sample_count >= 2, "Need actual requestAnimationFrame measurements");
   }
 
   const unique = new Set(captures.map((entry) => entry.screenshot_sha256));
